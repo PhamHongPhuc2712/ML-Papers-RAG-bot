@@ -20,7 +20,7 @@ Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **
 | Task | Deliverable | Status | Depends on | Evidence / commit |
 |---|---|---|---|---|
 | P1.1 | Create a runnable API and isolated persistence test harness | Done | Design review | `e7859f0`; [foundation evidence](../../reports/m1-foundation.md); 12 native-service tests, Ruff, mypy and migration replay passed; Docker build unverified |
-| P1.2 | Normalize publication identity and preserve version provenance | Not started | P1.1 | Not produced |
+| P1.2 | Normalize publication identity and preserve version provenance | Done | P1.1 | [identity evidence](../../reports/m1-identity.md) |
 | P1.3 | Parse documents into traceable sections and chunks | Not started | P1.2 | Not produced |
 | P1.4 | Ingest an accepted-paper pilot through resumable jobs | Not started | P1.2, P1.3 | Not produced |
 | P1.5 | Export immutable corpus snapshots and publish coverage | Not started | P1.4 | Not produced |
@@ -92,8 +92,8 @@ Record one dated row after each execution session.
 | 2026-09-05 | Planning only | See planning-verification.md; no application tests run | Specification and six plans | Review proposed design and sequence |
 | 2026-09-05 | P1.1/P1.2 execution setup | Python 3.12.5 venv isolation verified; both GPT-5.6 Luna/max workers stopped with workspace out-of-credits error | codex/p1-foundation; backend/.venv; portable uv in ignored runtime directory | Resume Luna workers after credits are available; no application tests have run |
 | 2026-09-05 | P1.1 completed | 9 focused integration and 12 full tests passed against PostgreSQL 17.11/Qdrant 1.19.1; 5 CI unit tests passed without service variables; Ruff, mypy, migration down/up and diff check passed | `e7859f0`; [foundation evidence](../../reports/m1-foundation.md) | Review P1.1 branch or begin P1.2 |
+| 2026-09-06 | P1.2 completed | 26 focused identity tests and 38 full backend tests passed against PostgreSQL 17.11/Qdrant 1.19.1; 13 offline CI tests, Ruff, mypy, migration upgrade/downgrade/upgrade and fixture replay passed | [identity evidence](../../reports/m1-identity.md); task commit recorded in the report | Review P1.2 branch or begin P1.3 |
 
 ## Definition of a completed task
 
 All named acceptance cases have evidence; required tests actually ran; code was reviewed; report contains actual versions/measurements; task commit is recorded. If a human-observation checkpoint takes weeks, record engineering completion separately and leave the observation checkpoint pending. Do not publish synthetic or planned results as measured outcomes.
-

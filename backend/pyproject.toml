@@ -18,6 +18,9 @@ dependencies = [
   "uvicorn[standard]==0.35.0",
 ]
 
+[project.scripts]
+copilot = "copilot.cli:main"
+
 [dependency-groups]
 dev = [
   "mypy==1.17.1",
