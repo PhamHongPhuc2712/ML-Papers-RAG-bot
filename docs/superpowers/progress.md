@@ -5,8 +5,8 @@ Last updated: 2026-09-05.
 ## Current state
 
 - Planning documents: prepared for review.
-- Implementation: **0 / 30 tasks complete**.
-- MVP implementation: **0 / 25 tasks complete**.
+- Implementation: **1 / 30 tasks complete**.
+- MVP implementation: **1 / 25 tasks complete**.
 - Extended experiments: **0 / 5 tasks complete**.
 - Passing implementation gates: **0 / 6**.
 - Corpus indexed: none yet.
@@ -19,7 +19,7 @@ Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **
 
 | Task | Deliverable | Status | Depends on | Evidence / commit |
 |---|---|---|---|---|
-| P1.1 | Create a runnable API and isolated persistence test harness | Not started | Design review | Not produced |
+| P1.1 | Create a runnable API and isolated persistence test harness | Done | Design review | `e7859f0`; [foundation evidence](../../reports/m1-foundation.md); 12 native-service tests, Ruff, mypy and migration replay passed; Docker build unverified |
 | P1.2 | Normalize publication identity and preserve version provenance | Not started | P1.1 | Not produced |
 | P1.3 | Parse documents into traceable sections and chunks | Not started | P1.2 | Not produced |
 | P1.4 | Ingest an accepted-paper pilot through resumable jobs | Not started | P1.2, P1.3 | Not produced |
@@ -90,6 +90,8 @@ Record one dated row after each execution session.
 | Date | Tasks changed | Checks and results | Evidence paths / commit | Next action |
 |---|---|---|---|---|
 | 2026-09-05 | Planning only | See planning-verification.md; no application tests run | Specification and six plans | Review proposed design and sequence |
+| 2026-09-05 | P1.1/P1.2 execution setup | Python 3.12.5 venv isolation verified; both GPT-5.6 Luna/max workers stopped with workspace out-of-credits error | codex/p1-foundation; backend/.venv; portable uv in ignored runtime directory | Resume Luna workers after credits are available; no application tests have run |
+| 2026-09-05 | P1.1 completed | 9 focused integration and 12 full tests passed against PostgreSQL 17.11/Qdrant 1.19.1; 5 CI unit tests passed without service variables; Ruff, mypy, migration down/up and diff check passed | `e7859f0`; [foundation evidence](../../reports/m1-foundation.md) | Review P1.1 branch or begin P1.2 |
 
 ## Definition of a completed task
 

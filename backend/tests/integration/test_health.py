@@ -108,6 +108,7 @@ def test_migration_creates_foundation_tables(migrated_database):
     assert {"alembic_version", "corpus_releases", "active_release"} <= names
 
 
+@pytest.mark.integration
 def test_cleanup_guard_rejects_non_test_database(test_settings):
     from copilot.db.session import assert_safe_test_database
 
@@ -118,6 +119,7 @@ def test_cleanup_guard_rejects_non_test_database(test_settings):
         assert_safe_test_database(unsafe)
 
 
+@pytest.mark.integration
 def test_cleanup_guard_rejects_non_test_collection_namespace(test_settings):
     from copilot.db.session import assert_safe_test_database
 

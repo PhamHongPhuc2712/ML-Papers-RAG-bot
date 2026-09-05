@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -59,7 +59,7 @@ def session_factory(engine: Engine) -> sessionmaker[Session]:
 
 
 @contextmanager
-def session_scope(engine: Engine) -> Iterator[Session]:
+def session_scope(engine: Engine) -> Generator[Session, None, None]:
     """Commit successful work and roll back failed work for a caller-owned session."""
 
     factory = session_factory(engine)
