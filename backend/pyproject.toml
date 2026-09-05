@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ml-research-copilot"
+version = "0.1.0"
+description = "ML Research Copilot backend"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "alembic==1.16.5",
+  "fastapi==0.116.1",
+  "httpx==0.28.1",
+  "psycopg[binary]==3.2.9",
+  "pydantic-settings==2.10.1",
+  "qdrant-client==1.19.0",
+  "sqlalchemy==2.0.43",
+  "uvicorn[standard]==0.35.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy==1.17.1",
+  "pytest==8.4.1",
+  "pytest-cov==6.2.1",
+  "ruff==0.12.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/copilot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "unit: pure unit tests without external services",
+  "integration: tests that use isolated PostgreSQL and Qdrant services",
+]
+addopts = "-ra"
+filterwarnings = ["ignore::DeprecationWarning:starlette.testclient"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["copilot"]
+mypy_path = ["src"]
+warn_unused_configs = true
