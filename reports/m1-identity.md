@@ -122,6 +122,37 @@ owned by later tasks. Review conflicts are durable but have no review UI yet.
 The command evidence uses disposable loopback services and synthetic fixture
 metadata; no live provider corpus was ingested.
 
-Commit hash: recorded in the ignored task report at
-`.superpowers/sdd/2026-09-05-01-corpus-foundation/task-2-report.md` after the
-required task commit.
+Previous-round commit: `226c971` (`feat: add canonical paper identity and source provenance`).
+
+## Round 1 review-fix evidence
+
+The amended focused identity suite passed after the review fixes:
+
+```text
+uv.exe run --project backend pytest backend/tests/unit/test_identity.py backend/tests/integration/test_deduplication.py -q
+34 passed in 11.41s
+
+uv.exe run --project backend pytest backend/tests -q
+46 passed in 14.47s
+
+uv.exe run --project backend pytest backend/tests -m "not integration" -q
+13 passed, 33 deselected in 0.18s
+
+uv.exe run --project backend ruff check backend
+All checks passed!
+
+uv.exe run --project backend mypy backend/src
+Success: no issues found in 11 source files
+```
+
+Migration replay passed through `0002_identity_hardening -> 0001_corpus ->
+0000_foundation -> 0001_corpus -> 0002_identity_hardening`. Direct fixture
+replay twice returned `{"conflicts": 0, "loaded": 3, "quarantined": 0}` and
+the resulting counts were `(2, 3, 3)` for papers, source records, and paper
+versions. Review fixes cover concurrent winner adoption, idempotent conflict
+and quarantine persistence, exact DOI/arXiv year compatibility, arXiv version
+mismatch rejection, trusted atomic artifacts, duplicate-version merge
+rejection, merge provenance/authorship, and explicit test-service variables.
+
+Current review-fix commit hash is recorded in the ignored task report at
+`.superpowers/sdd/2026-09-05-01-corpus-foundation/task-2-report.md`.

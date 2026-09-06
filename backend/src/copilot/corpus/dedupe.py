@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -32,6 +33,8 @@ from ..db.models import (
     Venue,
 )
 from .normalize import normalize_arxiv, normalize_author_name, normalize_doi, normalize_title
+
+_ARTIFACT_LOCK = threading.Lock()
 
 
 class IdentityResolutionError(ValueError):
@@ -67,6 +70,10 @@ class IdentityConflictError(IdentityResolutionError):
     ) -> None:
         self.conflict_id = conflict_id
         super().__init__(code)
+
+
+class MergeConflictError(IdentityConflictError):
+    """Raised when a manual merge cannot preserve unique identity history."""
 
 
 @dataclass(frozen=True)
@@ -242,7 +249,80 @@ def _jsonable(value: object) -> object:
     return value
 
 
-def _canonical_payload(record: Mapping[str, Any]) -> tuple[dict[str, Any], str, Path]:
+def _path_contains_symlink(path: Path) -> bool:
+    current = path
+    while True:
+        if current.is_symlink():
+            return True
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
+def _write_artifact(staging_dir: Path, checksum: str, encoded: bytes) -> Path:
+    with _ARTIFACT_LOCK:
+        return _write_artifact_unlocked(staging_dir, checksum, encoded)
+
+
+def _write_artifact_unlocked(staging_dir: Path, checksum: str, encoded: bytes) -> Path:
+    artifact_path = staging_dir / f"{checksum}.json"
+    if artifact_path.is_symlink():
+        raise RecordValidationError("artifact_symlink")
+    if artifact_path.exists():
+        if not artifact_path.is_file():
+            raise RecordValidationError("artifact_invalid")
+        existing = artifact_path.read_bytes()
+        if existing != encoded or hashlib.sha256(existing).hexdigest() != checksum:
+            raise RecordValidationError("artifact_checksum_mismatch")
+        return artifact_path
+
+    temporary_path = staging_dir / f".{checksum}.{uuid4().hex}.tmp"
+    try:
+        file_descriptor = os.open(
+            temporary_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        try:
+            with os.fdopen(file_descriptor, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except BaseException:
+            try:
+                os.close(file_descriptor)
+            except OSError:
+                pass
+            raise
+        try:
+            os.replace(temporary_path, artifact_path)
+        except OSError:
+            # Windows refuses a competing replace once another worker has
+            # published the same checksum.  The winner is valid if its bytes
+            # match; retain the atomic publication semantics and reuse it.
+            if artifact_path.is_symlink() or not artifact_path.exists():
+                raise
+            existing = artifact_path.read_bytes()
+            if existing != encoded or hashlib.sha256(existing).hexdigest() != checksum:
+                raise RecordValidationError("artifact_checksum_mismatch") from None
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    if artifact_path.is_symlink():
+        raise RecordValidationError("artifact_symlink")
+    existing = artifact_path.read_bytes()
+    if existing != encoded or hashlib.sha256(existing).hexdigest() != checksum:
+        raise RecordValidationError("artifact_checksum_mismatch")
+    return artifact_path
+
+
+def _canonical_payload(
+    record: Mapping[str, Any], *, staging_dir: str | Path | None
+) -> tuple[dict[str, Any], str, Path]:
     payload = {
         str(key): value
         for key, value in record.items()
@@ -255,19 +335,20 @@ def _canonical_payload(record: Mapping[str, Any]) -> tuple[dict[str, Any], str, 
     except (TypeError, ValueError) as exc:
         raise RecordValidationError("record_not_json_serializable") from exc
     checksum = hashlib.sha256(encoded).hexdigest()
-    staging_value = (
-        record.get("_staging_dir")
-        or record.get("staging_dir")
-        or os.environ.get("COPILOT_STAGING_DIR")
-        or ".copilot-staging"
-    )
-    if not isinstance(staging_value, str | os.PathLike[str]):
+    if staging_dir is None:
+        raise RecordValidationError("staging_dir_required")
+    if not isinstance(staging_dir, str | os.PathLike):
         raise RecordValidationError("staging_dir_invalid")
-    staging_dir = Path(staging_value).expanduser().resolve()
-    staging_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = staging_dir / f"{checksum}.json"
-    if not artifact_path.exists():
-        artifact_path.write_bytes(encoded)
+    configured_dir = Path(staging_dir).expanduser()
+    if _path_contains_symlink(configured_dir):
+        raise RecordValidationError("staging_dir_symlink")
+    try:
+        configured_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RecordValidationError("staging_dir_invalid") from exc
+    if not configured_dir.is_dir() or _path_contains_symlink(configured_dir):
+        raise RecordValidationError("staging_dir_invalid")
+    artifact_path = _write_artifact(configured_dir.resolve(), checksum, encoded)
     return cast(dict[str, Any], json.loads(encoded.decode("utf-8"))), checksum, artifact_path
 
 
@@ -305,15 +386,19 @@ def _normalize_external_ids(record: Mapping[str, Any]) -> tuple[_ExternalIdentif
         if value is None:
             continue
         if namespace in {"doi", "doi_id", "digital_object_identifier"}:
+            if not isinstance(value, str):
+                raise ValueError("invalid_doi")
             try:
-                canonical = normalize_doi(cast(str, value))
+                canonical = normalize_doi(value)
             except (TypeError, ValueError) as exc:
                 raise ValueError("invalid_doi") from exc
             key = ("doi", canonical)
             version = None
         elif namespace in {"arxiv", "arxiv_id", "ar_xiv"}:
+            if not isinstance(value, str):
+                raise ValueError("invalid_arxiv_id")
             try:
-                canonical, version = normalize_arxiv(cast(str, value))
+                canonical, version = normalize_arxiv(value)
             except (TypeError, ValueError) as exc:
                 raise ValueError("invalid_arxiv_id") from exc
             key = ("arxiv", canonical)
@@ -397,10 +482,12 @@ def _find_title_candidate(
                 select(PaperIdentifier.namespace).where(PaperIdentifier.paper_id == paper.id)
             ).scalars()
         )
-        aliases_crossing_versions = bool(
-            existing_namespaces & {"doi", "arxiv"}
-            and incoming_namespaces
-            and existing_namespaces.isdisjoint(incoming_namespaces)
+        existing_strong = existing_namespaces & {"doi", "arxiv"}
+        incoming_strong = (incoming_namespaces or set()) & {"doi", "arxiv"}
+        aliases_crossing_versions = (
+            len(existing_strong) == 1
+            and len(incoming_strong) == 1
+            and existing_strong != incoming_strong
         )
         if not aliases_crossing_versions and not _years_compatible(
             paper.publication_year, record.publication_year
@@ -573,12 +660,7 @@ def _upsert_version(
     source_record: SourceRecord,
     identifiers: Sequence[_ExternalIdentifier],
 ) -> None:
-    arxiv_version = next(
-        (identifier.version for identifier in identifiers if identifier.namespace == "arxiv"), None
-    )
-    version = record.raw.get("version", arxiv_version)
-    if version is not None and not isinstance(version, str):
-        raise RecordValidationError("version_invalid")
+    version = _document_version(record, identifiers)
     content = record.raw.get("content_sha256", source_record.content_sha256)
     if not isinstance(content, str) or len(content) != 64:
         content = source_record.content_sha256
@@ -617,6 +699,24 @@ def _upsert_version(
     session.flush()
 
 
+def _document_version(
+    record: _ValidatedRecord, identifiers: Sequence[_ExternalIdentifier]
+) -> str | None:
+    arxiv_version = next(
+        (identifier.version for identifier in identifiers if identifier.namespace == "arxiv"), None
+    )
+    explicit_version = record.raw.get("version")
+    if explicit_version is not None and not isinstance(explicit_version, str):
+        raise RecordValidationError("version_invalid")
+    if arxiv_version is not None or any(
+        identifier.namespace == "arxiv" for identifier in identifiers
+    ):
+        if explicit_version is not None and explicit_version != arxiv_version:
+            raise RecordValidationError("version_mismatch")
+        return arxiv_version
+    return cast(str | None, explicit_version)
+
+
 def _create_quarantine(
     session: Session,
     record: _ValidatedRecord,
@@ -625,26 +725,38 @@ def _create_quarantine(
     artifact_path: Path,
     reason: str,
 ) -> QuarantineRecord:
-    statement = select(QuarantineRecord).where(
-        QuarantineRecord.source == record.source,
-        QuarantineRecord.source_revision == record.source_revision,
-        QuarantineRecord.content_sha256 == checksum,
-        QuarantineRecord.reason == reason,
+    insert_statement = (
+        pg_insert(QuarantineRecord)
+        .values(
+            id=uuid4(),
+            reason=reason,
+            source=record.source,
+            source_revision=record.source_revision,
+            content_sha256=checksum,
+            artifact_path=str(artifact_path),
+            raw_json=payload,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["source", "source_revision", "content_sha256", "reason"]
+        )
+        .returning(QuarantineRecord.id)
     )
-    existing = session.execute(statement).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    quarantine = QuarantineRecord(
-        id=uuid4(),
-        reason=reason,
-        source=record.source,
-        source_revision=record.source_revision,
-        content_sha256=checksum,
-        artifact_path=str(artifact_path),
-        raw_json=payload,
-    )
-    session.add(quarantine)
+    quarantine_id = session.execute(insert_statement).scalar_one_or_none()
     session.flush()
+    if quarantine_id is None:
+        statement = select(QuarantineRecord).where(
+            QuarantineRecord.source == record.source,
+            QuarantineRecord.source_revision == record.source_revision,
+            QuarantineRecord.content_sha256 == checksum,
+            QuarantineRecord.reason == reason,
+        )
+        quarantine = session.execute(statement).scalar_one_or_none()
+        if quarantine is None:
+            raise IdentityResolutionError("quarantine_upsert_failed")
+        return quarantine
+    quarantine = session.get(QuarantineRecord, quarantine_id)
+    if quarantine is None:
+        raise IdentityResolutionError("quarantine_upsert_failed")
     return quarantine
 
 
@@ -657,23 +769,88 @@ def _create_conflict(
     other_paper_id: UUID | None = None,
     details: Mapping[str, object] | None = None,
 ) -> IdentityConflict:
-    conflict = IdentityConflict(
-        id=uuid4(),
-        reason=reason,
-        status="open",
-        paper_id=paper_id,
-        other_paper_id=other_paper_id,
-        source_record_id=source_record.id,
-        details=cast(dict[str, Any], _jsonable(dict(details or {}))),
+    insert_statement = (
+        pg_insert(IdentityConflict)
+        .values(
+            id=uuid4(),
+            reason=reason,
+            status="open",
+            paper_id=paper_id,
+            other_paper_id=other_paper_id,
+            source_record_id=source_record.id,
+            details=cast(dict[str, Any], _jsonable(dict(details or {}))),
+        )
+        .on_conflict_do_nothing(index_elements=["source_record_id", "reason"])
+        .returning(IdentityConflict.id)
     )
-    session.add(conflict)
+    conflict_id = session.execute(insert_statement).scalar_one_or_none()
     session.flush()
+    if conflict_id is None:
+        statement = select(IdentityConflict).where(
+            IdentityConflict.source_record_id == source_record.id,
+            IdentityConflict.reason == reason,
+        )
+        conflict = session.execute(statement).scalar_one_or_none()
+        if conflict is None:
+            raise IdentityResolutionError("identity_conflict_upsert_failed")
+        return conflict
+    conflict = session.get(IdentityConflict, conflict_id)
+    if conflict is None:
+        raise IdentityResolutionError("identity_conflict_upsert_failed")
     return conflict
 
 
 def _discard_candidate(session: Session, paper_id: UUID) -> None:
     session.execute(delete(Paper).where(Paper.id == paper_id))
     session.flush()
+
+
+def _adopt_candidate_aliases(
+    session: Session,
+    candidate_id: UUID,
+    winner_id: UUID,
+    source_record: SourceRecord,
+) -> Paper:
+    """Move aliases from a raced candidate to the database winner, then remove it."""
+
+    candidate_aliases = session.execute(
+        select(PaperIdentifier).where(PaperIdentifier.paper_id == candidate_id)
+    ).scalars().all()
+    for candidate_alias in candidate_aliases:
+        existing = session.execute(
+            select(PaperIdentifier).where(
+                PaperIdentifier.namespace == candidate_alias.namespace,
+                PaperIdentifier.value == candidate_alias.value,
+                PaperIdentifier.paper_id != candidate_id,
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            candidate_alias.paper_id = winner_id
+            continue
+        existing_root = _root_paper(session, existing.paper_id)
+        if existing_root != winner_id:
+            _discard_candidate(session, candidate_id)
+            conflict = _create_conflict(
+                session,
+                "contradictory_strong_ids"
+                if candidate_alias.namespace in {"doi", "arxiv"}
+                else "contradictory_identifiers",
+                source_record,
+                paper_id=winner_id,
+                other_paper_id=existing_root,
+                details={
+                    "namespace": candidate_alias.namespace,
+                    "value": candidate_alias.value,
+                },
+            )
+            raise IdentityConflictError(conflict.reason, conflict.id)
+        session.delete(candidate_alias)
+    session.flush()
+    _discard_candidate(session, candidate_id)
+    winner = session.get(Paper, winner_id)
+    if winner is None:
+        raise IdentityResolutionError("winning_paper_missing")
+    return winner
 
 
 def _update_paper_metadata(session: Session, paper: Paper, record: _ValidatedRecord) -> None:
@@ -697,10 +874,7 @@ def resolve_paper(
     """Resolve one source record to a stable paper UUID without committing the session."""
 
     validated = _validate_record(record)
-    raw_for_storage = dict(validated.raw)
-    if staging_dir is not None:
-        raw_for_storage["_staging_dir"] = str(staging_dir)
-    payload, checksum, artifact_path = _canonical_payload(raw_for_storage)
+    payload, checksum, artifact_path = _canonical_payload(validated.raw, staging_dir=staging_dir)
     try:
         identifiers = _normalize_external_ids(validated.raw)
     except ValueError as exc:
@@ -709,6 +883,7 @@ def resolve_paper(
             session, validated, payload, checksum, artifact_path, reason
         )
         raise QuarantineError(reason, quarantine.id) from exc
+    _document_version(validated, identifiers)
 
     source_record = _upsert_source_record(session, validated, payload, checksum, artifact_path)
     _upsert_provenance(session, validated, source_record)
@@ -785,7 +960,11 @@ def resolve_paper(
             existing_root = _root_paper(session, existing.paper_id)
             if existing_root != paper.id:
                 if created:
-                    _discard_candidate(session, paper.id)
+                    paper = _adopt_candidate_aliases(
+                        session, paper.id, existing_root, source_record
+                    )
+                    created = False
+                    continue
                 conflict = _create_conflict(
                     session,
                     "contradictory_strong_ids"
@@ -798,20 +977,19 @@ def resolve_paper(
                 )
                 raise IdentityConflictError(conflict.reason, conflict.id)
             continue
-        insert_statement = (
-            pg_insert(PaperIdentifier)
-            .values(
-                id=uuid4(),
-                paper_id=paper.id,
-                namespace=identifier.namespace,
-                value=identifier.value,
-                version=None if identifier.namespace == "arxiv" else identifier.version,
-            )
-            .on_conflict_do_nothing(index_elements=["namespace", "value"])
+        insert_statement = pg_insert(PaperIdentifier).values(
+            id=uuid4(),
+            paper_id=paper.id,
+            namespace=identifier.namespace,
+            value=identifier.value,
+            version=None if identifier.namespace == "arxiv" else identifier.version,
+        ).on_conflict_do_nothing(index_elements=["namespace", "value"]).returning(
+            PaperIdentifier.paper_id
         )
         result = cast(CursorResult[Any], session.execute(insert_statement))
+        inserted_paper_id = result.scalar_one_or_none()
         session.flush()
-        if result.rowcount == 0:
+        if inserted_paper_id is None:
             existing = session.execute(
                 select(PaperIdentifier).where(
                     PaperIdentifier.namespace == identifier.namespace,
@@ -821,7 +999,11 @@ def resolve_paper(
             existing_root = _root_paper(session, existing.paper_id)
             if existing_root != paper.id:
                 if created:
-                    _discard_candidate(session, paper.id)
+                    paper = _adopt_candidate_aliases(
+                        session, paper.id, existing_root, source_record
+                    )
+                    created = False
+                    continue
                 conflict = _create_conflict(
                     session,
                     "contradictory_strong_ids"
@@ -859,6 +1041,21 @@ def _merge_papers(
         raise ValueError("losing_paper_already_redirected")
     if _root_paper(session, surviving.id) == _root_paper(session, losing.id):
         raise ValueError("merge_would_create_cycle")
+
+    survivor_versions = session.execute(
+        select(PaperVersion).where(PaperVersion.paper_id == surviving.id)
+    ).scalars().all()
+    losing_versions = session.execute(
+        select(PaperVersion).where(PaperVersion.paper_id == losing.id)
+    ).scalars().all()
+    survivor_version_keys = {
+        (item.source, item.source_revision, item.content_sha256, item.version)
+        for item in survivor_versions
+    }
+    for item in losing_versions:
+        version_key = (item.source, item.source_revision, item.content_sha256, item.version)
+        if version_key in survivor_version_keys:
+            raise MergeConflictError("duplicate_paper_version")
 
     identifiers = session.execute(
         select(PaperIdentifier).where(PaperIdentifier.paper_id == losing.id)

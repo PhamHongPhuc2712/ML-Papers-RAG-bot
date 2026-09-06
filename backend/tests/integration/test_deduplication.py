@@ -13,10 +13,13 @@ from uuid import UUID
 import pytest
 from sqlalchemy import text
 
+import copilot.corpus.dedupe as dedupe_module
 from copilot.cli import load_fixtures
 from copilot.corpus.dedupe import (
     IdentityConflictError,
+    MergeConflictError,
     QuarantineError,
+    RecordValidationError,
     merge_papers,
     resolve_paper,
 )
@@ -24,6 +27,7 @@ from copilot.db.models import (
     FieldProvenance,
     IdentityConflict,
     Paper,
+    PaperAuthor,
     PaperIdentifier,
     PaperRedirect,
     PaperVersion,
@@ -92,10 +96,9 @@ def _record(
 
 def _resolve(engine, record: dict[str, object], staging_dir: Path) -> UUID:
     record = dict(record)
-    record["_staging_dir"] = str(staging_dir)
     factory = session_factory(engine)
     with factory() as session:
-        paper_id = resolve_paper(record, session)
+        paper_id = resolve_paper(record, session, staging_dir=staging_dir)
         session.commit()
         return paper_id
 
@@ -146,12 +149,11 @@ def test_invalid_doi_is_quarantined_when_caller_commits_review(
     identity_engine, tmp_path: Path
 ) -> None:
     record = _record(doi="not a doi")
-    record["_staging_dir"] = str(tmp_path)
     factory = session_factory(identity_engine)
     with factory() as session:
         with session.begin():
             with pytest.raises(QuarantineError, match="invalid_doi"):
-                resolve_paper(record, session)
+                resolve_paper(record, session, staging_dir=tmp_path)
 
     factory = session_factory(identity_engine)
     with factory() as session:
@@ -215,12 +217,11 @@ def test_contradictory_strong_aliases_create_review_conflict(
         tmp_path,
     )
     record = _record(doi="10.5555/one", arxiv="2401.01234v1")
-    record["_staging_dir"] = str(tmp_path)
 
     factory = session_factory(identity_engine)
     with factory() as session:
         with pytest.raises(IdentityConflictError, match="contradictory_strong_ids"):
-            resolve_paper(record, session)
+            resolve_paper(record, session, staging_dir=tmp_path)
         session.commit()
 
     assert doi_paper != arxiv_paper
@@ -247,12 +248,11 @@ def test_strong_id_collision_with_incompatible_metadata_creates_conflict(
         authors=["Alan Turing"],
         year=2025,
     )
-    record["_staging_dir"] = str(tmp_path)
 
     factory = session_factory(identity_engine)
     with factory() as session:
         with pytest.raises(IdentityConflictError, match="incompatible_metadata"):
-            resolve_paper(record, session)
+            resolve_paper(record, session, staging_dir=tmp_path)
         session.commit()
 
     factory = session_factory(identity_engine)
@@ -321,13 +321,121 @@ def test_compatible_title_year_and_authors_merge_without_strong_id(
     assert first == second
 
 
-def test_concurrent_doi_resolution_converges_without_orphan_papers(
+def test_disjoint_non_doi_arxiv_namespace_does_not_bypass_year_check(
     identity_engine, tmp_path: Path
 ) -> None:
+    first = _resolve(
+        identity_engine,
+        _record(title="Same Title", year=2024, doi="10.5555/year-check"),
+        tmp_path,
+    )
+    incoming = _record(title="Same Title", year=2023)
+    incoming["external_ids"] = {"pmid": "123456"}
+    second = _resolve(identity_engine, incoming, tmp_path)
+
+    assert first != second
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        assert session.query(Paper).count() == 2
+
+
+def test_replaying_conflict_is_idempotent(identity_engine, tmp_path: Path) -> None:
+    _resolve(identity_engine, _record(doi="10.5555/conflict-replay"), tmp_path)
+    record = _record(
+        title="A Different Paper",
+        doi="10.5555/conflict-replay",
+        authors=["Alan Turing"],
+        year=2025,
+    )
+    factory = session_factory(identity_engine)
+    for _ in range(2):
+        with factory() as session:
+            with session.begin():
+                with pytest.raises(IdentityConflictError, match="incompatible_metadata"):
+                    resolve_paper(record, session, staging_dir=tmp_path)
+
+    with factory() as session:
+        assert session.query(IdentityConflict).count() == 1
+
+
+def test_arxiv_identifier_version_cannot_be_overridden(
+    identity_engine, tmp_path: Path
+) -> None:
+    record = _record(arxiv="2401.01234v1")
+    record["version"] = "v2"
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        with pytest.raises(RecordValidationError, match="version_mismatch"):
+            resolve_paper(record, session, staging_dir=tmp_path)
+        session.rollback()
+
+    with factory() as session:
+        assert session.query(Paper).count() == 0
+
+
+def test_existing_artifact_bytes_are_verified(identity_engine, tmp_path: Path) -> None:
+    record = _record(doi="10.5555/artifact-integrity")
+    _resolve(identity_engine, record, tmp_path)
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        source_record = session.query(SourceRecord).one()
+        artifact = Path(source_record.artifact_path)
+    artifact.write_text("tampered", encoding="utf-8")
+
+    with factory() as session:
+        with pytest.raises(RecordValidationError, match="artifact_checksum_mismatch"):
+            resolve_paper(record, session, staging_dir=tmp_path)
+        session.rollback()
+
+
+def test_record_staging_path_is_ignored_in_favor_of_explicit_configuration(
+    identity_engine, tmp_path: Path
+) -> None:
+    record = _record(doi="10.5555/trusted-staging")
+    record["staging_dir"] = str(tmp_path / "untrusted")
+    trusted = tmp_path / "trusted"
+    _resolve(identity_engine, record, trusted)
+
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        source_record = session.query(SourceRecord).one()
+        assert Path(source_record.artifact_path).parent == trusted
+    assert not (tmp_path / "untrusted").exists()
+
+
+def test_symlinked_staging_directory_is_rejected(
+    identity_engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = _record(doi="10.5555/symlink-staging")
+    original_is_symlink = Path.is_symlink
+
+    def pretend_symlink(path: Path) -> bool:
+        if path == tmp_path:
+            return True
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", pretend_symlink)
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        with pytest.raises(RecordValidationError, match="staging_dir_symlink"):
+            resolve_paper(record, session, staging_dir=tmp_path)
+        session.rollback()
+
+
+def test_concurrent_doi_resolution_converges_without_orphan_papers(
+    identity_engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     barrier = threading.Barrier(2)
+    original_identifier_rows = dedupe_module._identifier_rows
+
+    def synchronized_identifier_rows(session, identifiers):
+        rows = original_identifier_rows(session, identifiers)
+        barrier.wait(timeout=10)
+        return rows
+
+    monkeypatch.setattr(dedupe_module, "_identifier_rows", synchronized_identifier_rows)
 
     def worker(index: int) -> UUID:
-        barrier.wait(timeout=10)
         return _resolve(
             identity_engine,
             _record(doi="10.5555/concurrent", source=f"provider-{index}"),
@@ -342,6 +450,8 @@ def test_concurrent_doi_resolution_converges_without_orphan_papers(
     with factory() as session:
         assert session.query(Paper).count() == 1
         assert session.query(PaperIdentifier).count() == 1
+        assert session.query(IdentityConflict).count() == 0
+        assert {item.paper_id for item in session.query(SourceRecord).all()} == {results[0]}
 
 
 def test_concurrent_replay_of_one_source_record_is_idempotent(
@@ -364,6 +474,28 @@ def test_concurrent_replay_of_one_source_record_is_idempotent(
         assert session.query(SourceRecord).count() == 1
 
 
+def test_concurrent_invalid_identifier_quarantine_is_idempotent(
+    identity_engine, tmp_path: Path
+) -> None:
+    barrier = threading.Barrier(4)
+    record = _record(doi="invalid doi")
+
+    def worker(_index: int) -> None:
+        barrier.wait(timeout=10)
+        factory = session_factory(identity_engine)
+        with factory() as session:
+            with session.begin():
+                with pytest.raises(QuarantineError, match="invalid_doi"):
+                    resolve_paper(record, session, staging_dir=tmp_path)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(worker, range(4)))
+
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        assert session.query(QuarantineRecord).count() == 1
+
+
 def test_manual_merge_preserves_versions_and_records_redirect(
     identity_engine, tmp_path: Path
 ) -> None:
@@ -375,6 +507,9 @@ def test_manual_merge_preserves_versions_and_records_redirect(
     )
     factory = session_factory(identity_engine)
     with factory() as session:
+        before_sources = session.query(SourceRecord).count()
+        before_provenance = session.query(FieldProvenance).count()
+        before_authors = session.query(PaperAuthor).count()
         merge_papers(survivor, losing, session)
         session.commit()
 
@@ -386,6 +521,60 @@ def test_manual_merge_preserves_versions_and_records_redirect(
         assert session.get(Paper, losing).merged_into == survivor
         assert session.query(PaperVersion).filter_by(paper_id=survivor).count() == 2
         assert session.query(PaperIdentifier).filter_by(paper_id=survivor).count() == 2
+        assert session.query(SourceRecord).count() == before_sources
+        assert session.query(FieldProvenance).count() == before_provenance
+        assert session.query(PaperAuthor).count() <= before_authors
+        assert session.query(SourceRecord).filter_by(paper_id=survivor).count() == before_sources
+        assert (
+            session.query(FieldProvenance).filter_by(paper_id=survivor).count()
+            == before_provenance
+        )
+        assert session.query(PaperAuthor).filter_by(paper_id=survivor).count() > 0
+
+    for merge_args, expected in (
+        ((survivor, survivor), "cannot_merge_paper_with_itself"),
+        ((UUID(int=0), survivor), "paper_not_found"),
+        ((losing, survivor), "surviving_paper_already_redirected"),
+    ):
+        with factory() as session:
+            with pytest.raises(ValueError, match=expected):
+                merge_papers(*merge_args, session)
+            session.rollback()
+
+
+def test_manual_merge_rejects_duplicate_nullable_versions(
+    identity_engine, tmp_path: Path
+) -> None:
+    survivor = _resolve(identity_engine, _record(doi="10.5555/version-survivor"), tmp_path)
+    losing = _resolve(
+        identity_engine,
+        _record(
+            title="A Different Versioned Work",
+            doi="10.5555/version-loser",
+            source="proceedings",
+        ),
+        tmp_path,
+    )
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        duplicate = PaperVersion(
+            id=UUID(int=1),
+            paper_id=losing,
+            source="openreview",
+            source_url="https://papers.example.test/paper.pdf",
+            source_revision="revision-1",
+            content_sha256=session.query(PaperVersion).filter_by(paper_id=survivor).one().content_sha256,
+            version=None,
+        )
+        session.add(duplicate)
+        session.flush()
+        with pytest.raises(MergeConflictError, match="duplicate_paper_version"):
+            merge_papers(survivor, losing, session)
+        session.rollback()
+
+    with factory() as session:
+        assert session.get(Paper, survivor) is not None
+        assert session.get(Paper, losing) is not None
 
 
 def test_raw_artifact_checksum_and_field_provenance_are_stable(
@@ -419,11 +608,10 @@ def test_raw_artifact_checksum_and_field_provenance_are_stable(
 def test_malformed_required_record_is_rejected(identity_engine, tmp_path: Path) -> None:
     record = _record()
     record.pop("title")
-    record["_staging_dir"] = str(tmp_path)
     factory = session_factory(identity_engine)
     with factory() as session:
         with pytest.raises(ValueError, match="title_required"):
-            resolve_paper(record, session)
+            resolve_paper(record, session, staging_dir=tmp_path)
 
 
 def test_fixture_loader_replay_is_idempotent(identity_engine, tmp_path: Path) -> None:

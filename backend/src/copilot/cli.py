@@ -37,10 +37,9 @@ def load_fixtures(
                         raise ValueError(f"fixture_json_invalid:{line_number}") from exc
                     if not isinstance(decoded, dict):
                         raise ValueError(f"fixture_record_invalid:{line_number}")
-                    decoded["_staging_dir"] = str(staging_dir)
                     with session.begin():
                         try:
-                            resolve_paper(decoded, session)
+                            resolve_paper(decoded, session, staging_dir=staging_dir)
                         except QuarantineError:
                             counts["quarantined"] += 1
                         except IdentityConflictError:

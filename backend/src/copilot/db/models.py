@@ -303,6 +303,13 @@ class IdentityConflict(Base):
     """Durable review record for contradictory IDs or incompatible metadata."""
 
     __tablename__ = "identity_conflicts"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_record_id",
+            "reason",
+            name="uq_identity_conflicts_source_reason",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=_uuid)
     reason: Mapped[str] = mapped_column(String(64), nullable=False)

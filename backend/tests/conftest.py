@@ -23,17 +23,20 @@ from copilot.db.session import (
 def test_settings() -> Settings:
     """Load the explicitly configured test services; never silently skip them."""
 
-    database_url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
-    qdrant_url = os.environ.get("TEST_QDRANT_URL") or os.environ.get("QDRANT_URL")
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    qdrant_url = os.environ.get("TEST_QDRANT_URL")
+    collection_prefix = os.environ.get("TEST_QDRANT_COLLECTION_PREFIX")
     if not database_url:
-        pytest.fail("TEST_DATABASE_URL or DATABASE_URL is required for integration tests")
+        pytest.fail("TEST_DATABASE_URL is required for integration tests")
     if not qdrant_url:
-        pytest.fail("TEST_QDRANT_URL or QDRANT_URL is required for integration tests")
+        pytest.fail("TEST_QDRANT_URL is required for integration tests")
+    if not collection_prefix:
+        pytest.fail("TEST_QDRANT_COLLECTION_PREFIX is required for integration tests")
     return Settings(
         environment="test",
         database_url=database_url,
         qdrant_url=qdrant_url,
-        qdrant_collection_prefix=os.environ.get("TEST_QDRANT_COLLECTION_PREFIX", "test_"),
+        qdrant_collection_prefix=collection_prefix,
         secret_key="test-only-secret",
         model_mode="mock",
     )

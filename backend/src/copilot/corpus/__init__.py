@@ -2,6 +2,7 @@
 
 from .dedupe import (
     IdentityConflictError,
+    MergeConflictError,
     QuarantineError,
     RecordValidationError,
     merge_paper_identities,
@@ -12,6 +13,7 @@ from .normalize import normalize_arxiv, normalize_doi, normalize_title
 
 __all__ = [
     "IdentityConflictError",
+    "MergeConflictError",
     "QuarantineError",
     "RecordValidationError",
     "merge_paper_identities",

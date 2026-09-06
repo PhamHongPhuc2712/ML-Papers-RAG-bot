@@ -1,6 +1,6 @@
 # ML Research Copilot — Progress Tracker
 
-Last updated: 2026-09-05.
+Last updated: 2026-09-06.
 
 ## Current state
 
@@ -93,6 +93,7 @@ Record one dated row after each execution session.
 | 2026-09-05 | P1.1/P1.2 execution setup | Python 3.12.5 venv isolation verified; both GPT-5.6 Luna/max workers stopped with workspace out-of-credits error | codex/p1-foundation; backend/.venv; portable uv in ignored runtime directory | Resume Luna workers after credits are available; no application tests have run |
 | 2026-09-05 | P1.1 completed | 9 focused integration and 12 full tests passed against PostgreSQL 17.11/Qdrant 1.19.1; 5 CI unit tests passed without service variables; Ruff, mypy, migration down/up and diff check passed | `e7859f0`; [foundation evidence](../../reports/m1-foundation.md) | Review P1.1 branch or begin P1.2 |
 | 2026-09-06 | P1.2 completed | 26 focused identity tests and 38 full backend tests passed against PostgreSQL 17.11/Qdrant 1.19.1; 13 offline CI tests, Ruff, mypy, migration upgrade/downgrade/upgrade and fixture replay passed | [identity evidence](../../reports/m1-identity.md); task commit recorded in the report | Review P1.2 branch or begin P1.3 |
+| 2026-09-06 | P1.2 review fixes | 34 focused identity tests and 46 full backend tests passed against PostgreSQL 17.11/Qdrant 1.19.1; 13 offline CI tests, Ruff, mypy, migration replay and fixture replay passed with explicit `TEST_*` services | [identity evidence](../../reports/m1-identity.md); [task-2 report](../../.superpowers/sdd/2026-09-05-01-corpus-foundation/task-2-report.md); task commit recorded in the report | Review P1.2 fix commit or begin P1.3 |
 
 ## Definition of a completed task
 
