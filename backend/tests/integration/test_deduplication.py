@@ -35,6 +35,7 @@ from copilot.db.models import (
     PaperVersion,
     QuarantineRecord,
     SourceRecord,
+    Venue,
 )
 from copilot.db.session import assert_safe_test_database, session_factory
 
@@ -390,6 +391,35 @@ def test_existing_artifact_bytes_are_verified(identity_engine, tmp_path: Path) -
         session.rollback()
 
 
+@pytest.mark.parametrize("old_state", ["missing", "tampered"])
+def test_replay_repoints_to_verified_artifact_in_new_staging_directory(
+    identity_engine, tmp_path: Path, old_state: str
+) -> None:
+    record = _record(doi="10.5555/artifact-repoint")
+    old_staging = tmp_path / "old-staging"
+    paper_id = _resolve(identity_engine, record, old_staging)
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        original_path = Path(session.query(SourceRecord).one().artifact_path)
+
+    if old_state == "missing":
+        original_path.unlink()
+    else:
+        original_path.write_bytes(b"tampered old artifact")
+
+    new_staging = tmp_path / "new-staging"
+    assert _resolve(identity_engine, record, new_staging) == paper_id
+    with factory() as session:
+        source_record = session.query(SourceRecord).one()
+        repaired_path = Path(source_record.artifact_path)
+        payload = repaired_path.read_bytes()
+        assert repaired_path.parent == new_staging
+        assert repaired_path != original_path
+        assert repaired_path.exists()
+        assert not repaired_path.is_symlink()
+        assert hashlib.sha256(payload).hexdigest() == source_record.content_sha256
+
+
 def test_record_staging_path_is_ignored_in_favor_of_explicit_configuration(
     identity_engine, tmp_path: Path
 ) -> None:
@@ -455,6 +485,134 @@ def test_concurrent_doi_resolution_converges_without_orphan_papers(
         assert session.query(IdentityConflict).count() == 0
         assert {item.paper_id for item in session.query(SourceRecord).all()} == {results[0]}
         assert {item.paper_id for item in session.query(FieldProvenance).all()} == {results[0]}
+
+
+def test_concurrent_shared_venue_upsert_is_singleton(identity_engine, tmp_path: Path, monkeypatch):
+    barrier = threading.Barrier(2)
+    original_upsert_venue = dedupe_module._upsert_venue
+
+    def synchronized_upsert_venue(session, name, track):
+        barrier.wait(timeout=10)
+        return original_upsert_venue(session, name, track)
+
+    monkeypatch.setattr(dedupe_module, "_upsert_venue", synchronized_upsert_venue)
+    records = [
+        _record(
+            title="Concurrent Venue Work A",
+            doi="10.5555/shared-venue-a",
+            authors=["Ada Lovelace"],
+            source="venue-provider-a",
+        ),
+        _record(
+            title="Concurrent Venue Work B",
+            doi="10.5555/shared-venue-b",
+            authors=["Grace Hopper"],
+            source="venue-provider-b",
+        ),
+    ]
+    records[0]["venue"] = {"name": " NeurIPS ", "track": " main "}
+    records[1]["venue"] = {"name": "NeurIPS", "track": "main"}
+
+    def worker(index: int) -> UUID:
+        return _resolve(identity_engine, records[index], tmp_path / str(index))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(worker, [0, 1]))
+
+    assert len(set(results)) == 2
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        venues = session.query(Venue).all()
+        assert len(venues) == 1
+        papers = session.query(Paper).all()
+        assert len(papers) == 2
+        assert {paper.venue_id for paper in papers} == {venues[0].id}
+
+
+def test_concurrent_shared_author_upsert_is_singleton(identity_engine, tmp_path: Path, monkeypatch):
+    barrier = threading.Barrier(2)
+    original_upsert_author = dedupe_module._upsert_author
+
+    def synchronized_upsert_author(session, name):
+        barrier.wait(timeout=10)
+        return original_upsert_author(session, name)
+
+    monkeypatch.setattr(dedupe_module, "_upsert_author", synchronized_upsert_author)
+    records = [
+        _record(
+            title="Concurrent Author Work A",
+            doi="10.5555/shared-author-a",
+            authors=["Ada Lovelace"],
+            source="author-provider-a",
+        ),
+        _record(
+            title="Concurrent Author Work B",
+            doi="10.5555/shared-author-b",
+            authors=[" ada lovelace "],
+            source="author-provider-b",
+        ),
+    ]
+    for record in records:
+        record["venue"] = None
+
+    def worker(index: int) -> UUID:
+        return _resolve(identity_engine, records[index], tmp_path / str(index))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(worker, [0, 1]))
+
+    assert len(set(results)) == 2
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        authors = session.query(Author).filter_by(normalized_name="ada lovelace").all()
+        assert len(authors) == 1
+        links = session.query(PaperAuthor).filter(PaperAuthor.paper_id.in_(results)).all()
+        assert {link.paper_id for link in links} == set(results)
+        assert {link.author_id for link in links} == {authors[0].id}
+
+
+@pytest.mark.parametrize("version", [None, "v1"])
+def test_concurrent_version_observations_are_idempotent(
+    identity_engine, tmp_path: Path, version: str | None
+) -> None:
+    start_barrier = threading.Barrier(2)
+    content_sha256 = "a" * 64
+    records = []
+    for item in ("a", "b"):
+        record = _record(
+            title="Concurrent Version Observation",
+            doi="10.5555/concurrent-version",
+            source="shared-version-provider",
+            source_revision="same-revision",
+        )
+        record["source_item_id"] = f"item-{item}"
+        record["content_sha256"] = content_sha256
+        record["venue"] = None
+        record["authors"] = []
+        if version is not None:
+            record["version"] = version
+        records.append(record)
+
+    def worker(index: int) -> UUID:
+        start_barrier.wait(timeout=10)
+        return _resolve(identity_engine, records[index], tmp_path / str(index))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(worker, [0, 1]))
+
+    assert results[0] == results[1]
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        query = session.query(PaperVersion).filter_by(
+            source="shared-version-provider",
+            source_revision="same-revision",
+            content_sha256=content_sha256,
+        )
+        if version is None:
+            query = query.filter(PaperVersion.version.is_(None))
+        else:
+            query = query.filter_by(version=version)
+        assert query.count() == 1
 
 
 def test_concurrent_incompatible_doi_resolution_creates_one_conflict(
@@ -688,6 +846,12 @@ def test_manual_merge_rejects_duplicate_versions_within_losing_paper(
     with factory() as session:
         losing_version = session.query(PaperVersion).filter_by(paper_id=losing).one()
         original_losing_version_id = losing_version.id
+        session.execute(
+            text(
+                "ALTER TABLE paper_versions "
+                "DROP CONSTRAINT uq_paper_versions_source_revision_content_version"
+            )
+        )
         duplicate = PaperVersion(
             id=UUID(int=2),
             paper_id=losing,

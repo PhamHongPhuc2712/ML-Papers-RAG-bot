@@ -538,6 +538,9 @@ def _upsert_source_record(
     )
     existing = session.execute(statement).scalar_one_or_none()
     if existing is not None:
+        if existing.artifact_path != str(artifact_path):
+            existing.artifact_path = str(artifact_path)
+            session.flush()
         return existing
     source_item_id = record.raw.get(
         "source_item_id", record.raw.get("source_id", record.raw.get("id"))
@@ -619,23 +622,37 @@ def _upsert_provenance(
 def _upsert_venue(session: Session, name: str | None, track: str) -> UUID | None:
     if not name:
         return None
-    statement = select(Venue).where(Venue.name == name, Venue.track == track)
-    venue = session.execute(statement).scalar_one_or_none()
+    insert_statement = (
+        pg_insert(Venue)
+        .values(id=uuid4(), name=name, track=track)
+        .on_conflict_do_nothing(index_elements=["name", "track"])
+        .returning(Venue.id)
+    )
+    session.execute(insert_statement).scalar_one_or_none()
+    session.flush()
+    venue = session.execute(
+        select(Venue).where(Venue.name == name, Venue.track == track)
+    ).scalar_one_or_none()
     if venue is None:
-        venue = Venue(id=uuid4(), name=name, track=track)
-        session.add(venue)
-        session.flush()
+        raise IdentityResolutionError("venue_upsert_failed")
     return venue.id
 
 
 def _upsert_author(session: Session, name: str) -> Author:
     normalized = normalize_author_name(name)
-    statement = select(Author).where(Author.normalized_name == normalized)
-    author = session.execute(statement).scalar_one_or_none()
+    insert_statement = (
+        pg_insert(Author)
+        .values(id=uuid4(), name=name, normalized_name=normalized)
+        .on_conflict_do_nothing(index_elements=["normalized_name"])
+        .returning(Author.id)
+    )
+    session.execute(insert_statement).scalar_one_or_none()
+    session.flush()
+    author = session.execute(
+        select(Author).where(Author.normalized_name == normalized)
+    ).scalar_one_or_none()
     if author is None:
-        author = Author(id=uuid4(), name=name, normalized_name=normalized)
-        session.add(author)
-        session.flush()
+        raise IdentityResolutionError("author_upsert_failed")
     return author
 
 
@@ -669,15 +686,6 @@ def _upsert_version(
     if not isinstance(content, str) or len(content) != 64:
         content = source_record.content_sha256
     source_url = record.source_url or ""
-    statement = select(PaperVersion).where(
-        PaperVersion.paper_id == paper_id,
-        PaperVersion.source == record.source,
-        PaperVersion.source_revision == record.source_revision,
-        PaperVersion.content_sha256 == content,
-        PaperVersion.version == version if version is not None else PaperVersion.version.is_(None),
-    )
-    if session.execute(statement).scalar_one_or_none() is not None:
-        return
     redistribution = record.raw.get("redistribution", "unknown")
     if redistribution not in {"eligible", "restricted", "unknown"}:
         raise RecordValidationError("redistribution_invalid")
@@ -685,8 +693,9 @@ def _upsert_version(
     parse_status = record.raw.get("parse_status", "pending")
     if not isinstance(parser_version, str) or not isinstance(parse_status, str):
         raise RecordValidationError("version_metadata_invalid")
-    session.add(
-        PaperVersion(
+    insert_statement = (
+        pg_insert(PaperVersion)
+        .values(
             id=uuid4(),
             paper_id=paper_id,
             source=record.source,
@@ -699,8 +708,30 @@ def _upsert_version(
             parser_version=parser_version,
             parse_status=parse_status,
         )
+        .on_conflict_do_nothing(
+            index_elements=[
+                "paper_id",
+                "source",
+                "source_revision",
+                "content_sha256",
+                "version",
+            ]
+        )
+        .returning(PaperVersion.id)
     )
+    version_id = session.execute(insert_statement).scalar_one_or_none()
     session.flush()
+    if version_id is not None:
+        return
+    statement = select(PaperVersion).where(
+        PaperVersion.paper_id == paper_id,
+        PaperVersion.source == record.source,
+        PaperVersion.source_revision == record.source_revision,
+        PaperVersion.content_sha256 == content,
+        PaperVersion.version == version if version is not None else PaperVersion.version.is_(None),
+    )
+    if session.execute(statement).scalar_one_or_none() is None:
+        raise IdentityResolutionError("paper_version_upsert_failed")
 
 
 def _document_version(

@@ -171,6 +171,7 @@ class PaperVersion(Base):
             "content_sha256",
             "version",
             name="uq_paper_versions_source_revision_content_version",
+            postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint(
             "redistribution IN ('eligible', 'restricted', 'unknown')",
