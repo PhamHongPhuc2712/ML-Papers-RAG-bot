@@ -156,3 +156,60 @@ rejection, merge provenance/authorship, and explicit test-service variables.
 
 Current review-fix commit hash is recorded in the ignored task report at
 `.superpowers/sdd/2026-09-05-01-corpus-foundation/task-2-report.md`.
+
+## Round 2 review-fix evidence
+
+The second review pass added PostgreSQL regressions before implementation. The
+initial collection run failed because `MergeValidationError` was not yet
+defined; the first implementation run then produced the intended three red
+deduplication cases (incompatible-race loser binding, an unsupported query
+assertion, and a post-rollback duplicate-version assertion).
+
+The corrected regressions passed:
+
+```text
+uv.exe run --project backend pytest backend/tests/integration/test_deduplication.py -k "concurrent_incompatible_doi_resolution_creates_one_conflict or manual_merge_preserves_versions_and_records_redirect or manual_merge_rejects_duplicate_versions_within_losing_paper" -q
+3 passed, 25 deselected in 1.87s
+```
+
+The compatible-race provenance assertion was rerun with the amendments:
+
+```text
+uv.exe run --project backend pytest backend/tests/integration/test_deduplication.py -k "concurrent_doi_resolution_converges_without_orphan_papers or concurrent_incompatible_doi_resolution_creates_one_conflict or manual_merge_preserves_versions_and_records_redirect or manual_merge_rejects_duplicate_versions_within_losing_paper" -q
+4 passed, 24 deselected in 2.49s
+```
+
+```text
+uv.exe run --project backend pytest backend/tests/integration/test_migrations.py -q
+1 passed in 1.03s
+```
+
+Full validation passed against explicit PostgreSQL/Qdrant test services:
+
+```text
+uv.exe run --project backend pytest backend/tests/unit/test_identity.py backend/tests/integration/test_deduplication.py backend/tests/integration/test_migrations.py -q
+37 passed in 11.74s
+
+uv.exe run --project backend pytest backend/tests -q
+49 passed in 15.08s
+
+uv.exe run --project backend pytest backend/tests -m "not integration" -q
+13 passed, 36 deselected in 0.18s
+
+uv.exe run --project backend ruff check backend
+All checks passed!
+
+uv.exe run --project backend mypy backend/src
+Success: no issues found in 11 source files
+```
+
+Migration down/up/no-op replay passed, the legacy duplicate-conflict
+migration test retained the earliest deterministic row and unrelated conflict,
+and direct fixture replay twice returned `{"conflicts": 0, "loaded": 3,
+"quarantined": 0}` with final counts `(2, 3, 3)`. The fixes check metadata
+before raced candidate deletion, reject duplicate version keys within either
+merge input, preserve source/provenance/authorship during manual merges, and
+reconcile legacy conflict duplicates before adding the database key.
+
+The complete command/output record and final hash are in the ignored task
+report at `.superpowers/sdd/2026-09-05-01-corpus-foundation/task-2-report.md`.

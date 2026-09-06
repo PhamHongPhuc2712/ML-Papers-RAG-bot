@@ -18,12 +18,14 @@ from copilot.cli import load_fixtures
 from copilot.corpus.dedupe import (
     IdentityConflictError,
     MergeConflictError,
+    MergeValidationError,
     QuarantineError,
     RecordValidationError,
     merge_papers,
     resolve_paper,
 )
 from copilot.db.models import (
+    Author,
     FieldProvenance,
     IdentityConflict,
     Paper,
@@ -452,6 +454,74 @@ def test_concurrent_doi_resolution_converges_without_orphan_papers(
         assert session.query(PaperIdentifier).count() == 1
         assert session.query(IdentityConflict).count() == 0
         assert {item.paper_id for item in session.query(SourceRecord).all()} == {results[0]}
+        assert {item.paper_id for item in session.query(FieldProvenance).all()} == {results[0]}
+
+
+def test_concurrent_incompatible_doi_resolution_creates_one_conflict(
+    identity_engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    barrier = threading.Barrier(2)
+    original_identifier_rows = dedupe_module._identifier_rows
+
+    def synchronized_identifier_rows(session, identifiers):
+        rows = original_identifier_rows(session, identifiers)
+        barrier.wait(timeout=10)
+        return rows
+
+    monkeypatch.setattr(dedupe_module, "_identifier_rows", synchronized_identifier_rows)
+    records = [
+        _record(
+            title="Stable Canonical Work",
+            doi="10.5555/incompatible-race",
+            authors=["Ada Lovelace"],
+            year=2024,
+            source="provider-a",
+        ),
+        _record(
+            title="A Completely Different Work",
+            doi="10.5555/incompatible-race",
+            authors=["Marie Curie"],
+            year=2025,
+            source="provider-b",
+        ),
+    ]
+
+    def worker(record: dict[str, object]):
+        factory = session_factory(identity_engine)
+        with factory() as session:
+            try:
+                paper_id = resolve_paper(record, session, staging_dir=tmp_path)
+            except IdentityConflictError as exc:
+                session.commit()
+                return exc
+            session.commit()
+            return paper_id
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(worker, records))
+
+    paper_ids = [result for result in results if isinstance(result, UUID)]
+    conflicts = [result for result in results if isinstance(result, IdentityConflictError)]
+    assert len(paper_ids) == 1
+    assert len(conflicts) == 1
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        papers = session.query(Paper).all()
+        assert len(papers) == 1
+        assert papers[0].id == paper_ids[0]
+        conflict = session.query(IdentityConflict).one()
+        assert conflict.reason == "incompatible_metadata"
+        assert conflict.paper_id == paper_ids[0]
+        assert conflict.other_paper_id is None
+        losing_source = session.get(SourceRecord, conflict.source_record_id)
+        assert losing_source is not None
+        assert losing_source.paper_id is None
+        assert (
+            session.query(FieldProvenance)
+            .filter_by(source_record_id=losing_source.id, paper_id=None)
+            .count()
+            >= 7
+        )
 
 
 def test_concurrent_replay_of_one_source_record_is_idempotent(
@@ -502,14 +572,22 @@ def test_manual_merge_preserves_versions_and_records_redirect(
     survivor = _resolve(identity_engine, _record(doi="10.5555/survivor"), tmp_path)
     losing = _resolve(
         identity_engine,
-        _record(title="A Separate Work", arxiv="2401.01234v1", source="arxiv"),
+        _record(
+            title="A Separate Work",
+            arxiv="2401.01234v1",
+            source="arxiv",
+            authors=["Marie Curie"],
+        ),
         tmp_path,
     )
     factory = session_factory(identity_engine)
     with factory() as session:
-        before_sources = session.query(SourceRecord).count()
-        before_provenance = session.query(FieldProvenance).count()
-        before_authors = session.query(PaperAuthor).count()
+        source_rows = session.query(SourceRecord).all()
+        provenance_rows = session.query(FieldProvenance).all()
+        losing_author_ids = {
+            link.author_id
+            for link in session.query(PaperAuthor).filter_by(paper_id=losing).all()
+        }
         merge_papers(survivor, losing, session)
         session.commit()
 
@@ -521,23 +599,39 @@ def test_manual_merge_preserves_versions_and_records_redirect(
         assert session.get(Paper, losing).merged_into == survivor
         assert session.query(PaperVersion).filter_by(paper_id=survivor).count() == 2
         assert session.query(PaperIdentifier).filter_by(paper_id=survivor).count() == 2
-        assert session.query(SourceRecord).count() == before_sources
-        assert session.query(FieldProvenance).count() == before_provenance
-        assert session.query(PaperAuthor).count() <= before_authors
-        assert session.query(SourceRecord).filter_by(paper_id=survivor).count() == before_sources
+        assert {row.id for row in session.query(SourceRecord).all()} == {
+            row.id for row in source_rows
+        }
+        assert {row.id for row in session.query(FieldProvenance).all()} == {
+            row.id for row in provenance_rows
+        }
+        assert all(row.paper_id == survivor for row in session.query(SourceRecord).all())
+        assert all(row.paper_id == survivor for row in session.query(FieldProvenance).all())
         assert (
-            session.query(FieldProvenance).filter_by(paper_id=survivor).count()
-            == before_provenance
+            session.query(PaperAuthor)
+            .filter(PaperAuthor.paper_id == survivor)
+            .filter(PaperAuthor.author_id.in_(losing_author_ids))
+            .count()
+            == len(losing_author_ids)
         )
-        assert session.query(PaperAuthor).filter_by(paper_id=survivor).count() > 0
+        author_names = {
+            row[0]
+            for row in session.query(Author.normalized_name)
+            .join(PaperAuthor, PaperAuthor.author_id == Author.id)
+            .filter(PaperAuthor.paper_id == survivor)
+            .all()
+        }
+        assert "marie curie" in author_names
 
     for merge_args, expected in (
         ((survivor, survivor), "cannot_merge_paper_with_itself"),
-        ((UUID(int=0), survivor), "paper_not_found"),
+        ((survivor, losing), "losing_paper_already_redirected"),
         ((losing, survivor), "surviving_paper_already_redirected"),
+        ((UUID(int=0), survivor), "paper_not_found"),
+        ((survivor, UUID(int=0)), "paper_not_found"),
     ):
         with factory() as session:
-            with pytest.raises(ValueError, match=expected):
+            with pytest.raises(MergeValidationError, match=expected):
                 merge_papers(*merge_args, session)
             session.rollback()
 
@@ -575,6 +669,44 @@ def test_manual_merge_rejects_duplicate_nullable_versions(
     with factory() as session:
         assert session.get(Paper, survivor) is not None
         assert session.get(Paper, losing) is not None
+
+
+def test_manual_merge_rejects_duplicate_versions_within_losing_paper(
+    identity_engine, tmp_path: Path
+) -> None:
+    survivor = _resolve(identity_engine, _record(doi="10.5555/duplicate-survivor"), tmp_path)
+    losing = _resolve(
+        identity_engine,
+        _record(
+            title="An Independent Duplicate Work",
+            doi="10.5555/duplicate-loser",
+            source="proceedings",
+        ),
+        tmp_path,
+    )
+    factory = session_factory(identity_engine)
+    with factory() as session:
+        losing_version = session.query(PaperVersion).filter_by(paper_id=losing).one()
+        original_losing_version_id = losing_version.id
+        duplicate = PaperVersion(
+            id=UUID(int=2),
+            paper_id=losing,
+            source=losing_version.source,
+            source_url=losing_version.source_url,
+            source_revision=losing_version.source_revision,
+            content_sha256=losing_version.content_sha256,
+            version=None,
+        )
+        session.add(duplicate)
+        session.flush()
+        with pytest.raises(MergeConflictError, match="duplicate_paper_version"):
+            merge_papers(survivor, losing, session)
+        session.rollback()
+
+    with factory() as session:
+        assert session.get(PaperVersion, original_losing_version_id) is not None
+        assert session.query(PaperVersion).filter_by(paper_id=losing).count() == 1
+        assert session.query(PaperRedirect).count() == 0
 
 
 def test_raw_artifact_checksum_and_field_provenance_are_stable(

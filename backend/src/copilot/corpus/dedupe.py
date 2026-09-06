@@ -76,6 +76,10 @@ class MergeConflictError(IdentityConflictError):
     """Raised when a manual merge cannot preserve unique identity history."""
 
 
+class MergeValidationError(IdentityResolutionError):
+    """Raised when a manual merge request is invalid or would create a cycle."""
+
+
 @dataclass(frozen=True)
 class _ValidatedRecord:
     raw: dict[str, Any]
@@ -810,8 +814,26 @@ def _adopt_candidate_aliases(
     candidate_id: UUID,
     winner_id: UUID,
     source_record: SourceRecord,
+    record: _ValidatedRecord,
 ) -> Paper:
     """Move aliases from a raced candidate to the database winner, then remove it."""
+
+    winner = session.get(Paper, winner_id)
+    if winner is None:
+        raise IdentityResolutionError("winning_paper_missing")
+    if not _metadata_compatible(winner, record, session):
+        _discard_candidate(session, candidate_id)
+        conflict = _create_conflict(
+            session,
+            "incompatible_metadata",
+            source_record,
+            paper_id=winner_id,
+            details={
+                "title": record.title,
+                "publication_year": record.publication_year,
+            },
+        )
+        raise IdentityConflictError(conflict.reason, conflict.id)
 
     candidate_aliases = session.execute(
         select(PaperIdentifier).where(PaperIdentifier.paper_id == candidate_id)
@@ -961,7 +983,7 @@ def resolve_paper(
             if existing_root != paper.id:
                 if created:
                     paper = _adopt_candidate_aliases(
-                        session, paper.id, existing_root, source_record
+                        session, paper.id, existing_root, source_record, validated
                     )
                     created = False
                     continue
@@ -1000,7 +1022,7 @@ def resolve_paper(
             if existing_root != paper.id:
                 if created:
                     paper = _adopt_candidate_aliases(
-                        session, paper.id, existing_root, source_record
+                        session, paper.id, existing_root, source_record, validated
                     )
                     created = False
                     continue
@@ -1030,17 +1052,17 @@ def _merge_papers(
     surviving_paper_id: UUID, losing_paper_id: UUID, session: Session, reason: str | None = None
 ) -> UUID:
     if surviving_paper_id == losing_paper_id:
-        raise ValueError("cannot_merge_paper_with_itself")
+        raise MergeValidationError("cannot_merge_paper_with_itself")
     surviving = session.get(Paper, surviving_paper_id)
     losing = session.get(Paper, losing_paper_id)
     if surviving is None or losing is None:
-        raise ValueError("paper_not_found")
+        raise MergeValidationError("paper_not_found")
     if surviving.merged_into is not None:
-        raise ValueError("surviving_paper_already_redirected")
+        raise MergeValidationError("surviving_paper_already_redirected")
     if losing.merged_into is not None:
-        raise ValueError("losing_paper_already_redirected")
+        raise MergeValidationError("losing_paper_already_redirected")
     if _root_paper(session, surviving.id) == _root_paper(session, losing.id):
-        raise ValueError("merge_would_create_cycle")
+        raise MergeValidationError("merge_would_create_cycle")
 
     survivor_versions = session.execute(
         select(PaperVersion).where(PaperVersion.paper_id == surviving.id)
@@ -1052,10 +1074,14 @@ def _merge_papers(
         (item.source, item.source_revision, item.content_sha256, item.version)
         for item in survivor_versions
     }
+    if len(survivor_version_keys) != len(survivor_versions):
+        raise MergeConflictError("duplicate_paper_version")
+    losing_seen: set[tuple[str, str, str, str | None]] = set()
     for item in losing_versions:
         version_key = (item.source, item.source_revision, item.content_sha256, item.version)
-        if version_key in survivor_version_keys:
+        if version_key in survivor_version_keys or version_key in losing_seen:
             raise MergeConflictError("duplicate_paper_version")
+        losing_seen.add(version_key)
 
     identifiers = session.execute(
         select(PaperIdentifier).where(PaperIdentifier.paper_id == losing.id)
