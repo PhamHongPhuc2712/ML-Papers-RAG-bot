@@ -213,3 +213,50 @@ reconcile legacy conflict duplicates before adding the database key.
 
 The complete command/output record and final hash are in the ignored task
 report at `.superpowers/sdd/2026-09-05-01-corpus-foundation/task-2-report.md`.
+
+## Final review-fix evidence
+
+The final review wave added PostgreSQL regressions for concurrent shared venue
+and author upserts, NULL and non-NULL document-version observations, legacy
+duplicate-version migration reconciliation, and replay into a new trusted
+staging directory after a missing or tampered old artifact. The committed-tree
+regression selector passed:
+
+```text
+uv.exe run --project backend pytest backend/tests/integration/test_deduplication.py backend/tests/integration/test_migrations.py -k "concurrent_shared_venue_upsert_is_singleton or concurrent_shared_author_upsert_is_singleton or concurrent_version_observations_are_idempotent or replay_repoints_to_verified_artifact_in_new_staging_directory or version_constraint_migration_reconciles_legacy_null_duplicates" -q
+7 passed, 29 deselected in 3.66s
+```
+
+Final validation passed with explicit PostgreSQL/Qdrant test services:
+
+```text
+uv.exe run --project backend pytest backend/tests/unit/test_identity.py backend/tests/integration/test_deduplication.py backend/tests/integration/test_migrations.py -q
+44 passed in 15.59s
+
+uv.exe run --project backend pytest backend/tests -q
+56 passed in 17.89s
+
+uv.exe run --project backend pytest backend/tests -m "not integration" -q
+13 passed, 43 deselected in 0.19s
+
+uv.exe run --project backend ruff check backend
+All checks passed!
+
+uv.exe run --project backend mypy backend/src
+Success: no issues found in 11 source files
+```
+
+Alembic completed `upgrade head`, `downgrade 0000_foundation`, `upgrade
+head`, and a second no-op `upgrade head`, including migration
+`0002_identity_hardening -> 0003_version_hardening`. Fixture replay twice
+returned `{"conflicts": 0, "loaded": 3, "quarantined": 0}` and final counts
+were `(2, 3, 3, 0)` for papers, source records, paper versions, and conflicts.
+The first full-suite attempt encountered stale disposable health collections;
+after deleting those exact collections, the unchanged rerun passed all 56
+tests.
+
+The final code-fix commit is `0c01520606bea02b3b4706d9515be0ef45efa4a8`
+(`fix: harden corpus shared upserts and version replay`). It contains the
+conflict-safe shared upserts, PostgreSQL `NULLS NOT DISTINCT` version
+constraint and reconciliation migration, verified artifact repointing, and
+their integration regressions.
