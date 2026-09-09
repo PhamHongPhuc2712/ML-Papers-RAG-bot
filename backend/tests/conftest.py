@@ -28,7 +28,7 @@ def _required(name: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def test_settings() -> Settings:
+def test_settings() -> Iterator[Settings]:
     """Load the explicitly configured test services; never silently skip them."""
 
     database_url = _required("TEST_DATABASE_URL")
@@ -38,16 +38,24 @@ def test_settings() -> Settings:
     # test profile bind-mounts, so destructive cleanup can never reach developer data.
     test_root = Path(_required("DATA_DIR").rstrip("\\/")) / "test"
     test_root.mkdir(parents=True, exist_ok=True)
-    return Settings(
-        _env_file=None,
-        environment="test",
-        data_dir=test_root,
-        database_url=database_url,
-        qdrant_url=qdrant_url,
-        qdrant_collection_prefix=collection_prefix,
-        secret_key="test-only-secret",
-        model_mode="mock",
-    )
+    # pydantic-settings lets an environment alias win over a same-named init keyword,
+    # so DATA_DIR itself must name the test subdirectory for the whole session.
+    patch = pytest.MonkeyPatch()
+    patch.setenv("DATA_DIR", str(test_root))
+    patch.delenv("COPILOT_DATA_DIR", raising=False)
+    try:
+        yield Settings(
+            _env_file=None,
+            environment="test",
+            data_dir=test_root,
+            database_url=database_url,
+            qdrant_url=qdrant_url,
+            qdrant_collection_prefix=collection_prefix,
+            secret_key="test-only-secret",
+            model_mode="mock",
+        )
+    finally:
+        patch.undo()
 
 
 @pytest.fixture(scope="session")
