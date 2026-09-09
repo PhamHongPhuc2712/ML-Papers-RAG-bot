@@ -53,3 +53,12 @@ def test_test_environment_requires_the_test_subdirectory(tmp_path):
     with pytest.raises(SettingsError, match="test_subdirectory"):
         Settings(_env_file=None, data_dir=tmp_path, **common)
     assert Settings(_env_file=None, data_dir=tmp_path / "test", **common).data_dir.name == "test"
+
+
+def test_comma_separated_cors_origins_parse_from_dotenv(tmp_path):
+    env_file = tmp_path / ".env"
+    lines = [f"DATA_DIR={tmp_path}", "CORS_ORIGINS=http://localhost:3000, https://app.example"]
+    env_file.write_text(os.linesep.join(lines) + os.linesep, encoding="utf-8")
+    settings = Settings(_env_file=env_file)
+    assert settings.cors_origins == ["http://localhost:3000", "https://app.example"]
+    assert settings.data_dir == tmp_path

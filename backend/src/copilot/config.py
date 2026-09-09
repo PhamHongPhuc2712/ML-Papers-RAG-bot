@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import AliasChoices, Field, ValidationError, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 SettingsError = ValidationError
 
@@ -71,7 +71,9 @@ class Settings(BaseSettings):
         le=30.0,
         validation_alias=AliasChoices("COPILOT_READY_TIMEOUT_SECONDS", "READY_TIMEOUT_SECONDS"),
     )
-    cors_origins: list[str] = Field(
+    # NoDecode: pydantic-settings would otherwise JSON-decode the raw env/dotenv
+    # string before parse_cors_origins can split the comma-separated form.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         validation_alias=AliasChoices("COPILOT_CORS_ORIGINS", "CORS_ORIGINS"),
     )
