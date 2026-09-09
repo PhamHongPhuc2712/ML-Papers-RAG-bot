@@ -1,0 +1,106 @@
+name: ml-research-copilot
+
+# Every service stores its state under DATA_DIR (read from .env) through bind
+# mounts rather than named Docker volumes, so deleting that one directory
+# deletes the entire local dataset, container state included (spec §3).
+# The test profile uses ${DATA_DIR}/test so fixture cleanup cannot reach
+# developer data.
+
+x-data-root: &data-root "${DATA_DIR:?set DATA_DIR in .env to the local data root}"
+
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    profiles: [core]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-copilot}
+      POSTGRES_USER: ${POSTGRES_USER:-copilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-copilot-dev-password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - type: bind
+        source: "${DATA_DIR:?set DATA_DIR in .env}/postgres"
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    profiles: [core]
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - type: bind
+        source: "${DATA_DIR:?set DATA_DIR in .env}/qdrant"
+        target: /qdrant/storage
+        bind:
+          create_host_path: true
+
+  postgres-test:
+    image: postgres:17.11-bookworm
+    profiles: [test]
+    environment:
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-test_copilot}
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-copilot_test}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:-copilot_test_password}
+    ports:
+      - "${TEST_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - type: bind
+        source: "${DATA_DIR:?set DATA_DIR in .env}/test/postgres"
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant-test:
+    image: qdrant/qdrant:v1.19.1
+    profiles: [test]
+    ports:
+      - "${TEST_QDRANT_PORT:-56333}:6333"
+      - "${TEST_QDRANT_GRPC_PORT:-56334}:6334"
+    volumes:
+      - type: bind
+        source: "${DATA_DIR:?set DATA_DIR in .env}/test/qdrant"
+        target: /qdrant/storage
+        bind:
+          create_host_path: true
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+    profiles: [core]
+    environment:
+      COPILOT_ENV: ${COPILOT_ENV:-development}
+      # The container sees the same data root at a fixed mount point; the host
+      # path stays configurable through DATA_DIR rather than being hardcoded.
+      DATA_DIR: /data
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://copilot:copilot-dev-password@postgres:5432/copilot}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      QDRANT_COLLECTION_PREFIX: ${QDRANT_COLLECTION_PREFIX:-dev_}
+      MODEL_MODE: ${MODEL_MODE:-real}
+      SECRET_KEY: ${SECRET_KEY:-replace-this-secret}
+    volumes:
+      - type: bind
+        source: *data-root
+        target: /data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    command: ["uvicorn", "copilot.app:create_default_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
