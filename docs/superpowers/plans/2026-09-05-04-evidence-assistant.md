@@ -21,6 +21,9 @@
 - Derive user identity from a verified token; never trust a client-supplied user_id.
 - All benchmark runs record corpus, split, model, configuration, code, hardware, and seed versions.
 - No paid cloud resources, public publishing, or application implementation occur while preparing these documents.
+- Postgres and Qdrant are self-hosted via Docker on the developer's own machine by default; no managed database, vector, or storage subscription is used unless a future, explicitly-recorded decision changes this.
+- All persistent local data lives under one configurable root directory, default `C:\ml-copilot-data\` on the developer's machine, so the entire dataset can be deleted by removing that directory.
+- The hosted LLM/multimodal generation API is the one paid resource in the project, funded personally by the developer; its cost tracking and daily spend cap from P5.2 remain required because real personal money is involved.
 
 ## Entry checkpoint and working conventions
 
@@ -158,7 +161,7 @@ def validate_pdf_header(data: bytes, max_bytes: int = 26214400) -> None:
         raise ValueError("unsupported_pdf")
 ```
 
-Use streaming bounded receive before fully loading bytes; header check is only the first validation, not proof of a valid PDF. Parse in isolated worker with page/time/memory limits, check encrypted/corrupt content, then write dense-only vectors with server user_id/document_id. Local storage resolves random keys within an owned root; deployed adapter uses private Supabase Storage. Duplicate content per owner returns the existing active document/job. GET status returns progress and typed error; retrieval blocks until ready and fails closed on DB ownership uncertainty. Delete marks hidden transactionally, then removes private vectors and blob with retries; retrieval rechecks not-deleted state. Default expiry is 30 days, physical deletion SLA 24 hours. Implement cleanup command and test worker crashes between DB/vector/blob actions.
+Use streaming bounded receive before fully loading bytes; header check is only the first validation, not proof of a valid PDF. Parse in isolated worker with page/time/memory limits, check encrypted/corrupt content, then write dense-only vectors with server user_id/document_id. Local storage resolves random keys within an owned root under `${DATA_DIR}/uploads/`; this local directory adapter is the default regardless of deployment target, and managed object storage is deferred. Duplicate content per owner returns the existing active document/job. GET status returns progress and typed error; retrieval blocks until ready and fails closed on DB ownership uncertainty. Delete marks hidden transactionally, then removes private vectors and blob with retries; retrieval rechecks not-deleted state. Default expiry is 30 days, physical deletion SLA 24 hours. Implement cleanup command and test worker crashes between DB/vector/blob actions.
 
 - [ ] Verify the additional acceptance cases: cross-user get/query/delete denied; guessed document ID doesn't reveal existence; fake PDF rejected; actual malformed/encrypted/>100-page PDF classified; 25 MiB boundary; upload cancellation; worker time limit; duplicate upload per owner; deletion immediately blocks search even if vector cleanup fails; retry removes all storage copies; no private HF export.
 

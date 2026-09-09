@@ -21,6 +21,9 @@
 - Derive user identity from a verified token; never trust a client-supplied user_id.
 - All benchmark runs record corpus, split, model, configuration, code, hardware, and seed versions.
 - No paid cloud resources, public publishing, or application implementation occur while preparing these documents.
+- Postgres and Qdrant are self-hosted via Docker on the developer's own machine by default; no managed database, vector, or storage subscription is used unless a future, explicitly-recorded decision changes this.
+- All persistent local data lives under one configurable root directory, default `C:\ml-copilot-data\` on the developer's machine, so the entire dataset can be deleted by removing that directory.
+- The hosted LLM/multimodal generation API is the one paid resource in the project, funded personally by the developer; its cost tracking and daily spend cap from P5.2 remain required because real personal money is involved.
 
 ## Entry checkpoint and working conventions
 
