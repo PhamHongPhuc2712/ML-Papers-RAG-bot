@@ -59,3 +59,22 @@ JSON is retained by checksum under `${DATA_DIR}/sources` unless
 ```powershell
 uv run --project backend python -m copilot.cli fixtures load --database-url $env:TEST_DATABASE_URL
 ```
+
+## Pilot ingestion
+
+`corpus ingest` lists a venue-year through its membership sources, keeps
+eligible records, sorts them by source item ID, takes the sample limit and
+enqueues one durable job per paper; `worker run` processes the resolve →
+download → parse chain until nothing is due. Both read `DATABASE_URL` and
+`DATA_DIR` from `.env`; PDFs and raw source JSON land under
+`${DATA_DIR}/sources`. OpenReview's API challenges guest requests, so set
+`OPENREVIEW_USERNAME` and `OPENREVIEW_PASSWORD` (a free account) in `.env`
+first.
+
+```powershell
+uv run --project backend python -m copilot.cli corpus ingest --manifest configs/corpus.yaml --limit 100
+uv run --project backend python -m copilot.cli worker run --worker-id pilot-1
+```
+
+Re-running `corpus ingest` is idempotent: jobs are keyed by source item and
+revision, and completed work is never repeated.

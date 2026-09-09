@@ -693,6 +693,17 @@ def _upsert_version(
     parse_status = record.raw.get("parse_status", "pending")
     if not isinstance(parser_version, str) or not isinstance(parse_status, str):
         raise RecordValidationError("version_metadata_invalid")
+    # One observation per (source, revision, version). A later download replaces
+    # the placeholder metadata checksum with the document checksum in place, so a
+    # replayed record must not insert a second placeholder row beside it.
+    identity_statement = select(PaperVersion.id).where(
+        PaperVersion.paper_id == paper_id,
+        PaperVersion.source == record.source,
+        PaperVersion.source_revision == record.source_revision,
+        PaperVersion.version == version if version is not None else PaperVersion.version.is_(None),
+    )
+    if session.execute(identity_statement).scalar_one_or_none() is not None:
+        return
     insert_statement = (
         pg_insert(PaperVersion)
         .values(

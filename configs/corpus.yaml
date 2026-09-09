@@ -1,0 +1,48 @@
+# Versioned venue-year source manifest for the accepted-paper pilot (spec §4).
+#
+# Sampling is deterministic and biased on purpose: eligible records are sorted
+# by source item ID before the first `sample.limit` are taken, so a replay
+# selects the same papers. That is a recorded bias, not a random sample.
+schema_version: 1
+venue: ICLR
+years: [2024]
+track: main
+sample:
+  limit: 100
+  order: source_item_id
+sources:
+  openreview:
+    # OpenReview API v2. Accepted ICLR 2024 main-conference notes carry this
+    # venueid; rejected and withdrawn submissions carry
+    # ICLR.cc/2024/Conference/Rejected_Submission and .../Withdrawn_Submission.
+    # The adapter still maps every note's venue label onto the decision enum.
+    api_base: https://api2.openreview.net
+    api_version: v2
+    venue_id: ICLR.cc/2024/Conference
+    page_size: 1000
+    # Guest API access receives a browser challenge (HTTP 403); a free account's
+    # login token, read from these environment variables (set them in .env,
+    # never here), is attached to listing and attachment requests.
+    auth:
+      username_env: OPENREVIEW_USERNAME
+      password_env: OPENREVIEW_PASSWORD
+    # PDFs come from the API attachment endpoint, which honours the token.
+    pdf_base: https://api2.openreview.net/attachment?name=pdf&id=
+    forum_base: https://openreview.net/forum?id=
+  arxiv:
+    # Supplementary preprint versions; never admits papers unless membership: true.
+    enabled: false
+    api_base: http://export.arxiv.org/api/query
+    membership: false
+  semantic_scholar:
+    # Optional identifier/citation enrichment; failures never block ingestion.
+    enabled: false
+    api_base: https://api.semanticscholar.org/graph/v1
+download:
+  allowed_hosts:
+    - api2.openreview.net
+    - openreview.net
+    - arxiv.org
+    - export.arxiv.org
+  max_bytes: 52428800
+  timeout_seconds: 60
