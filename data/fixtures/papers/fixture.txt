@@ -1,0 +1,26 @@
+Reliable Retrieval for Research Copilots
+Ada Lovelace and Grace Hopper
+Abstract
+We study how a research copilot can retrieve papers reliably and cite only
+evidence that exists. This fixture text is original, written for this
+repository, and released under CC0 so the parser suite can run offline.
+1 Introduction
+Research assistants must cite evidence that exists. We describe a small
+pipeline that parses documents into sections and splits sections into
+chunks that never cross a heading boundary.
+---page---
+2 Method
+The parser splits each page into lines, detects headings, and assigns every
+line to the most recent heading. Page spans are recorded from the pages a
+section actually touches. Unknown pages remain null rather than invented.
+Table 1: Chunk policy
+target 450 cap 600 overlap 60
+policy fixed-window version v1
+---page---
+3 Results
+The fixture parses into an abstract, three numbered sections, one table and
+one reference list. Rerunning the parser on identical bytes reproduces the
+same sections, checksums and chunk identifiers.
+References
+[1] A. Lovelace. Notes on the Analytical Engine. 1843.
+[2] G. Hopper. The Education of a Computer. 1952.

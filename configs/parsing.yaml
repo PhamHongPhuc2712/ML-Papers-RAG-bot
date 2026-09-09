@@ -1,0 +1,24 @@
+# Versioned corpus parsing and chunking policy (spec §4).
+#
+# Bumping parser_version or chunker_version changes every chunk identifier,
+# which is intentional: chunk IDs are UUIDv5 over work ID, document checksum,
+# both revisions and the section/chunk ordinals. Token counts below are in the
+# tokenizer injected at chunking time; CI and the fixture suite use the
+# deterministic whitespace tokenizer, production supplies the pinned BGE-M3
+# tokenizer once P2.2 pins the model revision.
+schema_version: 1
+parser:
+  # pypdf plain-text extraction, labeled low quality. Docling can replace it by
+  # implementing PageAdapter and bumping parser_version after the 20-paper audit.
+  adapter: pypdf-text
+  parser_version: pypdf-text-v1
+  max_pdf_bytes: 52428800
+  reject_encrypted: true
+chunker:
+  policy: fixed-window
+  chunker_version: fixed-window-v1
+  target_tokens: 450
+  hard_cap_tokens: 600
+  overlap_tokens: 60
+  references_in_default_evidence: false
+  uuid_namespace: 9d2f5a6c-7b3e-4c1a-8e5d-2f6b9c1d3e47

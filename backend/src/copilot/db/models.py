@@ -7,9 +7,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -197,6 +199,9 @@ class PaperVersion(Base):
     )
 
     paper: Mapped[Paper] = relationship(back_populates="versions")
+    chunks: Mapped[list[Chunk]] = relationship(
+        back_populates="version", cascade="all, delete-orphan", order_by="Chunk.ordinal"
+    )
 
 
 class Author(Base):
@@ -381,4 +386,102 @@ class PaperRedirect(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     merged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+
+class Chunk(Base):
+    """One token window of a parsed document version, with source spans."""
+
+    __tablename__ = "chunks"
+    __table_args__ = (
+        UniqueConstraint("paper_version_id", "ordinal", name="uq_chunks_version_ordinal"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
+    paper_version_id: Mapped[UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("paper_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    section_path: Mapped[str] = mapped_column(Text, nullable=False)
+    section_ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="body")
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunker_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    fragment: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    version: Mapped[PaperVersion] = relationship(back_populates="chunks")
+
+
+JOB_STATUSES = ("queued", "running", "succeeded", "retry_wait", "failed", "cancelled")
+
+
+class Job(Base):
+    """Durable unit of work leased by workers (spec §4 jobs and publication)."""
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_jobs_idempotency_key"),
+        CheckConstraint(
+            "status IN ('queued','running','succeeded','retry_wait','failed','cancelled')",
+            name="ck_jobs_status",
+        ),
+        Index("ix_jobs_status_next_attempt", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_token: Mapped[UUID | None] = mapped_column(SAUUID(as_uuid=True), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    progress_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class SourceCheckpoint(Base):
+    """Pagination cursor and run provenance per source partition."""
+
+    __tablename__ = "source_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("source", "partition", name="uq_source_checkpoints_source_partition"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=_uuid)
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    partition: Mapped[str] = mapped_column(String(255), nullable=False)
+    cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
