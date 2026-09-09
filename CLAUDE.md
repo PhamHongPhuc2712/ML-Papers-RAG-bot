@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 P1.1 (API + isolated persistence harness) and P1.2 (paper identity + provenance) are implemented under `backend/`. They were restored from the pre-reset implementation at `04f6e3e` and adapted to the 2026-09-09 design revision (`DATA_DIR`, bind-mount Compose, test-root guard, hardening constraints folded into `0001_corpus`). Unit tests, Ruff and mypy pass; check the latest commit messages for whether the integration suite has run on this host yet.
 
-The next task is P1.3 in `docs/superpowers/plans/2026-09-05-01-corpus-foundation.md`. P1.3's parse/chunk work-in-progress that existed before the reset was never committed and is not in history.
+P1.3 (pypdf parser behind a `PageAdapter`, versioned chunker, `chunks` table) and P1.4 (PostgreSQL-leased job queue, source adapters, hardened download, `corpus ingest` / `worker run`) are implemented and green against synthetic fixtures. The next task is P1.5 in `docs/superpowers/plans/2026-09-05-01-corpus-foundation.md`.
+
+**OpenReview gates guest API access** with a browser challenge (HTTP 403 `ChallengeRequiredError`) on both the notes and PDF routes. The adapter logs in with a free account and sends a bearer token; the live pilot needs `OPENREVIEW_USERNAME` / `OPENREVIEW_PASSWORD` in `.env`. PDFs come from `api2.openreview.net/attachment?name=pdf&id=…`, not `openreview.net/pdf`.
 
 ## Sources of truth, in reading order
 
@@ -47,8 +49,13 @@ uv run --project backend pytest backend/tests/unit/test_foo.py -q       # one fi
 uv run --project backend pytest backend/tests -k test_name -q           # one test
 uv run --project backend alembic -c backend/alembic.ini upgrade head
 docker compose --profile test up -d                                     # isolated Postgres + Qdrant
+docker compose --profile core up -d postgres qdrant                     # dev services for the pilot
+uv run --project backend python -m copilot.cli corpus ingest --manifest configs/corpus.yaml --limit 100
+uv run --project backend python -m copilot.cli worker run --worker-id pilot-1   # until nothing is due
 npm --prefix frontend run typecheck   # also: lint, build, test:e2e
 ```
+
+The CLI reads `DATABASE_URL` and `DATA_DIR` from `.env`, but `--staging-dir` defaults from the `DATA_DIR` *environment variable*, so export it (or pass the flag) in a shell that has not loaded `.env`. Provider transports, DNS resolution and the clock are injected; `backend/tests/fixtures/providers/` holds captured synthetic responses.
 
 Compose profiles: `core` (Postgres, Qdrant, API, worker, frontend), `models` (embedding/reranker), `test` (isolated services under `${DATA_DIR}/test/`). Integration tests need the explicit test services; a destructive fixture must refuse any database or Qdrant collection prefix not starting with `test_` and any data root outside the test subdirectory. Missing services are a setup failure, never a silent skip. Normal CI is deterministic and offline; real-model evaluations are explicit, versioned, budgeted runs.
 
