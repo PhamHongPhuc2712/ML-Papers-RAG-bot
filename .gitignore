@@ -9,4 +9,3 @@ __pycache__/
 .coverage
 .env
 backend/.env
-reports/
