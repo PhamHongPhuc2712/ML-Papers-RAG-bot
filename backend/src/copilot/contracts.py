@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -90,7 +90,7 @@ class FeedResponse(ContractModel):
     request_id: UUID
     run_id: UUID
     items: list[RankedPaper]
-    reasons: dict[str, dict]
+    reasons: dict[str, dict[str, Any]]
     papers: dict[str, PaperSummary]
     impressions: dict[str, UUID]
     stale: bool
