@@ -7,12 +7,33 @@ import json
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from .corpus.dedupe import IdentityConflictError, QuarantineError, resolve_paper
 from .db.session import make_engine, migrate_database, session_factory
 
 DEFAULT_FIXTURE_PATH = Path("data/fixtures/metadata.jsonl")
 DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
 DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
+# Same files Settings reads, in the same precedence order: later entries win
+# there, so backend/.env is loaded first and .env cannot overwrite it here.
+DOTENV_FILES = (Path("backend/.env"), Path(".env"))
+
+
+def load_dotenv_files() -> None:
+    """Copy dotenv values into ``os.environ`` for the lookups Settings cannot serve.
+
+    ``Settings`` parses these files into its own object and never touches the
+    process environment, but the OpenReview credentials
+    (``corpus/sources/openreview.py``) and ``default_staging_dir`` below read
+    ``os.environ`` directly. Without this they read as unset and the pilot falls
+    back to guest access, which OpenReview answers with a 403 challenge. An
+    explicitly exported shell variable always wins over the file.
+    """
+
+    for candidate in DOTENV_FILES:
+        if candidate.is_file():
+            load_dotenv(candidate, override=False)
 
 
 def default_staging_dir() -> Path | None:
@@ -174,6 +195,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv_files()
     parser = _parser()
     args = parser.parse_args(argv)
     if args.command == "fixtures" and args.fixture_command == "load":

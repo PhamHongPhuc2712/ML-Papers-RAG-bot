@@ -62,3 +62,33 @@ def test_comma_separated_cors_origins_parse_from_dotenv(tmp_path):
     settings = Settings(_env_file=env_file)
     assert settings.cors_origins == ["http://localhost:3000", "https://app.example"]
     assert settings.data_dir == tmp_path
+
+
+def test_dotenv_values_reach_os_environ_for_environ_only_lookups(tmp_path, monkeypatch):
+    """Adapters that read ``os.environ`` directly must still see ``.env``.
+
+    ``Settings`` parses the dotenv files into its own object and never touches the
+    process environment, so the OpenReview credentials in
+    ``corpus/sources/openreview.py`` and ``DATA_DIR`` in ``cli.default_staging_dir``
+    would silently read as unset. The CLI copies them across explicitly.
+    """
+
+    from copilot.cli import load_dotenv_files
+
+    monkeypatch.delenv("OPENREVIEW_USERNAME", raising=False)
+    monkeypatch.setenv("OPENREVIEW_PASSWORD", "from-the-shell")
+    (tmp_path / ".env").write_text(
+        r"DATA_DIR=C:\ml-copilot-data" + "\n"
+        "OPENREVIEW_USERNAME=user@example.edu\n"
+        "OPENREVIEW_PASSWORD=from-the-dotenv\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    load_dotenv_files()
+
+    assert os.environ["OPENREVIEW_USERNAME"] == "user@example.edu"
+    # An explicitly exported shell variable still wins over the file.
+    assert os.environ["OPENREVIEW_PASSWORD"] == "from-the-shell"
+    # The documented unquoted Windows path survives verbatim.
+    assert os.environ["DATA_DIR"] == r"C:\ml-copilot-data"
