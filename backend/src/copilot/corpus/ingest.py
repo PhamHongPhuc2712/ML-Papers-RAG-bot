@@ -10,6 +10,7 @@ a killed worker resumes without duplicates.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -68,6 +69,32 @@ class IngestContext:
     resolver: Resolver = default_resolver
     now: Callable[[], datetime] = field(default=utc_now)
     _openreview: OpenReviewSource | None = field(default=None, init=False, repr=False)
+    _last_request: float | None = field(default=None, init=False, repr=False)
+
+    @property
+    def min_interval_seconds(self) -> float:
+        """Minimum gap between this worker's provider requests; 0 disables pacing."""
+
+        return float(self.download.get("min_interval_seconds", 0.0))
+
+    def pace(self) -> None:
+        """Hold the configured gap between requests from this process.
+
+        Per worker, not global: each worker is its own process, so a fleet of N
+        workers issues at most N requests per interval. Retry-After still governs
+        recovery once a provider has already pushed back; this is what keeps a
+        run from provoking that in the first place.
+        """
+
+        interval = self.min_interval_seconds
+        if interval <= 0:
+            self._last_request = time.monotonic()
+            return
+        if self._last_request is not None:
+            remaining = interval - (time.monotonic() - self._last_request)
+            if remaining > 0:
+                time.sleep(remaining)
+        self._last_request = time.monotonic()
 
     @property
     def pdf_dir(self) -> Path:
@@ -325,6 +352,7 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
 
     def download_pdf(job: LeasedJob, beat: Heartbeat) -> JobOutcome:
         payload = job.payload
+        context.pace()
         try:
             downloaded = download_pdf_file(
                 str(payload["pdf_url"]),

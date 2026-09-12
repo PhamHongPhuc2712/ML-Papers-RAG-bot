@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from copilot.corpus.download import DownloadPolicyError, validate_download_url
@@ -97,3 +99,48 @@ def test_download_policy_rejects_unsafe_targets():
         validate_download_url("http://169.254.169.254/latest", {"169.254.169.254"}, public)
     with pytest.raises(DownloadPolicyError, match="credentials"):
         validate_download_url("https://user:pw@openreview.net/x.pdf", allowed, public)
+
+
+def test_download_pacing_is_configurable_and_off_by_default():
+    """Spec 4 requires provider throttling to be configurable.
+
+    Three concurrent workers with no inter-request delay had OpenReview return a
+    long Retry-After for 8,665 of 8,905 downloads. The pacing below is what keeps
+    a fleet under a provider's limit instead of discovering it.
+    """
+
+    from copilot.corpus.ingest import IngestContext
+
+    def context(**download):
+        return IngestContext(
+            manifest={"venue": "ICLR", "years": [2024], "track": "main", "download": download},
+            transport=None,
+            staging_dir=Path("."),
+            parsing_config=None,
+        )
+
+    assert context().min_interval_seconds == 0.0
+    assert context(min_interval_seconds=1.5).min_interval_seconds == 1.5
+
+
+def test_pacing_sleeps_only_for_the_remaining_interval(monkeypatch):
+    from copilot.corpus import ingest as ingest_module
+    from copilot.corpus.ingest import IngestContext
+
+    slept: list[float] = []
+    # Two reads per paced call (one to measure, one to re-mark), one for the first.
+    clock = iter([100.0, 100.2, 100.2, 105.0, 105.0])
+    monkeypatch.setattr(ingest_module.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(ingest_module.time, "sleep", slept.append)
+
+    context = IngestContext(
+        manifest={"download": {"min_interval_seconds": 1.0}},
+        transport=None,
+        staging_dir=Path("."),
+        parsing_config=None,
+    )
+    context.pace()          # first call sets the mark, never sleeps
+    context.pace()          # 0.2 s elapsed of a 1.0 s interval
+    context.pace()          # 4.8 s elapsed, already past the interval
+
+    assert slept == [pytest.approx(0.8)]
