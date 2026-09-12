@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -22,7 +23,7 @@ from pypdf import PasswordType, PdfReader
 from .chunk import Section
 
 ADAPTER = "pypdf-text"
-PARSER_VERSION = "pypdf-text-v2"
+PARSER_VERSION = "pypdf-text-v3"
 DEFAULT_MAX_BYTES = 50 * 1024 * 1024
 FRONT_MATTER = "Front matter"
 
@@ -92,20 +93,82 @@ _NAMED = {
 # "identi<0x01>cation" becomes "identication", losing the "fi". That is real text
 # loss this adapter cannot undo, and it is parser-quality evidence the 20-paper
 # audit has to weigh when deciding whether a font-aware parser is needed.
-_CONTROL_CHARACTERS = dict.fromkeys(
+_TEXT_REPAIRS: dict[int, str | None] = dict.fromkeys(
     [code for code in range(0x20) if code != 0x09] + [0x7F]
 )
+# Precomposed ligatures survive extraction intact, so they store and display
+# fine but no lexical query matches them: "finite" never finds U+FB01 + "nite".
+# Expanded here rather than by NFKC, which would also flatten superscripts and
+# change what a formula means. Found in 15 of the 100 pilot papers.
+_TEXT_REPAIRS.update(
+    {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "ffl"}
+)
+
+# LaTeX small caps reach pypdf as a full-size initial followed by a smaller run,
+# with a space between them: "B ACKGROUND". An appendix label looks identical --
+# "J THEORETICAL CONNECTION" -- and gluing that one yields "JTHEORETICAL", so the
+# repair applies only when a line carries TWO OR MORE such runs, which an
+# appendix label never does. A single-run heading ("A BLATION STUDY") is left
+# alone: telling it from a label needs a dictionary, and a wrong join is worse
+# than an unrepaired name. Headings only, never body text where "a B" may be real.
+_SMALL_CAPS = re.compile(r"\b([A-Z]) ([A-Z]{2,})")
+_SPACE_BEFORE_PUNCT = re.compile(r"\s+([:,.;])")
+_PAGE_NUMBER = re.compile(r"\d{1,4}")
+# Below this, a repeated line is more likely a short real sentence than furniture.
+_FURNITURE_MIN_PAGES = 4
 
 
 def sanitize_text(value: str) -> str:
-    """Remove control codepoints that cannot be stored or quoted as source text."""
+    """Repair codepoints that cannot be stored, or that no query could match."""
 
-    return value.translate(_CONTROL_CHARACTERS)
+    return value.translate(_TEXT_REPAIRS)
+
+
+def repair_heading(value: str) -> str:
+    """Rejoin small-capital runs, but only where the pattern is unambiguous."""
+
+    # One run is indistinguishable from an appendix label ("J THEORETICAL ..."),
+    # and gluing that produces "JTHEORETICAL". Two or more runs never occur in a
+    # label, so that is the only case this repairs.
+    if len(_SMALL_CAPS.findall(value)) < 2:
+        return value.strip()
+    previous = ""
+    repaired = value
+    while previous != repaired:
+        previous = repaired
+        repaired = _SMALL_CAPS.sub(r"\1\2", repaired)
+    return _SPACE_BEFORE_PUNCT.sub(r"\1", repaired).strip()
+
+
+def running_furniture(pages: Sequence[ParsedPage]) -> frozenset[str]:
+    """Lines repeated across most pages: running headers, footers, venue banners.
+
+    Detected by repetition rather than by matching a venue string, so the rule
+    holds for any source. A line on only a couple of pages is content and is
+    kept -- dropping it would silently delete real text.
+    """
+
+    if len(pages) < _FURNITURE_MIN_PAGES:
+        return frozenset()
+    seen: Counter[str] = Counter()
+    for page in pages:
+        # Count a line once per page, so a phrase repeated within one page does
+        # not look like a header.
+        seen.update(
+            {
+                line
+                for line in (sanitize_text(raw).strip() for raw in page.text.splitlines())
+                if line and len(line) <= 120
+            }
+        )
+    threshold = max(3, round(len(pages) * 0.5))
+    return frozenset(line for line, count in seen.items() if count >= threshold)
 
 
 def _classify_heading(line: str) -> tuple[str, str] | None:
     if len(line) > 90:
         return None
+    line = repair_heading(line)
     named = _NAMED.get(line.rstrip(".:").lower())
     if named is not None:
         return named
@@ -116,13 +179,16 @@ def _classify_heading(line: str) -> tuple[str, str] | None:
         return line, "appendix"
     numbered = _NUMBERED.match(line)
     if numbered is not None and not numbered.group("title").endswith("."):
-        return numbered.group("title").strip(), "body"
+        return repair_heading(numbered.group("title")), "body"
     return None
 
 
 def sections_from_pages(pages: Iterable[ParsedPage]) -> list[Section]:
     """Assign every non-empty line to the most recent heading, tracking page spans."""
 
+    pages = list(pages)
+    furniture = running_furniture(pages)
+    drop_page_numbers = len(pages) >= _FURNITURE_MIN_PAGES
     sections: list[Section] = []
     name, kind = FRONT_MATTER, "front"
     lines: list[str] = []
@@ -139,7 +205,9 @@ def sections_from_pages(pages: Iterable[ParsedPage]) -> list[Section]:
     for page in pages:
         for raw_line in page.text.splitlines():
             line = sanitize_text(raw_line).strip()
-            if not line:
+            if not line or line in furniture:
+                continue
+            if drop_page_numbers and _PAGE_NUMBER.fullmatch(line):
                 continue
             heading = _classify_heading(line)
             if heading is not None:

@@ -11,7 +11,7 @@ parser:
   # pypdf plain-text extraction, labeled low quality. Docling can replace it by
   # implementing PageAdapter and bumping parser_version after the 20-paper audit.
   adapter: pypdf-text
-  parser_version: pypdf-text-v2
+  parser_version: pypdf-text-v3
   max_pdf_bytes: 52428800
   reject_encrypted: true
 chunker:

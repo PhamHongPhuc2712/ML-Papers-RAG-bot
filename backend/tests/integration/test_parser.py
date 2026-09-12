@@ -26,6 +26,7 @@ from copilot.corpus.parse import (
     PDFParseError,
     parse_pdf,
     parse_pdf_result,
+    repair_heading,
     sections_from_pages,
 )
 
@@ -235,3 +236,87 @@ def test_control_characters_from_font_encodings_are_stripped():
     assert "identication of eects\tkept" in body
     assert "accuracy improved" in body
     assert "\t" in body, "legitimate whitespace must survive"
+
+
+NL = chr(10)
+
+
+def test_precomposed_ligatures_are_decomposed_for_lexical_search():
+    """Real PDFs keep "fi" as U+FB01, which no BM25 query for "finite" can match.
+
+    Found by the 20-paper audit: 1,217 such characters across 15 of 100 papers.
+    Targeted replacement, not NFKC, which would also flatten superscripts and
+    change the meaning of mathematical notation.
+    """
+
+    fi, fl, ff, ffi, ffl = "ﬁ", "ﬂ", "ﬀ", "ﬃ", "ﬄ"
+    pages = [
+        ParsedPage(number=1, text=f"Method{NL}{fi}nite {fl}ip a{ff}ect {ffi}x {ffl}oor x²")
+    ]
+
+    body = NL.join(section.text for section in sections_from_pages(pages))
+
+    assert "finite flip affect ffix ffloor" in body
+    # Superscripts carry meaning in maths and must survive.
+    assert "x²" in body
+
+
+def test_running_headers_and_page_numbers_are_dropped():
+    """Every page of an ICLR PDF repeats its banner. 98 of 100 papers carried it
+    into chunk text, 2,590 times, where it would be quoted back as evidence.
+
+    Detected by repetition across pages rather than by matching a venue string,
+    so the rule holds for any venue.
+    """
+
+    banner = "Published as a conference paper at ICLR 2024"
+    # The heading appears once, as in a real paper; only the banner repeats.
+    pages = [
+        ParsedPage(
+            number=n,
+            text=f"{banner}{NL}{'Method' + NL if n == 1 else ''}real body sentence {n}.{NL}{n}",
+        )
+        for n in range(1, 7)
+    ]
+
+    body = NL.join(section.text for section in sections_from_pages(pages))
+
+    assert banner not in body
+    assert "real body sentence 3." in body
+    # A bare page number on its own line is furniture, not content.
+    assert NL + "4" + NL not in body
+
+
+def test_a_line_repeated_on_a_few_pages_is_kept():
+    """Repetition alone is not furniture: a phrase on two pages of twenty is
+    content, and dropping it would silently delete real text."""
+
+    pages = [ParsedPage(number=n, text=f"Method{NL}unique line {n}.") for n in range(1, 21)]
+    for index in (2, 7):
+        pages[index] = ParsedPage(number=index + 1, text=f"Method{NL}We repeat this claim.")
+
+    body = NL.join(section.text for section in sections_from_pages(pages))
+
+    assert body.count("We repeat this claim.") == 2
+
+
+def test_small_capital_headings_are_rejoined_only_when_unambiguous():
+    """LaTeX small caps render as a large initial plus a small-caps run, and pypdf
+    puts a space between them: 696 of 1,696 section names were mangled this way.
+
+    An appendix label is spelled identically -- "J THEORETICAL CONNECTION" -- and
+    joining that one yields "JTHEORETICAL". Two or more runs on a line never
+    happen in a label, so only that case is repaired; a single-run heading is
+    deliberately left alone, because a wrong join is worse than a mangled name.
+    """
+
+    pages = [
+        ParsedPage(number=1, text=f"3.2 B ACKGROUND : O PTIMIZING FOR DIVERSITY{NL}body text"),
+    ]
+
+    names = [s.name for s in sections_from_pages(pages) if s.kind != "front"]
+
+    assert "BACKGROUND: OPTIMIZING FOR DIVERSITY" in names
+    # The ambiguous single-run forms are untouched, in both directions.
+    assert repair_heading("J THEORETICAL CONNECTION") == "J THEORETICAL CONNECTION"
+    assert repair_heading("A BLATION STUDY") == "A BLATION STUDY"
