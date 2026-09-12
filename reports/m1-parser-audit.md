@@ -1,14 +1,15 @@
 # M1 parser evidence and audit status
 
-Date: 2026-09-10
+Date: 2026-09-10, revised 2026-09-12
 Task: P1.3, parse documents into traceable sections and chunks
 Commit: `9bbef4a`
-Local-only report (`reports/` is gitignored by the owner's choice).
+Tracked in git since `c87eab7`; the "local-only" note in earlier revisions of
+this report predates that commit.
 
 ## Parser configuration
 
 `configs/parsing.yaml` schema 1. Adapter `pypdf-text` (pypdf 6.10.0 plain
-text per page), `parser_version=pypdf-text-v1`, quality label `low`,
+text per page), `parser_version=pypdf-text-v2`, quality label `low`,
 `max_pdf_bytes=52428800`, encrypted input rejected. Chunker
 `fixed-window-v1`: target 450, hard cap 600, overlap 60 (whitespace tokens in
 CI; the pinned BGE-M3 tokenizer is injected once P2.2 pins the model
@@ -64,10 +65,33 @@ text rate on the fixture: 1/1 — not evidence about real papers.
 Each is stored as the version's `parse_status`; `parsed` marks success. A
 `corrupt` outcome is reproduced end to end by the P1.4 poisoned-PDF case.
 
-## 20-paper manual audit — PENDING
+## Revision on 2026-09-12: control-character sanitization (`v2`)
 
-Not performed. It requires real PDFs from the P1.4 pilot (blocked on
-OpenReview credentials at the time of writing) and human review of
-source/version/page correctness and multi-column reading order. Until it is
-done, no claim is made about pypdf's usable-text rate on ICLR 2024 papers,
-and the G1 rule "≥90% audited usable text or parser revised" is unmet.
+The P1.4 live pilot exposed a defect this fixture could not. pypdf maps LaTeX
+ligature and math glyphs onto C0 control codepoints when a font carries a
+custom encoding; 41 of 100 real ICLR 2024 PDFs contained NUL, which PostgreSQL
+`text` columns reject, so the documents parsed but failed to persist.
+
+`sanitize_text` now strips C0 and DEL (keeping tab) at `sections_from_pages`,
+the boundary every `PageAdapter` flows through, and `parser_version` moved to
+`pypdf-text-v2`. Regression:
+`test_control_characters_from_font_encodings_are_stripped`.
+
+The fix is lossy and that matters for this audit: stripping keeps a word whole
+rather than splitting it, but the glyph's characters are gone —
+`identi<0x01>cation` becomes `identication`. Measured over the 100 pilot
+papers: 69 documents affected, 4,098 characters stripped of 7,646,599 retained
+(0.054%), concentrated inside ligature words. Exact-match lexical search on
+those specific terms will miss. See `reports/m1-ingestion.md`.
+
+## 20-paper manual audit — STILL PENDING, now unblocked
+
+Not performed. It needs human review of usable-text rate, multi-column reading
+order and source/version/page correctness. Until it is done, no claim is made
+about pypdf's usable-text rate on ICLR 2024 papers, and the G1 rule "≥90%
+audited usable text or parser revised" is unmet.
+
+The blocker is gone: 100 real ICLR 2024 PDFs are on disk under
+`${DATA_DIR}/sources/pdfs/` with their parsed sections and 4,470 chunks in the
+dev database. The ligature loss above is the first concrete argument for
+evaluating a font-aware parser (Docling) and should be weighed by the audit.
