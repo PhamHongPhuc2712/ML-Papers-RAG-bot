@@ -461,7 +461,7 @@ def _metadata_compatible(
     *,
     check_year: bool = True,
 ) -> bool:
-    if normalize_title(paper.title) != record.title_key:
+    if paper.normalized_title != record.title_key:
         return False
     years_ok = not check_year or _years_compatible(
         paper.publication_year, record.publication_year
@@ -476,11 +476,20 @@ def _find_title_candidate(
     record: _ValidatedRecord,
     incoming_namespaces: set[str] | None = None,
 ) -> Paper | None:
-    papers = session.execute(select(Paper).where(Paper.merged_into.is_(None))).scalars().all()
+    # Indexed equality on the normalized title: without it this loaded every
+    # paper and normalized each title in Python, which is O(n) per insert.
+    papers = (
+        session.execute(
+            select(Paper).where(
+                Paper.merged_into.is_(None),
+                Paper.normalized_title == record.title_key,
+            )
+        )
+        .scalars()
+        .all()
+    )
     compatible: list[tuple[int, Paper]] = []
     for paper in papers:
-        if normalize_title(paper.title) != record.title_key:
-            continue
         existing_namespaces = set(
             session.execute(
                 select(PaperIdentifier.namespace).where(PaperIdentifier.paper_id == paper.id)
@@ -1001,6 +1010,7 @@ def resolve_paper(
             paper = Paper(
                 id=uuid4(),
                 title=validated.title,
+                normalized_title=validated.title_key,
                 abstract=validated.abstract,
                 publication_year=validated.publication_year,
                 venue_id=None,

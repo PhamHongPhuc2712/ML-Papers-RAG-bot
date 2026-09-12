@@ -1,0 +1,40 @@
+# Versioned venue-year source manifest (spec §4).
+#
+# Full venue-year: no sample limit, so every eligible accepted paper is taken.
+# One manifest per venue because `venue` is a single value; one year each,
+# because `sources.openreview.venue_id` is also single-valued and would
+# otherwise be reused across years.
+schema_version: 1
+venue: ICLR
+years: [2024]
+track: main
+sources:
+  openreview:
+    # Accepted ICLR 2024 main-conference notes carry this venueid. Rejected and
+    # withdrawn submissions carry .../Rejected_Submission and
+    # .../Withdrawn_Submission, and the Datasets & Benchmarks track is a separate
+    # venueid, so this query is main-track accepted only. The adapter still maps
+    # every note's venue label onto the decision enum rather than trusting it.
+    # Counted 2260 notes on 2026-09-12: 86 oral, 367 spotlight, 1807 poster.
+    api_base: https://api2.openreview.net
+    api_version: v2
+    venue_id: ICLR.cc/2024/Conference
+    page_size: 1000
+    auth:
+      username_env: OPENREVIEW_USERNAME
+      password_env: OPENREVIEW_PASSWORD
+    pdf_base: https://api2.openreview.net/attachment?name=pdf&id=
+    forum_base: https://openreview.net/forum?id=
+  arxiv:
+    enabled: false
+    api_base: http://export.arxiv.org/api/query
+    membership: false
+  semantic_scholar:
+    enabled: false
+    api_base: https://api.semanticscholar.org/graph/v1
+download:
+  allowed_hosts:
+    - api2.openreview.net
+    - openreview.net
+  max_bytes: 52428800
+  timeout_seconds: 60

@@ -40,6 +40,7 @@ from ..db.models import (
     Venue,
 )
 from ..db.session import session_scope
+from .normalize import normalize_title
 
 SCHEMA_VERSION = 1
 MANIFEST_NAME = "manifest.json"
@@ -563,6 +564,9 @@ def restore_snapshot(path: Path, engine: Engine) -> dict[str, int]:
                 Paper(
                     id=paper_id,
                     title=str(row["title"]),
+                    # Derived, not carried in the shard: it is a pure function of
+                    # the title, so recomputing keeps the two from drifting apart.
+                    normalized_title=normalize_title(str(row["title"])),
                     abstract=row.get("abstract"),
                     publication_year=row.get("publication_year"),
                     venue_id=venue_id,

@@ -105,6 +105,8 @@ class Paper(Base):
 
     id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=_uuid)
     title: Mapped[str] = mapped_column(Text, nullable=False)
+    # Indexed so title matching is a lookup, not a scan of every paper.
+    normalized_title: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     abstract: Mapped[str | None] = mapped_column(Text, nullable=True)
     publication_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     venue_id: Mapped[UUID | None] = mapped_column(
