@@ -22,7 +22,7 @@ from pypdf import PasswordType, PdfReader
 from .chunk import Section
 
 ADAPTER = "pypdf-text"
-PARSER_VERSION = "pypdf-text-v1"
+PARSER_VERSION = "pypdf-text-v2"
 DEFAULT_MAX_BYTES = 50 * 1024 * 1024
 FRONT_MATTER = "Front matter"
 
@@ -84,6 +84,25 @@ _NAMED = {
 }
 
 
+# C0 controls and DEL, minus the tab that str.splitlines does not consume. pypdf
+# emits these when a font carries a custom encoding — LaTeX ligature and math
+# glyphs land on low codepoints — and PostgreSQL text columns reject NUL
+# outright, so an otherwise clean parse fails at persistence. Stripping keeps the
+# word whole instead of splitting it in two, but it does not recover the glyph:
+# "identi<0x01>cation" becomes "identication", losing the "fi". That is real text
+# loss this adapter cannot undo, and it is parser-quality evidence the 20-paper
+# audit has to weigh when deciding whether a font-aware parser is needed.
+_CONTROL_CHARACTERS = dict.fromkeys(
+    [code for code in range(0x20) if code != 0x09] + [0x7F]
+)
+
+
+def sanitize_text(value: str) -> str:
+    """Remove control codepoints that cannot be stored or quoted as source text."""
+
+    return value.translate(_CONTROL_CHARACTERS)
+
+
 def _classify_heading(line: str) -> tuple[str, str] | None:
     if len(line) > 90:
         return None
@@ -119,7 +138,7 @@ def sections_from_pages(pages: Iterable[ParsedPage]) -> list[Section]:
 
     for page in pages:
         for raw_line in page.text.splitlines():
-            line = raw_line.strip()
+            line = sanitize_text(raw_line).strip()
             if not line:
                 continue
             heading = _classify_heading(line)

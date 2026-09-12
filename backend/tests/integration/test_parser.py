@@ -207,3 +207,31 @@ def test_parse_results_persist_with_stable_chunk_identity(migrated_database, tmp
         changed = persist("fixed-window-v2")
         assert set(changed).isdisjoint(first)
         session.rollback()
+
+
+def test_control_characters_from_font_encodings_are_stripped():
+    """Real ICLR PDFs yield C0 control codes that PostgreSQL text columns reject.
+
+    pypdf maps LaTeX ligature and math glyphs onto low codepoints when a font
+    carries a custom encoding. NUL in particular makes psycopg raise DataError,
+    so a document that parses cleanly still fails to persist. Sanitizing at the
+    Section boundary covers every PageAdapter, not only this one.
+    """
+
+    # Not vertical tab or form feed: str.splitlines already treats those as breaks.
+    nul, soh, stx, dle, delete = chr(0), chr(1), chr(2), chr(16), chr(127)
+    pages = [
+        ParsedPage(number=1, text=f"Method{chr(10)}identi{soh}cation of{nul} e{stx}ects\tkept"),
+        ParsedPage(number=2, text=f"Results{chr(10)}accuracy {dle}improved{delete}"),
+    ]
+
+    sections = sections_from_pages(pages)
+
+    body = "\n".join(section.text for section in sections)
+    assert not [character for character in body if character in {nul, soh, stx, dle, delete}]
+    # Stripping rejoins the word rather than splitting it, but the glyph's own
+    # characters are gone: a "ffi"/"ff" ligature arrives as "identication"/"eects".
+    # That loss is real and is what the 20-paper audit has to weigh.
+    assert "identication of eects\tkept" in body
+    assert "accuracy improved" in body
+    assert "\t" in body, "legitimate whitespace must survive"
