@@ -1,0 +1,39 @@
+# Versioned corpus export policy (spec §4, plan P1.5).
+#
+# Two distinct outputs share this file. A *local* snapshot exists for restore
+# and portability and contains everything the corpus holds. A *public* export
+# additionally passes the redistribution filter, which keeps only corpus rows
+# whose rights are positively established. Public availability of a PDF
+# establishes nothing by itself, so rows default to withheld.
+schema_version: 1
+
+export:
+  # Snapshots stage under ${DATA_DIR}/exports/ so bulk data never enters the
+  # repository and the delete-one-directory guarantee still holds. Relative
+  # --out and --manifest paths resolve against this directory.
+  directory: exports
+  # Spec §4 targets 128-512 MiB Parquet shards. The pilot corpus is far below
+  # one shard; the split only engages as the corpus grows.
+  target_shard_bytes: 134217728
+  compression: zstd
+  artifacts:
+    - metadata
+    - fulltext
+    - edges
+
+redistribution:
+  # paper_versions.redistribution values that may be published. Spec §5 spells
+  # this 'eligible'; the P1.5 plan example spells the same decision 'allowed'.
+  publishable:
+    - allowed
+    - eligible
+  # Everything else -- restricted, unknown, absent -- is withheld from public
+  # exports and kept in local snapshots only.
+  default: unknown
+
+publication:
+  # `corpus publish` is an explicit, separately authorized mode. It is never
+  # invoked by export, validate, restore, or any test.
+  enabled: false
+  target: huggingface
+  repo: null

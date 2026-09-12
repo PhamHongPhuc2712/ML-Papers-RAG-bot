@@ -14,6 +14,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from .config import Settings
+from .corpus.api import router as corpus_router
 from .db.models import CorpusRelease
 from .db.session import get_active_release, make_engine
 
@@ -147,6 +148,10 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
         if not vectors_ready:
             return _typed_error("vector_not_ready", "active corpus vectors are unavailable")
         return {"status": "ok", "corpus_release_id": active_release.id}
+
+    # Coverage is public and readable before any release is active: it describes
+    # what has been ingested, not what is being served.
+    app.include_router(corpus_router)
 
     return app
 

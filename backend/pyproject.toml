@@ -13,6 +13,7 @@ dependencies = [
   "httpx==0.28.1",
   "psycopg[binary]==3.2.9",
   "pydantic-settings==2.10.1",
+  "pyarrow==21.0.0",
   "pypdf==6.10.0",
   "python-dotenv==1.2.3",
   "pyyaml==6.0.3",
@@ -59,3 +60,9 @@ strict = true
 packages = ["copilot"]
 mypy_path = ["src"]
 warn_unused_configs = true
+
+# pyarrow ships no py.typed marker; the export module wraps it behind typed
+# functions, so its own signatures stay checked.
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true

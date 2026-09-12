@@ -15,6 +15,7 @@ from .db.session import make_engine, migrate_database, session_factory
 DEFAULT_FIXTURE_PATH = Path("data/fixtures/metadata.jsonl")
 DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
 DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
+DEFAULT_ARTIFACTS_PATH = Path("configs/artifacts.yaml")
 # Same files Settings reads, in the same precedence order: later entries win
 # there, so backend/.env is loaded first and .env cannot overwrite it here.
 DOTENV_FILES = (Path("backend/.env"), Path(".env"))
@@ -44,6 +45,92 @@ def default_staging_dir() -> Path | None:
     if not root:
         return None
     return Path(root.rstrip("\\/") or root) / "sources"
+
+
+def default_export_dir() -> Path | None:
+    """Snapshots stage under the data root so no bulk data enters the repository."""
+
+    root = os.environ.get("COPILOT_DATA_DIR") or os.environ.get("DATA_DIR") or ""
+    root = root.strip()
+    if not root:
+        return None
+    return Path(root.rstrip("\\/") or root) / "exports"
+
+
+def resolve_export_path(value: Path, parser: argparse.ArgumentParser) -> Path:
+    """Resolve a relative --out/--manifest against ${DATA_DIR}/exports.
+
+    Relative paths keep the commands free of shell-specific variable syntax; an
+    absolute path is honoured as given.
+    """
+
+    if value.is_absolute():
+        return value
+    base = default_export_dir()
+    if base is None:
+        parser.error("DATA_DIR must be set, or pass an absolute path")
+    return base / value
+
+
+def run_export(
+    run_id: str, out: Path, *, database_url: str, public_only: bool
+) -> dict[str, object]:
+    from .corpus.export import export_snapshot
+
+    engine = make_engine(database_url)
+    try:
+        manifest = export_snapshot(run_id, out, engine=engine, public_only=public_only)
+        return {
+            "run_id": run_id,
+            "destination": str(out),
+            "public_only": public_only,
+            "counts": manifest["counts"],
+            "withheld_rows": manifest["withheld_rows"],
+            "manifest_sha256": manifest["manifest_sha256"],
+        }
+    finally:
+        engine.dispose()
+
+
+def run_validate(manifest_path: Path) -> dict[str, object]:
+    from .corpus.export import validate_manifest
+
+    manifest = validate_manifest(manifest_path)
+    return {
+        "manifest": str(manifest_path),
+        "valid": True,
+        "schema_version": manifest["schema_version"],
+        "run_id": manifest["run_id"],
+        "counts": manifest["counts"],
+        "artifacts": len(manifest["artifacts"]),
+    }
+
+
+def run_restore(manifest_path: Path, *, database_url: str) -> dict[str, object]:
+    from .corpus.export import restore_snapshot
+
+    engine = make_engine(database_url)
+    try:
+        migrate_database(engine)
+        counts = restore_snapshot(manifest_path, engine)
+        return {"restored_from": str(manifest_path), **counts}
+    finally:
+        engine.dispose()
+
+
+def run_publish(manifest_path: Path, repo: str, *, artifacts_config: Path) -> dict[str, object]:
+    """Public publication is an explicitly authorized mode and is off by default."""
+
+    import yaml
+
+    raw = yaml.safe_load(Path(artifacts_config).read_text(encoding="utf-8")) or {}
+    publication = raw.get("publication", {}) if isinstance(raw, dict) else {}
+    if not publication.get("enabled", False):
+        raise SystemExit(
+            "publication_disabled: set publication.enabled in configs/artifacts.yaml and "
+            "confirm redistribution rights before publishing"
+        )
+    raise SystemExit("publication_not_implemented: no authorized publication has been configured")
 
 
 def load_fixtures(
@@ -179,6 +266,30 @@ def _parser() -> argparse.ArgumentParser:
     ingest.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
     ingest.add_argument("--staging-dir", type=Path, default=None)
 
+    export = corpus_commands.add_parser("export", help="write an immutable local snapshot")
+    export.add_argument("--run", dest="run_id", required=True)
+    export.add_argument("--out", type=Path, required=True)
+    export.add_argument(
+        "--public-only",
+        action="store_true",
+        help="apply the redistribution filter; withholds rows without established rights",
+    )
+    export.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+
+    validate = corpus_commands.add_parser("validate", help="verify a snapshot manifest")
+    validate.add_argument("--manifest", type=Path, required=True)
+
+    restore = corpus_commands.add_parser(
+        "restore", help="restore a snapshot into an empty database"
+    )
+    restore.add_argument("--manifest", type=Path, required=True)
+    restore.add_argument("--database-url", required=True)
+
+    publish = corpus_commands.add_parser("publish", help="authorized public publication only")
+    publish.add_argument("--manifest", type=Path, required=True)
+    publish.add_argument("--repo", required=True)
+    publish.add_argument("--artifacts-config", type=Path, default=DEFAULT_ARTIFACTS_PATH)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -212,6 +323,25 @@ def main(argv: list[str] | None = None) -> int:
             args.limit,
             database_url=_database_url(args.database_url),
             staging_dir=_staging_dir(args.staging_dir, parser),
+        )
+    elif args.command == "corpus" and args.corpus_command == "export":
+        result = run_export(
+            args.run_id,
+            resolve_export_path(args.out, parser),
+            database_url=_database_url(args.database_url),
+            public_only=args.public_only,
+        )
+    elif args.command == "corpus" and args.corpus_command == "validate":
+        result = run_validate(resolve_export_path(args.manifest, parser))
+    elif args.command == "corpus" and args.corpus_command == "restore":
+        result = run_restore(
+            resolve_export_path(args.manifest, parser), database_url=args.database_url
+        )
+    elif args.command == "corpus" and args.corpus_command == "publish":
+        result = run_publish(
+            resolve_export_path(args.manifest, parser),
+            args.repo,
+            artifacts_config=args.artifacts_config,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(

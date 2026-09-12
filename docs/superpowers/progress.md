@@ -4,11 +4,11 @@ Last updated: 2026-09-12.
 
 ## Current state
 
-- Implementation: **4 / 30 tasks complete** (P1.1–P1.4); P1.4's live pilot ran on 2026-09-12.
-- MVP implementation: **4 / 25 tasks complete**.
+- Implementation: **5 / 30 tasks complete** (P1.1–P1.5); M1 is code-complete.
+- MVP implementation: **5 / 25 tasks complete**.
 - Passing implementation gates: **0 / 6** (G1: replay done and clean; the 20-paper parser audit is the last item outstanding).
 - Corpus ingested: **100 accepted ICLR 2024 main-conference papers**, 4,470 chunks, from 2,260 eligible notes (dev database, not indexed — Qdrant serving indexes arrive in P2.2). Benchmarks observed: none yet. User-study observations: none yet.
-- Test evidence on this host (2026-09-12): full suite **121 passed** against `postgres:17.11-bookworm` and `qdrant/qdrant:v1.19.1` in Docker Desktop; Ruff and mypy strict clean.
+- Test evidence on this host (2026-09-12): full suite **140 passed** against `postgres:17.11-bookworm` and `qdrant/qdrant:v1.19.1` in Docker Desktop; Ruff and mypy strict clean.
 
 Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **Blocked**. No placeholder is evidence; a task is Done only when every named acceptance case ran, its report exists and its commit is recorded.
 
@@ -23,6 +23,7 @@ Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **
 | Paper identity (P1.2) | DOI/arXiv/title normalization; transactional identity resolution with strong-ID matching, compatible-metadata title matching, review conflicts, quarantine of invalid identifiers, per-field provenance, raw-artifact retention by checksum, manual merge with redirects. |
 | Parsing and chunking (P1.3) | pypdf text adapter behind a `PageAdapter` boundary with typed failures (missing, not PDF, oversized, encrypted, corrupt, empty text); heading-aware sections with page spans; versioned fixed-window chunker (450/600/60) that never crosses sections, keeps tables coherent or fragments them with labels, and excludes references from default evidence; UUIDv5 chunk identity; idempotent persistence. |
 | Ingestion (P1.4) | PostgreSQL-leased durable jobs (`SKIP LOCKED`, lease tokens, heartbeats, capped exponential backoff honouring Retry-After) and a worker that commits handler output with completion; adapters for OpenReview (with login token), proceedings JSON listings, arXiv Atom and Semantic Scholar enrichment; hardened PDF download; `corpus ingest` deterministic sampling and `worker run`. |
+| Export and releases (P1.5) | Parquet metadata/fulltext/edges shards with per-shard and manifest checksums; redistribution filter withholding rows without established rights; private-field and schema-version refusal; restore into an empty database; `GET /v1/corpus/coverage` with null denominators; staged releases that cannot activate until P2.2 index validation. |
 | Test harness | Isolated fixtures that refuse any database or Qdrant prefix not starting with `test_` and any data root outside `${DATA_DIR}/test`; injected provider transports and DNS; synthetic captured provider responses; a repository-owned CC0 fixture PDF. |
 
 ## Files implemented
@@ -56,7 +57,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | P1.2 | Normalize publication identity and preserve version provenance | Done | P1.1 | `35c0da1`; [identity evidence](../../reports/m1-identity.md) (local) |
 | P1.3 | Parse documents into traceable sections and chunks | Done (20-paper manual audit pending real PDFs) | P1.2 | `9bbef4a`; [parser evidence](../../reports/m1-parser-audit.md) (local) |
 | P1.4 | Ingest an accepted-paper pilot through resumable jobs | Done — live 100-paper pilot and clean replay on 2026-09-12 | P1.2, P1.3 | `d3fad84`; [ingestion evidence](../../reports/m1-ingestion.md) |
-| P1.5 | Export immutable corpus snapshots and publish coverage | Not started | P1.4 | Not produced |
+| P1.5 | Export immutable corpus snapshots and publish coverage | Done — 3.0 MB snapshot exported, validated and restored into a clean database with identical IDs | P1.4 | [corpus evidence](../../reports/m1-corpus.md), [data card](../data-card.md) |
 | P2.1–P2.5 | Retrieval and ranking | Not started | P1.5 | Not produced |
 | P3.1–P3.5 | Recommendation workspace | Not started | P2.4 | Not produced |
 | P4.1–P4.5 | Evidence assistant | Not started | P2.3, P3.1 | Not produced |
@@ -67,7 +68,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 
 | Gate | Required evidence | State |
 |---|---|---|
-| G1 | 100-paper replay, identity checks, 20-paper parser audit, snapshot restore | In progress — replay clean (100 canonical IDs byte-identical, 0 duplicate jobs); every parse classified; **20-paper audit outstanding**; snapshot restore needs P1.5. Note: zero duplicate strong IDs passes vacuously — the pilot has only `openreview` identifiers |
+| G1 | 100-paper replay, identity checks, 20-paper parser audit, snapshot restore | In progress — replay clean (100 canonical IDs byte-identical, 0 duplicate jobs); every parse classified; snapshot restore verified into a clean database with identical IDs; **20-paper audit is the only item outstanding**. Note: zero duplicate strong IDs passes vacuously — the pilot has only `openreview` identifiers |
 | G2–G6 | See specification §11 | Not started |
 
 ## Decisions recorded during implementation
@@ -80,6 +81,8 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | First parser adapter | pypdf, not Docling | Docling needs PyTorch and model downloads, breaking offline deterministic CI on a zero-budget machine; swappable behind `PageAdapter` | `configs/parsing.yaml`, `reports/m1-parser-audit.md` |
 | Proceedings adapter | Captured JSON listings, not per-venue HTML scraping | Scraping belongs to P6.1's verified venue adapters | `sources/proceedings.py` |
 | OpenReview access | Login token from a free account; PDFs via `api2.openreview.net/attachment` | Guest API access returns `ChallengeRequiredError` (403) on notes and PDF routes | `sources/openreview.py`, `configs/corpus.yaml` |
+| Export eligibility spelling | Accept both `eligible` (spec §5 enum) and `allowed` (plan example) as publishable | The same decision under two names; rejecting one would silently withhold every row the pipeline writes | `corpus/export.py` |
+| Release activation | Default validator refuses until P2.2 | An empty check returning ok would let a release serve with no vectors behind it, which readiness would report as healthy | `corpus/releases.py` |
 | Version identity | `_upsert_version` treats (source, revision, version) as one observation | Lets a download replace the placeholder metadata checksum in place without duplicate rows | `corpus/dedupe.py` |
 | Dotenv reaches `os.environ` | `cli.load_dotenv_files()` at the CLI entry point | `Settings` parses `.env` into its own object only, so `os.environ`-based lookups (OpenReview credentials, `default_staging_dir`) read as unset and the pilot silently fell back to guest access | `cli.py`, `test_config.py` |
 | Control characters in extracted text | Strip C0 and DEL (keeping tab) at `sections_from_pages`; bump `pypdf-text-v1` → `v2` | pypdf maps ligature/math glyphs onto low codepoints; NUL makes PostgreSQL reject the write. Sanitizing at the Section boundary covers every `PageAdapter`. Lossy: 0.054% of characters across 69/100 documents | `corpus/parse.py`, `configs/parsing.yaml`, `reports/m1-ingestion.md` |
@@ -91,6 +94,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | 2026-09-09 | Repository reset; design docs revised for zero-budget local infrastructure; docs untracked | Markdown checks; no application tests | `a61a07c`, `9069dde`, `60953e6` | Implement P1.1 |
 | 2026-09-09 | Docker Desktop + WSL installed; P1.1, P1.2 restored and adapted | 67 passed (22 offline, 45 integration), Ruff, mypy | `c9ec8f4`, `35c0da1`, `f652b9a` | P1.3 |
 | 2026-09-10 | P1.3 implemented; P1.4 implemented; dotenv CORS fix | 119 passed, Ruff, mypy; live OpenReview listing returned 403 challenge | `9bbef4a`, `c02249e`, `d3fad84` | Add OpenReview credentials to `.env`, run and replay the 100-paper pilot, write `reports/m1-ingestion.md`, then P1.5 |
+| 2026-09-12 | P1.5 implemented: export, validate, restore, coverage endpoint, guarded releases | 140 passed, Ruff clean, strict mypy shows 4 pre-existing errors only. Pilot snapshot 3.0 MB (100 metadata + 4,470 fulltext rows); public export withholds all 4,570 rows; restore into a clean database reproduced 100 byte-identical paper IDs | [corpus evidence](../../reports/m1-corpus.md), [data card](../data-card.md) | Fix the mypy invocation, then the 20-paper parser audit to close G1 |
 | 2026-09-12 | P1.4 live pilot and replay; dotenv loading fixed; parser sanitization added (`pypdf-text-v2`) | 121 passed, Ruff, mypy. Live: 2,260 eligible notes → 100 papers, 100 PDFs, 4,470 chunks; 41/100 parses failed on NUL bytes before the fix; replay processed 0 jobs and left canonical IDs byte-identical | [ingestion evidence](../../reports/m1-ingestion.md); working tree not yet committed | Run the 20-paper parser audit against the downloaded PDFs, then P1.5 |
 
 ## Definition of a completed task
