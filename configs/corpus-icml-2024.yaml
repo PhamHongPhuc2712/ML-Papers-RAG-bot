@@ -38,7 +38,7 @@ download:
     - openreview.net
   max_bytes: 52428800
   timeout_seconds: 60
-  # Seconds between provider requests per worker. Three unpaced workers had
-  # OpenReview return a long Retry-After for 8,665 of 8,905 downloads; one
-  # worker at this pace stays under the limit instead of discovering it.
-  min_interval_seconds: 1.0
+  # Seconds between provider requests per worker. OpenReview's measured limit
+  # is 140 requests per 3600 s (ratelimit-policy: 140;w=3600), i.e. one per
+  # 25.7 s. 30 s leaves headroom for listing calls on the same budget.
+  min_interval_seconds: 30.0

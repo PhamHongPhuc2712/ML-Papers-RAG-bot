@@ -31,16 +31,28 @@ class JobOutcome:
 class JobError(Exception):
     """Classified handler failure. Retryable errors back off; others fail terminally."""
 
-    def __init__(self, code: str, *, retryable: bool = True, retry_after: int | None = None):
+    def __init__(
+        self,
+        code: str,
+        *,
+        retryable: bool = True,
+        retry_after: int | None = None,
+        counts_as_attempt: bool = True,
+    ):
         self.code = code
         self.retryable = retryable
         self.retry_after = retry_after
+        self.counts_as_attempt = counts_as_attempt
         super().__init__(code)
 
 
 class ThrottledError(JobError):
+    """Provider back-pressure. Reschedules without spending one of the attempts."""
+
     def __init__(self, retry_after: int | None = None) -> None:
-        super().__init__("throttled", retryable=True, retry_after=retry_after)
+        super().__init__(
+            "throttled", retryable=True, retry_after=retry_after, counts_as_attempt=False
+        )
 
 
 class LeaseLostError(RuntimeError):
@@ -94,7 +106,11 @@ class Worker:
                 outcome = handler(job, beat)
             except JobError as error:
                 self._fail(
-                    job, error.code, retryable=error.retryable, retry_after=error.retry_after
+                    job,
+                    error.code,
+                    retryable=error.retryable,
+                    retry_after=error.retry_after,
+                    counts_as_attempt=error.counts_as_attempt,
                 )
                 return True
             except Exception:
@@ -127,7 +143,11 @@ class Worker:
             except JobError as error:
                 session.rollback()
                 self._fail(
-                    job, error.code, retryable=error.retryable, retry_after=error.retry_after
+                    job,
+                    error.code,
+                    retryable=error.retryable,
+                    retry_after=error.retry_after,
+                    counts_as_attempt=error.counts_as_attempt,
                 )
             except Exception:
                 session.rollback()
@@ -141,9 +161,18 @@ class Worker:
         *,
         retryable: bool = True,
         retry_after: int | None = None,
+        counts_as_attempt: bool = True,
     ) -> None:
         with self._factory() as session:
-            fail(session, job.id, job.token, code, retry_after=retry_after, retryable=retryable)
+            fail(
+                session,
+                job.id,
+                job.token,
+                code,
+                retry_after=retry_after,
+                retryable=retryable,
+                counts_as_attempt=counts_as_attempt,
+            )
             session.commit()
 
     def _heartbeat_loop(self, beat: Heartbeat, stop: threading.Event) -> None:

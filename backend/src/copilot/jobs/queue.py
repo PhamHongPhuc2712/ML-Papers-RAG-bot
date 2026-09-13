@@ -181,16 +181,31 @@ def fail(
     *,
     retry_after: int | None = None,
     retryable: bool = True,
+    counts_as_attempt: bool = True,
 ) -> bool:
-    """Schedule a retry with backoff, or fail terminally after the last attempt."""
+    """Schedule a retry with backoff, or fail terminally after the last attempt.
+
+    ``counts_as_attempt=False`` gives back the attempt that ``lease`` consumed.
+    Provider back-pressure is not a failure of the work: OpenReview allows 140
+    attachment requests an hour, so a corpus of thousands of PDFs meets 429 many
+    times per job, and counting those would fail every job terminally long before
+    the corpus finished.
+    """
 
     job = session.execute(
         select(Job).where(_live(job_id, token)).with_for_update()
     ).scalar_one_or_none()
     if job is None:
         return False
-    if not retryable or job.attempt >= job.max_attempts:
-        values: dict[str, Any] = {"status": "failed", "next_attempt_at": None}
+    if not counts_as_attempt:
+        delay = backoff_seconds(job.attempt, retry_after)
+        values: dict[str, Any] = {
+            "status": "retry_wait",
+            "next_attempt_at": func.now() + timedelta(seconds=delay),
+            "attempt": max(0, job.attempt - 1),
+        }
+    elif not retryable or job.attempt >= job.max_attempts:
+        values = {"status": "failed", "next_attempt_at": None}
     else:
         delay = backoff_seconds(job.attempt, retry_after)
         values = {

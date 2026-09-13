@@ -340,7 +340,9 @@ def test_throttled_download_waits_for_the_longer_retry_after(pipeline):
         throttled = session.execute(
             select(Job).where(Job.kind == "download_pdf", Job.status == "retry_wait")
         ).scalar_one()
-        assert throttled.attempt == 1
+        # The lease consumed an attempt and throttling gave it back: provider
+        # back-pressure must not spend the job's five real tries.
+        assert throttled.attempt == 0
         assert throttled.error_code == "throttled"
         remaining = session.execute(
             text("SELECT EXTRACT(EPOCH FROM (next_attempt_at - now())) FROM jobs WHERE id = :id"),
@@ -576,3 +578,62 @@ def test_openreview_login_token_is_sent_when_credentials_are_configured(pipeline
     transport.routes[listing_key] = [challenge]
     with pytest.raises(Exception, match="challenge_required"):
         anonymous.fetch_page(None)
+
+
+@pytest.mark.integration
+def test_throttling_does_not_consume_a_retry_attempt(migrated_database):
+    """Back-pressure is not failure.
+
+    OpenReview allows 140 attachment requests per hour. A corpus of thousands of
+    PDFs therefore meets 429 many times per job, and if each one burned an
+    attempt every job would fail terminally long before the corpus finished.
+    """
+
+    from copilot.db.session import session_scope
+    from copilot.jobs.queue import enqueue, fail, lease
+
+    with session_scope(migrated_database) as session:
+        job_id = enqueue(session, "download_pdf", {"pdf_url": "https://x.invalid/a.pdf"},
+                         "throttle-attempt-test")
+
+    def elapse(session):
+        """Let the backoff window pass, so the job is due again."""
+        session.execute(
+            text("UPDATE jobs SET next_attempt_at = now() - interval '1 second' WHERE id = :id"),
+            {"id": job_id},
+        )
+
+    for _ in range(8):
+        with session_scope(migrated_database) as session:
+            leased = lease(session, "w1", kinds=["download_pdf"])
+            assert leased is not None, "a throttled job must stay leasable"
+            fail(session, leased.id, leased.token, "throttled",
+                 retry_after=0, counts_as_attempt=False)
+            elapse(session)
+
+    with session_scope(migrated_database) as session:
+        row = session.execute(
+            select(Job).where(Job.id == job_id)
+        ).scalar_one()
+        # Eight throttles, still retryable and still on its first real attempt.
+        assert row.status == "retry_wait"
+        assert row.attempt == 0
+
+    # A genuine error still counts, and still fails terminally at the cap.
+    for _ in range(5):
+        with session_scope(migrated_database) as session:
+            leased = lease(session, "w1", kinds=["download_pdf"])
+            assert leased is not None
+            fail(session, leased.id, leased.token, "download_io", retry_after=0)
+            session.execute(
+                text(
+                    "UPDATE jobs SET next_attempt_at = now() - interval '1 second' "
+                    "WHERE id = :id"
+                ),
+                {"id": job_id},
+            )
+
+    with session_scope(migrated_database) as session:
+        row = session.execute(select(Job).where(Job.id == job_id)).scalar_one()
+        assert row.status == "failed"
+        assert row.error_code == "download_io"

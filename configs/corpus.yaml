@@ -46,5 +46,6 @@ download:
     - export.arxiv.org
   max_bytes: 52428800
   timeout_seconds: 60
-  # Seconds between provider requests per worker (spec 4 throttling).
-  min_interval_seconds: 1.0
+  # Seconds between provider requests per worker. OpenReview's measured limit
+  # is 140 requests per 3600 s; 30 s stays under it (spec 4 throttling).
+  min_interval_seconds: 30.0
