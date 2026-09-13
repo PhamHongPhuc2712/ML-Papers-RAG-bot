@@ -62,7 +62,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | P3.1–P3.5 | Recommendation workspace | Not started | P2.4 | Not produced |
 | P4.1–P4.5 | Evidence assistant | Not started | P2.3, P3.1 | Not produced |
 | P5.1–P5.5 | Portfolio hardening (P5.3 deployment half and public rate limiting deferred) | Not started | P1–P4 | Not produced |
-| P6.1–P6.5 | Research expansion (optional) | Not started | G5 | Not produced |
+| P6.1–P6.6 | Research expansion (optional), including P6.6 comparing knowledge/graph and agentic answering against the single-shot baseline | Not started | G5 | Not produced |
 
 ## Gate board
 

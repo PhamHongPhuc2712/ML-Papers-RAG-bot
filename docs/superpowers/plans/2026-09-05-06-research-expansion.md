@@ -269,6 +269,48 @@ Generate a bounded landscape from the existing agent/evidence pipeline, with lab
 
 - [ ] Save `reports/m6-showcase.md`, updated case study and an explicit list of evaluated versus deferred experiments; update this task's status in the progress tracker; inspect `git diff --check` and `git diff`, stage only the Files listed here, and commit with message `feat: present cited research landscapes and experiment evidence`.
 
+## P6.6: Compare question-answering architectures against the single-shot baseline
+
+**Depends on:** P4.5 (the baseline and its judged dataset); P6.2 for the agentic arm
+
+**Recorded intent, 2026-09-14.** The answering path specified in spec section 9 is
+single-shot retrieve-then-read: one retrieval, one generation, then citation
+validation. Its retrieval is strong (hybrid, reranked, papers-then-chunks) and
+its output is provenance-checked, but the control flow itself is the vanilla RAG
+skeleton. There is no query decomposition, no re-retrieval, and no reflection on
+whether the retrieved evidence was adequate. The owner wants the alternatives
+measured rather than assumed.
+
+**Arms to compare**, all on the same frozen corpus release and the same 60-case
+RAG dataset from spec section 11:
+
+1. **Baseline** - the P4.1-P4.2 single-shot path, unchanged. The control.
+2. **Knowledge / graph RAG** - build a retrievable graph over corpus content
+   (entities, methods, datasets, metrics and their relations) and traverse it for
+   multi-paper questions, instead of retrieving flat chunks. Distinct from P6.3,
+   which uses the citation graph as a *recommendation* candidate source and does
+   not touch the answering path.
+3. **Agentic RAG** - iterative retrieval under P6.2's existing budget (six tool
+   calls, two search rounds, 30-second deadline, no open-ended recursion), so the
+   model may re-retrieve when the first evidence set is inadequate.
+
+**Files:** create `backend/src/copilot/evidence/{graph_retrieve,agentic_retrieve}.py`,
+`configs/qa_architectures.yaml`, `backend/tests/unit/test_qa_arms.py`,
+`backend/tests/integration/test_qa_comparison.py`, `reports/m6-qa-architectures.md`.
+
+**What decides it.** The 10 multi-paper and 10 unanswerable cases in the RAG
+dataset are the discriminating subsets: graph retrieval should help the former,
+and an agentic arm must not degrade the latter by retrieving until it finds
+something to say. Report supported-claim rate, provenance validity, judged
+answer quality, p50/p95 latency and per-question cost for every arm, with
+paired bootstrap intervals over the 1,000 resamples spec section 11 requires.
+
+**Promotion rule.** An arm replaces the baseline only on measured benefit that
+survives the latency and cost gates; a negative result is a valid, publishable
+outcome. Graph construction cost and its storage are counted against the arm,
+not treated as free infrastructure. No arm may weaken the citation validation in
+spec section 9 - every arm answers through the same validator.
+
 ## Exit checkpoint
 
 G6 completes only for experiments actually run and documented. A retain-baseline decision is a valid completed experiment; absent training data is a pending experiment. Update corpus/model cards, reports and portfolio claims to match observed results.
