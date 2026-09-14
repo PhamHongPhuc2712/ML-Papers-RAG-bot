@@ -1,14 +1,14 @@
 # ML Research Copilot — Progress Tracker
 
-Last updated: 2026-09-10.
+Last updated: 2026-09-14.
 
 ## Current state
 
-- Implementation: **4 / 30 tasks complete** (P1.1–P1.4); P1.4's live pilot is pending OpenReview credentials.
+- Implementation: **4 / 30 tasks complete** (P1.1–P1.4); P1.3's parser audit is measured and closed, P1.4's live pilot is still open.
 - MVP implementation: **4 / 25 tasks complete**.
-- Passing implementation gates: **0 / 6** (G1 needs the 100-paper replay and the 20-paper parser audit).
+- Passing implementation gates: **0 / 6** (G1's parser audit now passes at 95% usable text; the 100-paper replay and snapshot restore remain).
 - Corpus indexed: none yet. Benchmarks observed: none yet. User-study observations: none yet.
-- Test evidence on this host (2026-09-10): full suite **119 passed** against `postgres:17.11-bookworm` and `qdrant/qdrant:v1.19.1` in Docker Desktop; Ruff and mypy strict clean.
+- Test evidence on this host (2026-09-14, WSL/Linux, Docker 29.4.3): full suite **120 passed**; Ruff and mypy strict clean. Corpus on disk: 2,260 ICLR 2024 PDFs (13.70 GB) plus metadata, under `${DATA_DIR}/sources/papercli/`.
 
 Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **Blocked**. No placeholder is evidence; a task is Done only when every named acceptance case ran, its report exists and its commit is recorded.
 
@@ -54,7 +54,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 |---|---|---|---|---|
 | P1.1 | Create a runnable API and isolated persistence test harness | Done | Design review | `c9ec8f4`, `f652b9a`; [foundation evidence](../../reports/m1-foundation.md) (local) |
 | P1.2 | Normalize publication identity and preserve version provenance | Done | P1.1 | `35c0da1`; [identity evidence](../../reports/m1-identity.md) (local) |
-| P1.3 | Parse documents into traceable sections and chunks | Done (20-paper manual audit pending real PDFs) | P1.2 | `9bbef4a`; [parser evidence](../../reports/m1-parser-audit.md) (local) |
+| P1.3 | Parse documents into traceable sections and chunks | Done; 20-paper audit measured 2026-09-14 at 95% usable text, parser retained, four structure defects recorded for follow-up | P1.2 | `9bbef4a`, `4f8a3b7`; [parser evidence](../../reports/m1-parser-audit.md) |
 | P1.4 | Ingest an accepted-paper pilot through resumable jobs | In progress — code and synthetic-fixture suite green; live 100-paper pilot blocked on OpenReview credentials | P1.2, P1.3 | `d3fad84`; `reports/m1-ingestion.md` not yet produced |
 | P1.5 | Export immutable corpus snapshots and publish coverage | Not started | P1.4 | Not produced |
 | P2.1–P2.5 | Retrieval and ranking | Not started | P1.5 | Not produced |
@@ -67,7 +67,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 
 | Gate | Required evidence | State |
 |---|---|---|
-| G1 | 100-paper replay, identity checks, 20-paper parser audit, snapshot restore | Not started — identity checks pass; replay and audit need the live pilot |
+| G1 | 100-paper replay, identity checks, 20-paper parser audit, snapshot restore | Partly met — identity checks pass; parser audit passes (19/20 usable, ≥90% rule met, 2026-09-14); replay and snapshot restore outstanding |
 | G2–G6 | See specification §11 | Not started |
 
 ## Decisions recorded during implementation
@@ -91,6 +91,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | 2026-09-09 | Repository reset; design docs revised for zero-budget local infrastructure; docs untracked | Markdown checks; no application tests | `a61a07c`, `9069dde`, `60953e6` | Implement P1.1 |
 | 2026-09-09 | Docker Desktop + WSL installed; P1.1, P1.2 restored and adapted | 67 passed (22 offline, 45 integration), Ruff, mypy | `c9ec8f4`, `35c0da1`, `f652b9a` | P1.3 |
 | 2026-09-10 | P1.3 implemented; P1.4 implemented; dotenv CORS fix | 119 passed, Ruff, mypy; live OpenReview listing returned 403 challenge | `9bbef4a`, `c02249e`, `d3fad84` | Add OpenReview credentials to `.env`, run and replay the 100-paper pilot, write `reports/m1-ingestion.md`, then P1.5 |
+| 2026-09-14 | Environment rebuilt on WSL; extracted-text sanitization fixed; 2,260 ICLR 2024 PDFs collected; P1.3 audit measured | 120 passed, Ruff, mypy; 3,645 real chunks accepted by PostgreSQL; audit 19/20 usable text | `96130ef`, `4f8a3b7`; [parser evidence](../../reports/m1-parser-audit.md) | Fix the four structure defects (headings, caption-sections, header leakage, over-segmentation), then run venue ingestion and P1.5 |
 
 ## Definition of a completed task
 
