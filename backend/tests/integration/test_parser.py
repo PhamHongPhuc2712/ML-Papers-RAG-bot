@@ -118,6 +118,29 @@ def test_pdf_without_extractable_text_is_a_typed_failure(tmp_path):
     assert result.error_code is ParseErrorCode.EMPTY_TEXT
 
 
+def test_extracted_text_is_storable_after_adapter_artifacts(tmp_path):
+    """Real PDFs yield NUL bytes and surrogates that PostgreSQL text columns reject.
+
+    A third of sampled ICLR 2024 papers carry NUL characters and a few carry
+    unpaired surrogates from the mathematical-alphanumeric block, so the domain
+    boundary must repair adapter output rather than let the chunk insert fail.
+    """
+
+    poisoned = "alpha \x00 beta 𝑎 gamma \ud835 delta"
+
+    def adapter(payload: bytes) -> list[ParsedPage]:
+        return [ParsedPage(number=1, text=poisoned)]
+
+    result = parse_pdf_result(FIXTURE_PDF, adapter=adapter)
+    assert result.status is ParseStatus.PARSED
+    text = "\n".join(section.text for section in result.sections)
+
+    assert "\x00" not in text
+    text.encode("utf-8")  # must not raise: surrogates never reach storage
+    assert "\U0001d44e" in text  # a valid pair is recovered, not discarded
+    assert "�" in text  # the unpaired half becomes the replacement character
+
+
 def test_fixture_chunks_under_the_versioned_policy_exclude_references_by_default():
     config = load_parsing_config(CONFIG)
     sections = parse_pdf(FIXTURE_PDF)

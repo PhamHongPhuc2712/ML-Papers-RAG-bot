@@ -72,6 +72,7 @@ class PageAdapter(Protocol):
         """Return page texts in reading order; raise PDFParseError for typed failures."""
 
 
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
 _NUMBERED = re.compile(r"^(?P<num>\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+(?P<title>[A-Z][^\n]{0,80})$")
 _CAPTION = re.compile(r"^(?P<kind>Table|Figure)\s+\d+[A-Za-z]?\s*[:.]", re.IGNORECASE)
 _APPENDIX = re.compile(r"^Appendix(\s+[A-Z](\b|\.|:))?\s*.*$")
@@ -99,6 +100,23 @@ def _classify_heading(line: str) -> tuple[str, str] | None:
     if numbered is not None and not numbered.group("title").endswith("."):
         return numbered.group("title").strip(), "body"
     return None
+
+
+def _storable_text(text: str) -> str:
+    """Repair adapter output that UTF-8 and PostgreSQL text columns reject.
+
+    pypdf emits NUL characters from damaged font encodings and maps some astral
+    characters onto raw UTF-16 surrogate halves. Both abort the chunk insert
+    rather than degrade, so they are repaired at the adapter boundary for every
+    adapter. Re-encoding through UTF-16 rejoins genuine pairs into the character
+    they stand for, unpaired halves become U+FFFD, and NUL carries no content.
+    """
+
+    if "\x00" in text:
+        text = text.replace("\x00", "")
+    if _SURROGATE.search(text):
+        text = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return text
 
 
 def sections_from_pages(pages: Iterable[ParsedPage]) -> list[Section]:
@@ -210,6 +228,7 @@ def parse_pdf_result(
         pages = list(adapter(payload))
     except PDFParseError as error:
         return _failed(error.code, checksum)
+    pages = [ParsedPage(number=page.number, text=_storable_text(page.text)) for page in pages]
     sections = sections_from_pages(pages)
     if not any(section.text.strip() for section in sections):
         return _failed(ParseErrorCode.EMPTY_TEXT, checksum, page_count=len(pages))

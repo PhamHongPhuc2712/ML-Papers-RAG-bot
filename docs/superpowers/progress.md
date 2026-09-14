@@ -81,6 +81,8 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | Proceedings adapter | Captured JSON listings, not per-venue HTML scraping | Scraping belongs to P6.1's verified venue adapters | `sources/proceedings.py` |
 | OpenReview access | Login token from a free account; PDFs via `api2.openreview.net/attachment` | Guest API access returns `ChallengeRequiredError` (403) on notes and PDF routes | `sources/openreview.py`, `configs/corpus.yaml` |
 | Version identity | `_upsert_version` treats (source, revision, version) as one observation | Lets a download replace the placeholder metadata checksum in place without duplicate rows | `corpus/dedupe.py` |
+| Extracted-text sanitization (2026-09-14) | Repair NUL characters and UTF-16 surrogate halves at the `PageAdapter` boundary; `PARSER_VERSION` left at `pypdf-text-v1` | 32% of sampled real papers carry NUL and 2% carry unpaired surrogates; PostgreSQL and UTF-8 reject both, so the chunk insert aborted rather than degraded. No corpus has been parsed yet, so nothing needs re-parsing and no version bump is owed | `corpus/parse.py:_storable_text` |
+| Source PDF retention (2026-09-14) | Corpus PDFs may be deleted once their chunks are stored, so bulk ingestion can stream venue by venue instead of holding every PDF at once | No planned task reads a corpus PDF after parsing: the page-image path in §9 and P4.3/P4.4 covers *private uploads* (`uploads/images.py`), not corpus papers. Re-parsing under a new `parser_version` would need them again, so settle the parser choice first | spec §9, P4.3/P4.4 |
 
 ## Session log
 
