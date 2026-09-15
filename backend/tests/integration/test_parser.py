@@ -141,6 +141,122 @@ def test_extracted_text_is_storable_after_adapter_artifacts(tmp_path):
     assert "�" in text  # the unpaired half becomes the replacement character
 
 
+def _pages(*texts: str) -> list[ParsedPage]:
+    return [ParsedPage(number=index, text=text) for index, text in enumerate(texts, start=1)]
+
+
+def _parse_pages(pages: list[ParsedPage]):
+    """Drive the real parse path with supplied page text."""
+
+    def adapter(payload: bytes) -> list[ParsedPage]:
+        return pages
+
+    return parse_pdf_result(FIXTURE_PDF, adapter=adapter)
+
+
+def _all_text(result) -> str:
+    return " ".join(section.text for section in result.sections)
+
+
+def test_small_caps_headings_are_rejoined():
+    """LaTeX small caps extract as "1 I NTRODUCTION"; the section name must not keep it."""
+
+    result = _parse_pages(
+        _pages(
+            "1 I NTRODUCTION\n"
+            "This opening section is long enough that the small-section merge leaves it alone.\n"
+            "2 R ELATED W ORKS\n"
+            "This second section is also long enough to survive on its own after merging.\n"
+        )
+    )
+    names = [section.name for section in result.sections]
+    assert "INTRODUCTION" in names
+    assert "RELATED WORKS" in names
+
+
+def test_leading_article_is_not_absorbed_into_the_next_word():
+    result = _parse_pages(_pages("3 A B ETTER W AY\nbody text"))
+    assert "A BETTER WAY" in [section.name for section in result.sections]
+
+
+def test_named_heading_survives_the_small_caps_artifact():
+    result = _parse_pages(_pages("A CKNOWLEDGMENTS\nwe thank the reviewers"))
+    assert "acknowledgments" in [section.kind for section in result.sections]
+
+
+def test_figure_caption_does_not_capture_the_prose_after_it():
+    result = _parse_pages(
+        _pages(
+            "1 M ETHOD\nfirst method sentence\n"
+            "Figure 2: A short caption line.\n"
+            "second method sentence after the figure"
+        )
+    )
+    body = " ".join(s.text for s in result.sections if s.name == "METHOD")
+    captions = [s for s in result.sections if s.kind == "figure"]
+    assert "second method sentence" in body
+    assert captions and "second method sentence" not in captions[0].text
+
+
+def test_prose_interrupted_by_a_caption_is_rejoined():
+    """A figure splits its section in the page stream; the prose is still one section."""
+
+    result = _parse_pages(
+        _pages(
+            "1 M ETHOD\n"
+            "The first half of the method section carries enough prose to stand alone.\n"
+            "Figure 2: A short caption line.\n"
+            "The second half continues the same argument after the figure interrupts it.\n"
+        )
+    )
+    method = [section for section in result.sections if section.name == "METHOD"]
+    assert len(method) == 1, [(s.name, s.kind) for s in result.sections]
+    assert "first half" in method[0].text and "second half" in method[0].text
+    assert any(section.kind == "figure" for section in result.sections)
+
+
+def test_running_page_header_is_dropped():
+    header = "Published as a conference paper at ICLR 2024"
+    result = _parse_pages(
+        _pages(
+            f"{header}\n1 I NTRODUCTION\nalpha",
+            f"2 {header}\nbeta",
+            f"3 {header}\ngamma",
+            f"4 {header}\ndelta",
+        )
+    )
+    text = _all_text(result)
+    assert "conference paper at ICLR" not in text
+    assert "beta" in text and "delta" in text
+
+
+def test_line_break_hyphenation_is_rejoined_but_real_compounds_survive():
+    result = _parse_pages(
+        _pages(
+            "1 M ETHOD\nwe study pose estima-\ntion in the wild\n"
+            "compared with state-of-the-art systems\n"
+            "against the state-of-\nthe-art baseline"
+        )
+    )
+    text = _all_text(result)
+    assert "estimation" in text
+    assert "state-of-the-art baseline" in text
+    assert "state-ofthe-art" not in text
+
+
+def test_ligatures_are_normalised():
+    result = _parse_pages(_pages("1 M ETHOD\nclassiﬁcation and ﬂow"))
+    text = _all_text(result)
+    assert "classification" in text and "flow" in text
+
+
+def test_numbered_table_rows_do_not_open_sections():
+    result = _parse_pages(_pages("1 R ESULTS\n3 Accuracy 0.71\n4 Recall 0.62\nclosing sentence"))
+    names = [section.name for section in result.sections]
+    assert names.count("RESULTS") == 1
+    assert not any(name.startswith(("Accuracy", "Recall")) for name in names)
+
+
 def test_fixture_chunks_under_the_versioned_policy_exclude_references_by_default():
     config = load_parsing_config(CONFIG)
     sections = parse_pdf(FIXTURE_PDF)

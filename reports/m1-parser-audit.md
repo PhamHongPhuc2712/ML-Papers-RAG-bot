@@ -1,14 +1,13 @@
 # M1 parser evidence and audit status
 
-Date: 2026-09-10
+Date: 2026-09-10; audit and fixes added 2026-09-14
 Task: P1.3, parse documents into traceable sections and chunks
-Commit: `9bbef4a`
-Local-only report (`reports/` is gitignored by the owner's choice).
+Commits: `9bbef4a` (implementation), `4f8a3b7` (text sanitization), `c541429` (audit)
 
 ## Parser configuration
 
 `configs/parsing.yaml` schema 1. Adapter `pypdf-text` (pypdf 6.10.0 plain
-text per page), `parser_version=pypdf-text-v1`, quality label `low`,
+text per page), `parser_version=pypdf-text-v2` (raised from `v1` by the 2026-09-14 fixes below), quality label `low`,
 `max_pdf_bytes=52428800`, encrypted input rejected. Chunker
 `fixed-window-v1`: target 450, hard cap 600, overlap 60 (whitespace tokens in
 CI; the pinned BGE-M3 tokenizer is injected once P2.2 pins the model
@@ -128,19 +127,56 @@ extraction, and they are more damaging to retrieval than anything above.
 | Small-caps headings mangled (`I NTRODUCTION`, `M- PATTERN`) | 19/20 papers, **198 headings** |
 | Figure/table captions promoted to sections that then absorb body prose | 19/20 papers, **181 sections holding 28% of all body+caption characters** |
 | Running header leaking inline (`Published as a conference paper at ICLR …`) | 18/20 papers, **531 occurrences** |
-| Over-segmentation | mean chunk **287 tokens against a 450 target**; **329 of 1,194 chunks under 50 tokens** |
+| Over-segmentation | prose chunks median **182 tokens against a 450 target**; **247 of 763 prose chunks under 50 tokens** |
 
 Worst case in the sample: a 36-page paper split into 175 sections and 190
 chunks averaging 72 tokens.
 
 ### Consequences
 
-Body prose labelled `kind="figure"` is still returned as default evidence, so
-a cited answer can report its source section as "Figure 5" when the text is
+Body prose labelled `kind="figure"` was still returned as default evidence, so
+a cited answer could report its source section as "Figure 5" when the text is
 Methods prose. Undersized chunks weaken both the embedding and the
 cross-encoder rerank that M2 depends on, and they inflate chunk counts and
-index size. Fixing the four structure defects is P1.3-owned work that needs no
-re-download; it changes chunk text and should bump `chunker_version`.
+index size.
+
+## Fixes applied, 2026-09-14 — `pypdf-text-v2`
+
+All five defects were repaired and the audit re-run on the same 20 papers with
+the same seed. Text extraction was never the problem, so pypdf is unchanged;
+the work is in `_normalise_pages`, `_classify_heading` and
+`sections_from_pages`.
+
+| Measure | Before (`v1`) | After (`v2`) |
+|---|---|---|
+| Mangled small-caps headings | 198 across 19/20 papers | **1 across 1/20** |
+| Running header occurrences | 531 across 18/20 papers | **0 across 0/20** |
+| Body prose sitting inside caption sections | **28%** of body+caption characters | **3%** |
+| Prose chunk median | 182 tokens | **401 tokens** (target 450) |
+| Prose chunk mean | 222 tokens | **307 tokens** |
+| Prose chunks under 50 tokens | 247 of 763 | **67 of 610** |
+| Abstract token recall, mean | 0.962 | **0.982** |
+| Papers with recall ≥ 0.95 | 15/20 | **18/20** |
+| Total chunks for the sample | 1,194 | 1,092 |
+
+What each fix does:
+
+- **Captions are bounded blocks.** A caption that completes on its own line closes immediately instead of absorbing the prose after it, and the interrupted section resumes. Prose split by a figure is rejoined into one section, so a figure is an interruption in the page stream rather than a boundary in the argument.
+- **Small-caps headings are rejoined** before classification, which also repairs the `_NAMED` lookup: `A CKNOWLEDGMENTS` previously missed entirely and was absorbed into the preceding section. A lone capital followed by a single capital does not match, so an article before a small-caps word (`A B ETTER W AY`) survives.
+- **Page furniture is detected generically** — lines repeating at the edge of at least half the pages, plus bare page numbers — rather than by matching the ICLR header string, so it keeps working for the venues P6.1 adds.
+- **Line-break hyphenation is rejoined** using the document as its own dictionary: halves that appear hyphenated elsewhere in the same paper keep the hyphen, so `state-of-\nthe-art` survives while `estima-\ntion` is repaired. Ligatures are mapped to ASCII.
+- **`_NUMBERED` rejects titles carrying a free-standing number**, so table rows like `3 Accuracy 0.71` no longer open sections; digits bound to a letter (`GPT-4`) still pass. Undersized prose fragments merge into the preceding section of the same kind.
+
+Note on reading the aggregate: chunk mean *across all kinds* moved only 287 →
+279, which understates the change. The before figure counted mislabelled prose
+as if it were healthy, and the after figure includes 180 correctly isolated
+captions whose median is 15 tokens. Prose chunks are the honest comparison,
+and their median rose from 182 to 401.
+
+`PARSER_VERSION` moves to `pypdf-text-v2`, changing every chunk identity, which
+is the intended provenance signal. `chunker_version` is untouched: the windowing
+algorithm did not change, only the sections fed into it. Nothing is indexed, so
+no re-parse is owed.
 
 ### Scope and limits
 
