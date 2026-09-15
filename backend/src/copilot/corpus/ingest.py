@@ -10,6 +10,7 @@ a killed worker resumes without duplicates.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -45,14 +46,17 @@ from .sources.base import (
 )
 from .sources.openreview import DEFAULT_API_BASE as DEFAULT_OPENREVIEW_API
 from .sources.openreview import OpenReviewSource
+from .sources.papercli import PapercliSource
 from .sources.proceedings import ProceedingsSource
 from .sources.semantic_scholar import SemanticScholarSource
 
 MEMBERSHIP_SOURCES: dict[
-    str, type[OpenReviewSource] | type[ProceedingsSource] | type[ArxivSource]
+    str,
+    type[OpenReviewSource] | type[ProceedingsSource] | type[ArxivSource] | type[PapercliSource],
 ] = {
     "openreview": OpenReviewSource,
     "proceedings": ProceedingsSource,
+    "papercli": PapercliSource,
     "arxiv": ArxivSource,
 }
 
@@ -88,6 +92,17 @@ class IngestContext:
     @property
     def max_bytes(self) -> int:
         return int(self.download.get("max_bytes", self.parsing_config.parser.max_pdf_bytes))
+
+    @property
+    def mirror_roots(self) -> tuple[Path, ...]:
+        """Directories a mirrored PDF may be adopted from; anything else is refused."""
+
+        roots: list[Path] = [self.staging_dir]
+        config = self.source_config("papercli")
+        if config is not None:
+            declared = config.get("root_dir") or Path(str(config["records"])).parent
+            roots.append(Path(str(declared)))
+        return tuple(root.resolve() for root in roots)
 
     def source_config(self, name: str) -> Mapping[str, Any] | None:
         sources = self.manifest.get("sources", {})
@@ -289,21 +304,35 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
             except RecordValidationError as error:
                 raise JobError(f"record_invalid:{error.code}", retryable=False) from error
             result.update(outcome="resolved", paper_id=str(paper_id))
+            pdf_path = record.get("pdf_path")
             pdf_url = record.get("pdf_url")
-            if isinstance(pdf_url, str) and pdf_url:
+            target = (
+                f"{record['source']}:{record.get('source_item_id')}:"
+                f"{record.get('source_revision')}"
+            )
+            common = {
+                "run_id": run_id,
+                "paper_id": str(paper_id),
+                "source": record["source"],
+                "source_item_id": record.get("source_item_id"),
+                "source_revision": record.get("source_revision", "unknown"),
+                "version": record.get("version"),
+            }
+            # A mirrored copy already on disk is adopted; only a remote-only record
+            # goes through the hardened downloader.
+            if isinstance(pdf_path, str) and pdf_path:
+                enqueue(
+                    session,
+                    "adopt_pdf",
+                    {**common, "path": pdf_path, "expected_sha256": record.get("pdf_sha256")},
+                    f"adopt:{target}",
+                )
+            elif isinstance(pdf_url, str) and pdf_url:
                 enqueue(
                     session,
                     "download_pdf",
-                    {
-                        "run_id": run_id,
-                        "paper_id": str(paper_id),
-                        "source": record["source"],
-                        "source_item_id": record.get("source_item_id"),
-                        "source_revision": record.get("source_revision", "unknown"),
-                        "version": record.get("version"),
-                        "pdf_url": pdf_url,
-                    },
-                    f"download:{record['source']}:{record.get('source_item_id')}:{record.get('source_revision')}",
+                    {**common, "pdf_url": pdf_url},
+                    f"download:{target}",
                 )
             if context.source_config("semantic_scholar") is not None:
                 authors, identifiers = _paper_context(session, paper_id)
@@ -373,6 +402,58 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
                     "content_sha256": downloaded.sha256,
                 },
                 f"parse:{version.id}:{downloaded.sha256}:{parser.parser_version}:{chunker.chunker_version}",
+            )
+
+        return JobOutcome(result=result, writes=writes)
+
+    def adopt_pdf(job: LeasedJob, beat: Heartbeat) -> JobOutcome:
+        """Register a PDF already mirrored on disk, without any network access."""
+
+        payload = job.payload
+        candidate = Path(str(payload["path"]))
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError as error:
+            raise JobError("mirror_path_missing", retryable=False) from error
+        if not any(resolved.is_relative_to(root) for root in context.mirror_roots):
+            raise JobError("mirror_path_outside_root", retryable=False)
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with resolved.open("rb") as handle:
+                for block in iter(lambda: handle.read(1 << 20), b""):
+                    digest.update(block)
+                    size += len(block)
+        except OSError as error:
+            raise JobError("mirror_read_failed") from error
+        checksum = digest.hexdigest()
+        expected = payload.get("expected_sha256")
+        if isinstance(expected, str) and expected and expected != checksum:
+            raise JobError("mirror_checksum_mismatch", retryable=False)
+        result: dict[str, Any] = {"sha256": checksum, "bytes": size, "path": str(resolved)}
+
+        def writes(session: Session) -> None:
+            version = _find_version(
+                session,
+                UUID(str(payload["paper_id"])),
+                str(payload["source"]),
+                str(payload.get("source_revision", "unknown")),
+                payload.get("version"),
+            )
+            if version is None:
+                raise JobError("version_missing", retryable=False)
+            version.content_sha256 = checksum
+            session.flush()
+            enqueue(
+                session,
+                "parse_pdf",
+                {
+                    "run_id": payload.get("run_id"),
+                    "paper_version_id": str(version.id),
+                    "path": str(resolved),
+                    "content_sha256": checksum,
+                },
+                f"parse:{version.id}:{checksum}:{parser.parser_version}:{chunker.chunker_version}",
             )
 
         return JobOutcome(result=result, writes=writes)
@@ -468,6 +549,7 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
     return {
         "resolve_record": resolve_record,
         "download_pdf": download_pdf,
+        "adopt_pdf": adopt_pdf,
         "parse_pdf": parse_pdf,
         "enrich_paper": enrich_paper,
     }

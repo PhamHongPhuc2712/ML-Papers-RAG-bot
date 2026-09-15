@@ -576,3 +576,118 @@ def test_openreview_login_token_is_sent_when_credentials_are_configured(pipeline
     transport.routes[listing_key] = [challenge]
     with pytest.raises(Exception, match="challenge_required"):
         anonymous.fetch_page(None)
+
+
+def _mirror(tmp_path: Path, *, pdf_path: str = "pdfs/a.pdf") -> tuple[Path, dict[str, object]]:
+    """A local papercli mirror: one record, one PDF, no network routes."""
+
+    root = tmp_path / "papercli"
+    (root / "pdfs").mkdir(parents=True, exist_ok=True)
+    (root / "pdfs" / "a.pdf").write_bytes(FIXTURE_PDF)
+    records = root / "records.jsonl"
+    records.write_text(
+        json.dumps(
+            {
+                "forum_id": "mirror-a",
+                "venue": "ICLR",
+                "year": 2024,
+                "title": "A mirrored paper about retrieval",
+                "abstract": "An abstract for the mirrored paper.",
+                "forum_url": "https://openreview.net/forum?id=mirror-a",
+                "openreview_pdf_url": (
+                    "https://api2.openreview.net/attachment?name=pdf&id=mirror-a"
+                ),
+                "pdf_path": pdf_path,
+                "bytes": len(FIXTURE_PDF),
+                "sha256": FIXTURE_SHA,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    data: dict[str, object] = {
+        "schema_version": 1,
+        "venue": "ICLR",
+        "years": [2024],
+        "track": "main",
+        "sample": {"limit": 10, "order": "source_item_id"},
+        "sources": {
+            "papercli": {
+                "records": str(records),
+                "root_dir": str(root),
+                "dataset": "GenAI4ELab/papercli-papers",
+                "dataset_revision": "90a1fbd",
+                "pdf_dataset": "GenAI4ELab/papercli-papers-iclr",
+                "pdf_dataset_revision": "050f8a4",
+                "membership_is_acceptance": True,
+                "page_size": 100,
+            }
+        },
+    }
+    manifest = tmp_path / "mirror.yaml"
+    manifest.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return manifest, data
+
+
+def _run_mirror(engine, tmp_path: Path, **kwargs) -> tuple[FakeTransport, int]:
+    manifest, data = _mirror(tmp_path, **kwargs)
+    transport = FakeTransport()  # no routes registered: any request would raise
+    context = IngestContext(
+        manifest=data,
+        transport=transport,
+        staging_dir=tmp_path / "sources",
+        parsing_config=load_parsing_config(ROOT / "configs" / "parsing.yaml"),
+    )
+    worker = Worker(engine, build_handlers(context))
+    ingest(manifest, None, engine=engine, transport=transport)
+    return transport, worker.run_until_idle("mirror-1")
+
+
+def test_local_mirror_ingests_and_adopts_pdfs_without_network(
+    migrated_database, test_settings, tmp_path
+):
+    assert_safe_test_database(test_settings)
+    _truncate(migrated_database)
+    try:
+        transport, processed = _run_mirror(migrated_database, tmp_path)
+        with session_factory(migrated_database)() as session:
+            papers = session.execute(select(func.count()).select_from(Paper)).scalar_one()
+            versions = list(session.execute(select(PaperVersion)).scalars())
+            chunks = session.execute(select(func.count()).select_from(Chunk)).scalar_one()
+            identifiers = list(session.execute(select(PaperIdentifier)).scalars())
+        assert papers == 1
+        assert [identifier.namespace for identifier in identifiers] == ["openreview"]
+        assert len(versions) == 1
+        assert versions[0].source == "papercli"
+        assert versions[0].content_sha256 == FIXTURE_SHA
+        assert versions[0].parse_status == "parsed"
+        assert versions[0].parser_version == PARSER_VERSION
+        assert chunks > 0
+        assert processed >= 2
+        # The mirror is local: a run must not reach for the network at all.
+        assert transport.calls == []
+    finally:
+        _truncate(migrated_database)
+
+
+def test_mirror_pdf_outside_the_configured_root_is_refused(
+    migrated_database, test_settings, tmp_path
+):
+    assert_safe_test_database(test_settings)
+    _truncate(migrated_database)
+    try:
+        _run_mirror(migrated_database, tmp_path, pdf_path="../../etc/passwd")
+        with session_factory(migrated_database)() as session:
+            versions = list(session.execute(select(PaperVersion)).scalars())
+            chunks = session.execute(select(func.count()).select_from(Chunk)).scalar_one()
+            failed = list(
+                session.execute(select(Job).where(Job.kind == "adopt_pdf")).scalars()
+            )
+        # Metadata survives; the traversal attempt fails permanently and parses nothing.
+        assert len(versions) == 1
+        assert chunks == 0
+        assert failed and failed[0].status == "failed"
+        assert failed[0].error_code is not None
+        assert "mirror_path" in failed[0].error_code
+    finally:
+        _truncate(migrated_database)

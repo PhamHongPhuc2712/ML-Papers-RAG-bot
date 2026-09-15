@@ -11,7 +11,30 @@ sample:
   limit: 100
   order: source_item_id
 sources:
+  # Mirrored papercli index under DATA_DIR: the metadata and PDF shards are
+  # captured once, then ingestion reads local files and never calls out. The
+  # index carries no decision field, so membership_is_acceptance asserts that
+  # this venue-year listing is the accepted set; it was checked against ICLR
+  # 2024's published total of 2,260. Do not copy that assertion to another
+  # venue-year without repeating the check: the ICLR 2023 shard holds 3,792
+  # rows against roughly 1,574 accepted papers.
+  papercli:
+    enabled: true
+    root_dir: ${DATA_DIR}/sources/papercli
+    records: iclr-2024-corpus.jsonl
+    dataset: GenAI4ELab/papercli-papers
+    dataset_revision: 90a1fbd3c355717092966debf5f7f69bdc6a1cf6
+    pdf_dataset: GenAI4ELab/papercli-papers-iclr
+    pdf_dataset_revision: 050f8a4983fb3ff656e9cbaa32b8aeb3f561d2ef
+    page_size: 500
+    membership_is_acceptance: true
+    # The dataset card declares CC-BY-4.0, but per-paper rights are unverified,
+    # so nothing is marked redistributable for P1.5's export filter.
+    redistribution: unknown
   openreview:
+    # Disabled: guest access returns ChallengeRequiredError (403) on the notes
+    # and attachment routes, and the mirror above supersedes it for this pilot.
+    enabled: false
     # OpenReview API v2. Accepted ICLR 2024 main-conference notes carry this
     # venueid; rejected and withdrawn submissions carry
     # ICLR.cc/2024/Conference/Rejected_Submission and .../Withdrawn_Submission.
