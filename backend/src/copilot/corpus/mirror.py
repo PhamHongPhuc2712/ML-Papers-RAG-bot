@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +38,15 @@ REGISTRY_COLUMNS = (
     "hf_pdf_path",
 )
 _READ_BLOCK = 1 << 20
+# Each venue's PDFs live in their own shard repository (dataset card, §Hub).
+_SHARD_PREFIX = "GenAI4ELab/papercli-papers-"
+# Refuse to start a venue-year that could fill the disk mid-run. The largest
+# single venue-year measured is ICLR 2026 at roughly 48 GB.
+DEFAULT_MIN_FREE_BYTES = 80 * 1024**3
+DEFAULT_WORKERS = 8
+
+# (repo, revision, member path, destination root) -> local path
+Fetch = Callable[[str, str, str, Path], Path]
 
 
 class MirrorIndexError(RuntimeError):
@@ -90,6 +102,7 @@ def build_index(
     year: int,
     pdf_root: str | Path,
     out: str | Path,
+    mirror_revision: str = "",
 ) -> dict[str, int]:
     """Write the venue-year index and report how many rows have a local PDF.
 
@@ -121,7 +134,150 @@ def build_index(
                 "pdf_path": str(local) if local is not None else None,
                 "sha256": digest,
                 "bytes": size,
+                "mirror_revision": mirror_revision,
             }
             handle.write(json.dumps(record, sort_keys=True) + "\n")
     staged.replace(target)
     return counts
+
+
+def shard_repo(venue: str) -> str:
+    """The dataset repository holding one venue's PDF shard."""
+
+    return f"{_SHARD_PREFIX}{venue.strip().lower()}"
+
+
+def safe_member_path(member: object) -> Path:
+    """Validate a repository-relative path before it is joined to a local root.
+
+    ``hf_pdf_path`` is data, so it is checked rather than trusted: an absolute
+    path, a drive letter or any parent traversal would let a registry row write
+    outside the mirror.
+    """
+
+    text = str(member or "").strip().replace("\\", "/")
+    if not text:
+        raise MirrorIndexError("unsafe_member_path", "empty")
+    path = Path(text)
+    if path.is_absolute() or (len(text) > 1 and text[1] == ":"):
+        raise MirrorIndexError("unsafe_member_path", text)
+    if any(part in ("..", "") for part in path.parts):
+        raise MirrorIndexError("unsafe_member_path", text)
+    return path
+
+
+def hf_fetch(repo: str, revision: str, member: str, root: Path) -> Path:
+    """Download one shard member at a pinned revision into the mirror.
+
+    This is the offline capture step, never a request-time dependency: nothing
+    in the serving path calls it (spec §2).
+    """
+
+    from huggingface_hub import hf_hub_download
+
+    return Path(
+        hf_hub_download(
+            repo_id=repo,
+            filename=member,
+            revision=revision,
+            repo_type="dataset",
+            local_dir=str(root),
+        )
+    )
+
+
+def resolve_revision(repo: str) -> str:
+    """The shard's current commit, so a run records the revision it captured."""
+
+    from huggingface_hub import HfApi
+
+    sha = HfApi().dataset_info(repo).sha
+    if not sha:
+        raise MirrorIndexError("revision_unresolved", repo)
+    return str(sha)
+
+
+def _free_bytes(path: Path) -> int:
+    return shutil.disk_usage(path).free
+
+
+def mirror_venue_year(
+    registry: str | Path,
+    *,
+    venue: str,
+    year: int,
+    mirror_root: str | Path,
+    revision: str,
+    fetch: Fetch | None = None,
+    workers: int = DEFAULT_WORKERS,
+    min_free_bytes: int = DEFAULT_MIN_FREE_BYTES,
+    free_bytes: Callable[[Path], int] = _free_bytes,
+    out: str | Path | None = None,
+) -> dict[str, Any]:
+    """Download one venue-year's PDFs, then write its verified index.
+
+    Resumable by construction: a member already on disk is skipped, so an
+    interrupted run continues where it stopped. Failures are counted and
+    reported rather than swallowed — a paper whose PDF never arrives keeps a
+    null path in the index and stays searchable by abstract.
+    """
+
+    rows = read_registry(registry, venue=venue, year=year)
+    root = Path(mirror_root)
+    pdf_root = root / "pdfs"
+    pdf_root.mkdir(parents=True, exist_ok=True)
+    available = free_bytes(pdf_root)
+    if available < min_free_bytes:
+        raise MirrorIndexError("insufficient_free_space", f"{available} < {min_free_bytes}")
+
+    repo = shard_repo(venue)
+    download = fetch or hf_fetch
+    pending: list[str] = []
+    already = 0
+    for row in rows:
+        member = row.get("hf_pdf_path")
+        if not member:
+            continue
+        relative = safe_member_path(member)
+        if (pdf_root / relative).is_file():
+            already += 1
+            continue
+        pending.append(relative.as_posix())
+
+    downloaded = 0
+    failures: list[tuple[str, str]] = []
+    if pending:
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            futures = {
+                pool.submit(download, repo, revision, member, pdf_root): member
+                for member in pending
+            }
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as error:  # noqa: BLE001 - every failure is reported
+                    failures.append((futures[future], str(error)))
+                else:
+                    downloaded += 1
+
+    index = Path(out) if out else root / f"{venue.lower()}-{year}.jsonl"
+    counts = build_index(
+        registry,
+        venue=venue,
+        year=year,
+        pdf_root=pdf_root,
+        out=index,
+        mirror_revision=revision,
+    )
+    return {
+        "venue": venue,
+        "year": year,
+        "repo": repo,
+        "revision": revision,
+        "index": str(index),
+        "downloaded": downloaded,
+        "already_present": already,
+        "failed": len(failures),
+        "failures": [f"{member}: {reason}" for member, reason in failures[:10]],
+        **counts,
+    }

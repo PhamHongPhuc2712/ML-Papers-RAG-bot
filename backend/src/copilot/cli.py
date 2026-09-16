@@ -133,6 +133,34 @@ def run_mirror_index(
     return {"venue": venue, "year": year, "out": str(out), **counts}
 
 
+def run_mirror(
+    *,
+    venue: str,
+    year: int,
+    registry: Path | None,
+    revision: str | None,
+    workers: int,
+    min_free_gb: float,
+    data_dir: Path,
+) -> dict[str, object]:
+    """Capture one venue-year's PDFs at a pinned revision and index them."""
+
+    from .corpus.mirror import mirror_venue_year, resolve_revision, shard_repo
+
+    mirror = data_dir / "sources" / "papercli"
+    registry = registry or mirror / "papers.parquet"
+    revision = revision or resolve_revision(shard_repo(venue))
+    return mirror_venue_year(
+        registry,
+        venue=venue,
+        year=year,
+        mirror_root=mirror,
+        revision=revision,
+        workers=workers,
+        min_free_bytes=int(min_free_gb * 1024**3),
+    )
+
+
 def run_worker(
     *,
     database_url: str,
@@ -205,6 +233,19 @@ def _parser() -> argparse.ArgumentParser:
     mirror.add_argument("--out", type=Path, default=None)
     mirror.add_argument("--data-dir", type=Path, default=None)
 
+    capture = corpus_commands.add_parser(
+        "mirror", help="download one venue-year's PDFs and write its index"
+    )
+    capture.add_argument("--venue", required=True)
+    capture.add_argument("--year", type=int, required=True)
+    capture.add_argument("--registry", type=Path, default=None)
+    capture.add_argument(
+        "--revision", default=None, help="PDF shard commit; resolved and recorded when omitted"
+    )
+    capture.add_argument("--workers", type=int, default=8)
+    capture.add_argument("--min-free-gb", type=float, default=80.0)
+    capture.add_argument("--data-dir", type=Path, default=None)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -248,6 +289,16 @@ def main(argv: list[str] | None = None) -> int:
             year=args.year,
             pdf_root=args.pdf_root,
             out=args.out,
+            data_dir=_data_dir(args.data_dir, parser),
+        )
+    elif args.command == "corpus" and args.corpus_command == "mirror":
+        result = run_mirror(
+            venue=args.venue,
+            year=args.year,
+            registry=args.registry,
+            revision=args.revision,
+            workers=args.workers,
+            min_free_gb=args.min_free_gb,
             data_dir=_data_dir(args.data_dir, parser),
         )
     elif args.command == "worker" and args.worker_command == "run":
