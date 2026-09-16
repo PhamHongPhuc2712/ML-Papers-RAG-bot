@@ -20,7 +20,10 @@ defaults:
   # Parse workers. 12 cores here; 9 leaves room for PostgreSQL and the
   # concurrent download of the next venue-year.
   workers: 9
-  download_workers: 8
+  # Measured on the JMLR shard, 2026-09-16: 8 workers gave 6.2 MB/s, 16 gave
+  # 7.7 MB/s and 32 fell back to 6.3 MB/s. Per-file latency dominates on small
+  # PDFs and past ~16 the concurrency costs more than it buys.
+  download_workers: 16
   # Refuse to start a venue-year with less than this free, so a run cannot fill
   # the disk out from under the database mid-parse.
   min_free_gb: 80
