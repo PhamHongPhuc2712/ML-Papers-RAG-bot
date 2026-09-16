@@ -42,7 +42,7 @@ Backend package is `copilot` under `backend/src`, managed by uv 0.12.10 with `ba
 ```powershell
 uv sync --project backend --frozen --group dev
 uv run --project backend ruff check backend
-uv run --project backend mypy backend/src
+uv run --project backend mypy --config-file backend/pyproject.toml backend/src
 uv run --project backend pytest backend/tests -m "not integration" -q   # offline CI set
 uv run --project backend pytest backend/tests -q                        # full, needs services
 uv run --project backend pytest backend/tests/unit/test_foo.py -q       # one file

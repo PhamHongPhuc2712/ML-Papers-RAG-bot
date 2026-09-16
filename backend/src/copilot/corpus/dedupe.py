@@ -760,7 +760,7 @@ def _document_version(
         if explicit_version is not None and explicit_version != arxiv_version:
             raise RecordValidationError("version_mismatch")
         return arxiv_version
-    return cast(str | None, explicit_version)
+    return explicit_version
 
 
 def _create_quarantine(

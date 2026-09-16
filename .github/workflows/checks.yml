@@ -17,5 +17,5 @@ jobs:
           python-version: "3.12"
       - run: uv sync --project backend --frozen --group dev
       - run: uv run --project backend ruff check backend
-      - run: uv run --project backend mypy backend/src
+      - run: uv run --project backend mypy --config-file backend/pyproject.toml backend/src
       - run: uv run --project backend pytest backend/tests -m "not integration" -q

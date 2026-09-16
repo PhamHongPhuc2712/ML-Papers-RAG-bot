@@ -40,7 +40,7 @@ class LeasedJob:
 def backoff_seconds(attempt: int, retry_after: int | None = None) -> int:
     """Exponential backoff capped at 60 s, unless the provider asked for longer."""
 
-    base = min(MAX_BACKOFF_SECONDS, 2 ** max(1, attempt))
+    base = min(MAX_BACKOFF_SECONDS, int(2 ** max(1, attempt)))
     if retry_after is not None and retry_after > base:
         return int(retry_after)
     return base

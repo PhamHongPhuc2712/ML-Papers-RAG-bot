@@ -27,7 +27,7 @@ below also works as `py -3.12 -m uv ...`.
 
 ```powershell
 uv run --project backend ruff check backend
-uv run --project backend mypy backend/src
+uv run --project backend mypy --config-file backend/pyproject.toml backend/src
 uv run --project backend pytest backend/tests -m "not integration" -q   # offline
 uv run --project backend pytest backend/tests -q                        # needs services
 uv run --project backend alembic -c backend/alembic.ini upgrade head    # needs DATABASE_URL

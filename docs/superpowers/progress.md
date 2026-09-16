@@ -99,8 +99,14 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | 2026-09-14 | Five parser/section defects repaired; `pypdf-text-v2` | 129 passed, Ruff, mypy; mangled headings 198→1, header leaks 531→0, prose in caption sections 28%→3%, prose chunk median 182→401 tokens | `c541429`, `8829d2f`; [parser evidence](../../reports/m1-parser-audit.md) | Close P1.4 with a real pilot and replay |
 | 2026-09-15 | `sources/papercli.py` mirror adapter and `adopt_pdf` handler; 100-paper pilot and replay | 134 passed, Ruff, mypy; 300 jobs, 0 retries, 100 papers / 4,713 chunks; replay identical on identity, version and chunk digests with 0 new jobs | [ingestion evidence](../../reports/m1-ingestion.md) | P1.5: export snapshots, coverage endpoint and data card |
 
+| 2026-09-16 | mypy was never running strict | 27 files clean under `--config-file backend/pyproject.toml`; 4 pre-existing errors fixed (untyped lifespan, unparameterized dict, Any return, redundant cast) | pending commit | A3 |
 | 2026-09-16 | Registry-backed mirror index (A2) | 143 passed, Ruff clean; `corpus mirror-index --venue ICLR --year 2024` → 2,260 rows, 2,260 with verified local PDFs, 0 missing; 100% authors and abstracts | pending commit | A3: map `track` to a canonical track and an observed decision |
 | 2026-09-16 | Chunk window measured in model tokens (A1) | 138 passed (78 offline), Ruff, mypy; 15 pilot papers re-chunked with the pinned tokenizer: 1,010 chunks, median 450 tokens, 0 over the 600 cap | pending commit | A2: read `papers.parquet` (authors, abstract, track, `hf_pdf_path`) instead of the 5-column browse shard |
+
+> Evidence note: every "mypy strict clean" recorded before 2026-09-16 was produced by
+> `mypy backend/src` run from the repository root, which finds no configuration file there
+> and therefore ran with mypy's defaults, not `strict = true`. The command now passes
+> `--config-file backend/pyproject.toml` in CI, CLAUDE.md and the backend README.
 
 ## Definition of a completed task
 
