@@ -112,6 +112,27 @@ def run_ingest(
         engine.dispose()
 
 
+def run_mirror_index(
+    *,
+    registry: Path | None,
+    venue: str,
+    year: int,
+    pdf_root: Path | None,
+    out: Path | None,
+    data_dir: Path,
+) -> dict[str, object]:
+    """Project one venue-year out of the registry parquet into an ingest index."""
+
+    from .corpus.mirror import build_index
+
+    mirror = data_dir / "sources" / "papercli"
+    registry = registry or mirror / "papers.parquet"
+    pdf_root = pdf_root or mirror / "pdfs"
+    out = out or mirror / f"{venue.lower()}-{year}.jsonl"
+    counts = build_index(registry, venue=venue, year=year, pdf_root=pdf_root, out=out)
+    return {"venue": venue, "year": year, "out": str(out), **counts}
+
+
 def run_worker(
     *,
     database_url: str,
@@ -174,6 +195,16 @@ def _parser() -> argparse.ArgumentParser:
     ingest.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
     ingest.add_argument("--staging-dir", type=Path, default=None)
 
+    mirror = corpus_commands.add_parser(
+        "mirror-index", help="build a venue-year index from the registry parquet"
+    )
+    mirror.add_argument("--venue", required=True)
+    mirror.add_argument("--year", type=int, required=True)
+    mirror.add_argument("--registry", type=Path, default=None)
+    mirror.add_argument("--pdf-root", type=Path, default=None)
+    mirror.add_argument("--out", type=Path, default=None)
+    mirror.add_argument("--data-dir", type=Path, default=None)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -209,6 +240,15 @@ def main(argv: list[str] | None = None) -> int:
             args.limit,
             database_url=_database_url(args.database_url),
             staging_dir=_staging_dir(args.staging_dir, parser),
+        )
+    elif args.command == "corpus" and args.corpus_command == "mirror-index":
+        result = run_mirror_index(
+            registry=args.registry,
+            venue=args.venue,
+            year=args.year,
+            pdf_root=args.pdf_root,
+            out=args.out,
+            data_dir=_data_dir(args.data_dir, parser),
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(

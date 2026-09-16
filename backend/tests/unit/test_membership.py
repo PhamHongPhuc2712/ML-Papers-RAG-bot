@@ -61,22 +61,26 @@ def test_official_decisions_map_to_the_enum(raw, expected):
 
 
 def _mirror_records(tmp_path, count: int = 3) -> Path:
+    """The enriched venue-year index `corpus mirror-index` writes."""
+
     path = tmp_path / "records.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for index in range(count):
             handle.write(
                 json.dumps(
                     {
-                        "forum_id": f"id{index:02d}",
+                        "id": f"id{index:02d}",
                         "venue": "ICLR",
                         "year": 2024,
+                        "track": "ICLR 2024 poster",
+                        "source": "iclr",
                         "title": f"Paper number {index}",
+                        "authors": ["Ada Lovelace", "Grace Hopper"],
                         "abstract": f"Abstract for paper {index}.",
-                        "forum_url": f"https://openreview.net/forum?id=id{index:02d}",
-                        "openreview_pdf_url": (
-                            f"https://api2.openreview.net/attachment?name=pdf&id=id{index:02d}"
-                        ),
-                        "pdf_path": f"pdfs/{index:02d}.pdf",
+                        "forum_url": f"https://openreview.net/forum?id=forum{index:02d}",
+                        "pdf_url": f"https://openreview.net/pdf?id=forum{index:02d}",
+                        "hf_pdf_path": f"pdfs/iclr/2024/{index:02d}/id{index:02d}.pdf",
+                        "pdf_path": str(tmp_path / "pdfs" / f"{index:02d}.pdf"),
                         "bytes": 1024,
                         "sha256": "ab" * 32,
                     }
@@ -129,15 +133,48 @@ def test_mirror_records_carry_identity_and_local_pdf(tmp_path):
     assert row["source"] == "papercli"
     assert row["source_item_id"] == "id00"
     assert row["source_revision"] == "90a1fbd"
-    assert row["external_ids"] == {"openreview": "id00"}
+    # The registry id is the mirror's own key; the forum id comes from the URL
+    # and is the identifier the upstream venue actually published.
+    assert row["external_ids"] == {"papercli": "id00", "openreview": "forum00"}
     assert row["title"] == "Paper number 0"
     assert row["abstract"] == "Abstract for paper 0."
     assert row["venue"] == {"name": "ICLR", "track": "main"}
     assert row["year"] == 2024
-    assert row["source_url"] == "https://openreview.net/forum?id=id00"
+    assert row["source_url"] == "https://openreview.net/forum?id=forum00"
     assert row["pdf_path"] == str(tmp_path / "pdfs" / "00.pdf")
     assert row["pdf_sha256"] == "ab" * 32
-    assert row["authors"] == []
+    # The registry publishes authors; the five-column browse view did not.
+    assert row["authors"] == ["Ada Lovelace", "Grace Hopper"]
+    # The venue's own label is carried through for the decision mapper.
+    assert row["source_track"] == "ICLR 2024 poster"
+
+
+def test_proceedings_rows_carry_no_openreview_alias(tmp_path):
+    path = tmp_path / "cvpr.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "abc123",
+                "venue": "CVPR",
+                "year": 2024,
+                "track": "main",
+                "title": "A vision paper",
+                "authors": ["Ada Lovelace"],
+                "abstract": "An abstract.",
+                "forum_url": "https://openaccess.thecvf.com/content/CVPR2024/html/x.html",
+                "pdf_url": "https://openaccess.thecvf.com/content/CVPR2024/papers/x.pdf",
+                "pdf_path": None,
+                "sha256": None,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source = PapercliSource(_mirror_config(path), venue="CVPR", year=2024, track="main")
+    (row,), _ = source.fetch_page(None)
+    assert row["external_ids"] == {"papercli": "abc123"}
+    assert row["pdf_path"] is None
+    assert row["pdf_url"].endswith(".pdf")
 
 
 def test_mirror_pages_every_record_without_repeating(tmp_path):

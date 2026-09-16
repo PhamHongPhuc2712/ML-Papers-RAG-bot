@@ -1,23 +1,22 @@
-"""Local-mirror adapter over a captured paper index (spec §4).
+"""Local-mirror adapter over a captured venue-year index (spec §4).
 
-The papercli datasets publish one metadata shard per venue-year alongside a PDF
-shard. Both are mirrored under ``DATA_DIR`` before a run, so this adapter reads
-a local JSONL index and touches no network: the mirror is the source, and the
-dataset revision it was captured at is the source revision. That keeps ingestion
-replayable and keeps Hugging Face an offline artifact store rather than a
-request-time dependency.
+`corpus mirror-index` projects one venue-year out of the papercli registry
+parquet and pairs each row with its mirrored PDF, checksummed on this machine.
+This adapter reads that index and touches no network: the mirror is the source,
+and the dataset revision it was captured at is the source revision. That keeps
+ingestion replayable and keeps Hugging Face an offline artifact store rather
+than a request-time dependency.
 
-Two properties of the index shape this adapter:
+The registry carries eleven columns, including authors, the full abstract, the
+venue's own presentation label and the PDF path — the five-column `browse/`
+views this adapter previously read carried none of those. Two consequences:
 
-* It carries **no acceptance decision**, and a venue-year listing is not always
-  the accepted set — ICLR 2023 holds 3,792 rows against roughly 1,574 accepted
-  papers, while ICLR 2024 holds exactly its 2,260. Membership is therefore
-  asserted per manifest through ``membership_is_acceptance``, checked against the
-  venue's published total. Without that assertion every record is ``unknown`` and
-  :func:`is_eligible` rejects the listing rather than admitting rejected work.
-* It carries **no author list**, so records leave ``authors`` empty. Author
-  coverage has to come from enrichment, and title matching in P1.2 loses the
-  author-compatibility signal for these records.
+* Records carry real ``authors``, so P1.2's title matching keeps its
+  author-compatibility signal.
+* ``source_track`` carries the venue's own label (``ICLR 2024 poster``,
+  ``Submitted to ICLR 2023``, ``main``), which is the evidence a decision is
+  derived from. Until that mapping lands, membership is still asserted per
+  manifest through ``membership_is_acceptance``.
 """
 
 from __future__ import annotations
@@ -28,8 +27,22 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
+from ..mirror import split_authors
 from .base import Transport, utc_now
+
+_OPENREVIEW_HOSTS = frozenset({"openreview.net", "api2.openreview.net"})
+
+
+def openreview_id(url: object) -> str | None:
+    """The forum ID an OpenReview URL carries, or None for other venues."""
+
+    parts = urlsplit(str(url or ""))
+    if parts.hostname not in _OPENREVIEW_HOSTS:
+        return None
+    values = parse_qs(parts.query).get("id")
+    return values[0] if values else None
 
 
 class PapercliSource:
@@ -92,16 +105,27 @@ class PapercliSource:
             str(next_start) if next_start < len(rows) else None,
         )
 
+    def _pdf_path(self, row: Mapping[str, Any]) -> str | None:
+        value = row.get("pdf_path")
+        if not value:
+            return None
+        path = Path(str(value))
+        return str(path if path.is_absolute() else self.root_dir / path)
+
     def normalize(self, row: Mapping[str, Any]) -> dict[str, Any]:
-        item_id = str(row.get("forum_id") or row.get("id") or row.get("title") or "")
+        item_id = str(row.get("id") or row.get("forum_id") or row.get("title") or "")
         external: dict[str, str] = {}
         if item_id:
-            external["openreview"] = item_id
+            external["papercli"] = item_id
+        forum = openreview_id(row.get("forum_url"))
+        if forum:
+            external["openreview"] = forum
         for namespace in ("doi", "arxiv"):
             if row.get(namespace):
                 external[namespace] = str(row[namespace])
+        authors = row.get("authors")
+        names = split_authors(authors) if isinstance(authors, str) else list(authors or [])
         year = row.get("year")
-        relative = str(row.get("pdf_path") or "")
         decision = "accepted" if self.membership_is_acceptance else "unknown"
         return {
             "source": self.source,
@@ -109,20 +133,22 @@ class PapercliSource:
             "source_revision": self.revision,
             "external_ids": external,
             "title": str(row.get("title") or ""),
-            # The index publishes no authors; enrichment has to supply them.
-            "authors": [],
+            "authors": [str(name) for name in names],
             "abstract": row.get("abstract") or row.get("snippet"),
             "venue": {"name": str(row.get("venue") or self.venue), "track": self.track},
             "year": int(year) if isinstance(year, int) else self.year,
             "track": self.track,
+            # The venue's own label, kept verbatim as the evidence a decision
+            # is derived from rather than being flattened into one here.
+            "source_track": row.get("track"),
             "decision": decision,
             "withdrawn": False,
             "acceptance_decision": decision if self.membership_is_acceptance else None,
             "retrieved_at": self.now().isoformat(),
             "source_url": row.get("forum_url"),
-            "pdf_url": row.get("openreview_pdf_url"),
+            "pdf_url": row.get("pdf_url") or row.get("openreview_pdf_url"),
             # Local mirror copy: the worker adopts this file instead of downloading.
-            "pdf_path": str(self.root_dir / relative) if relative else None,
+            "pdf_path": self._pdf_path(row),
             "pdf_sha256": row.get("sha256"),
             "pdf_bytes": row.get("bytes"),
             "mirror": {

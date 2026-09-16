@@ -12,6 +12,7 @@ dependencies = [
   "fastapi==0.116.1",
   "httpx==0.28.1",
   "psycopg[binary]==3.2.9",
+  "pyarrow==21.0.0",
   "pydantic-settings==2.10.1",
   "pypdf==6.10.0",
   "pyyaml==6.0.3",
@@ -59,3 +60,9 @@ strict = true
 packages = ["copilot"]
 mypy_path = ["src"]
 warn_unused_configs = true
+
+# pyarrow ships no py.typed marker. It is used only in the offline export and
+# mirror paths, whose own signatures stay typed.
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true

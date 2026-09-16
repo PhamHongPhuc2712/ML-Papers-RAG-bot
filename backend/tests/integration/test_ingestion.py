@@ -618,15 +618,17 @@ def _mirror(tmp_path: Path, *, pdf_path: str = "pdfs/a.pdf") -> tuple[Path, dict
     records.write_text(
         json.dumps(
             {
-                "forum_id": "mirror-a",
+                "id": "mirror-a",
                 "venue": "ICLR",
                 "year": 2024,
+                "track": "ICLR 2024 poster",
+                "source": "iclr",
                 "title": "A mirrored paper about retrieval",
+                "authors": ["Ada Lovelace", "Grace Hopper"],
                 "abstract": "An abstract for the mirrored paper.",
                 "forum_url": "https://openreview.net/forum?id=mirror-a",
-                "openreview_pdf_url": (
-                    "https://api2.openreview.net/attachment?name=pdf&id=mirror-a"
-                ),
+                "pdf_url": "https://openreview.net/pdf?id=mirror-a",
+                "hf_pdf_path": "pdfs/iclr/2024/a/mirror-a.pdf",
                 "pdf_path": pdf_path,
                 "bytes": len(FIXTURE_PDF),
                 "sha256": FIXTURE_SHA,
@@ -683,11 +685,20 @@ def test_local_mirror_ingests_and_adopts_pdfs_without_network(
         transport, processed = _run_mirror(migrated_database, tmp_path)
         with session_factory(migrated_database)() as session:
             papers = session.execute(select(func.count()).select_from(Paper)).scalar_one()
+            author_names = [
+                link.author.name
+                for link in session.execute(select(Paper)).scalars().one().authorships
+            ]
             versions = list(session.execute(select(PaperVersion)).scalars())
             chunks = session.execute(select(func.count()).select_from(Chunk)).scalar_one()
             identifiers = list(session.execute(select(PaperIdentifier)).scalars())
         assert papers == 1
-        assert [identifier.namespace for identifier in identifiers] == ["openreview"]
+        # The registry id and the venue's own forum id are both recorded.
+        assert sorted(identifier.namespace for identifier in identifiers) == [
+            "openreview",
+            "papercli",
+        ]
+        assert author_names == ["Ada Lovelace", "Grace Hopper"]
         assert len(versions) == 1
         assert versions[0].source == "papercli"
         assert versions[0].content_sha256 == FIXTURE_SHA
