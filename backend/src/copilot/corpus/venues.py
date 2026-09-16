@@ -59,6 +59,17 @@ def load_venue_plan(path: str | Path) -> tuple[list[VenueYear], dict[str, Any]]:
     return plan, dict(defaults) if isinstance(defaults, Mapping) else {}
 
 
+def default_state_path(data_dir: str | Path, config: str | Path) -> Path:
+    """Where a plan's progress lives, independent of any single invocation.
+
+    Keyed to the plan rather than to a run, because the point of the state is to
+    survive the run: a 16-hour campaign that dies at venue-year 30 must resume
+    there, not re-download the first 29.
+    """
+
+    return Path(data_dir) / "runs" / f"{Path(config).stem}-state.json"
+
+
 def _index_records(index: str | Path) -> list[dict[str, Any]]:
     path = Path(index)
     if not path.is_file():

@@ -10,6 +10,7 @@ import pytest
 from copilot.corpus.venues import (
     CampaignError,
     VenueYear,
+    default_state_path,
     load_venue_plan,
     run_campaign,
     sweep_pdfs,
@@ -156,3 +157,12 @@ def test_unfinished_jobs_stop_the_sweep_and_the_campaign(tmp_path):
     assert result["completed"] == []
     assert result["failed"] == ["WACV:2023"]
     assert not any("ICLR" in call for call in steps.calls)
+
+
+def test_state_path_is_scoped_to_the_plan_not_the_invocation(tmp_path):
+    """Two runs of the same plan must share progress, or a restart redoes it all."""
+
+    first = default_state_path(tmp_path, Path("configs/venues.yaml"))
+    second = default_state_path(tmp_path, Path("configs/venues.yaml"))
+    assert first == second == tmp_path / "runs" / "venues-state.json"
+    assert default_state_path(tmp_path, Path("configs/pilot.yaml")) != first

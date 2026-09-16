@@ -173,6 +173,8 @@ def run_corpus(
     dry_run: bool,
     workers: int | None,
     download_workers: int | None = None,
+    state: Path | None = None,
+    fresh: bool = False,
 ) -> dict[str, object]:
     """Drive the venue-year plan: mirror, ingest, work, verify, sweep, repeat."""
 
@@ -189,6 +191,7 @@ def run_corpus(
     from .corpus.venues import (
         CampaignPaths,
         VenueYear,
+        default_state_path,
         load_venue_plan,
         parsed_checksums,
         pending_jobs,
@@ -208,6 +211,11 @@ def run_corpus(
     campaign_id = f"corpus-{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
     paths = CampaignPaths(data_dir=data_dir, run_dir=data_dir / "runs" / campaign_id)
     paths.run_dir.mkdir(parents=True, exist_ok=True)
+    # The plan's progress outlives this invocation, so the run directory holds
+    # only the manifests it generated.
+    state_path = Path(state) if state else default_state_path(data_dir, config)
+    if fresh and state_path.exists():
+        state_path.unlink()
     engine = make_engine(database_url)
     transport = HttpxTransport()
     base = load_manifest(base_manifest)
@@ -285,10 +293,15 @@ def run_corpus(
             ingest=enqueue,
             work=work,
             sweep=sweep,
-            state_path=paths.run_dir / "state.json",
+            state_path=state_path,
             keep_pdfs=keep_pdfs,
         )
-        return {"campaign_id": campaign_id, "run_dir": str(paths.run_dir), **result}
+        return {
+            "campaign_id": campaign_id,
+            "run_dir": str(paths.run_dir),
+            "state": str(state_path),
+            **result,
+        }
     finally:
         transport.close()
         engine.dispose()
@@ -396,6 +409,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     corpus_run.add_argument("--keep-pdfs", action="store_true", help="never delete source PDFs")
     corpus_run.add_argument(
+        "--state", type=Path, default=None, help="progress file; defaults to <plan>-state.json"
+    )
+    corpus_run.add_argument(
+        "--fresh", action="store_true", help="discard recorded progress and start the plan over"
+    )
+    corpus_run.add_argument(
         "--dry-run", action="store_true", help="report what the sweep would delete"
     )
 
@@ -466,6 +485,8 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             workers=args.workers,
             download_workers=args.download_workers,
+            state=args.state,
+            fresh=args.fresh,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
