@@ -22,6 +22,8 @@ from typing import Any
 
 import pyarrow.parquet as pq
 
+from .sources.base import classify_track
+
 # The registry columns this project depends on. The per-venue `browse/` views
 # publish only five of them, which is why the root registry is the source.
 REGISTRY_COLUMNS = (
@@ -95,6 +97,20 @@ def read_registry(registry: str | Path, *, venue: str, year: int) -> list[dict[s
     return rows
 
 
+def eligible_rows(rows: list[dict[str, Any]], track: str | None) -> list[dict[str, Any]]:
+    """Keep only the rows a manifest would admit, by the venue's own label.
+
+    Mirroring everything a venue-year lists would fetch 17,057 papers across the
+    corpus that ingestion then rejects — the ACL family's Findings, workshop,
+    industry and demo volumes, and ICLR 2023's unaccepted submissions, roughly
+    53 GB — so the filter belongs before the download, not after it.
+    """
+
+    if track is None:
+        return rows
+    return [row for row in rows if classify_track(row.get("track")) == (track, "accepted")]
+
+
 def build_index(
     registry: str | Path,
     *,
@@ -103,6 +119,7 @@ def build_index(
     pdf_root: str | Path,
     out: str | Path,
     mirror_revision: str = "",
+    track: str | None = "main",
 ) -> dict[str, int]:
     """Write the venue-year index and report how many rows have a local PDF.
 
@@ -110,7 +127,7 @@ def build_index(
     a missing full text leaves a searchable abstract (spec §4).
     """
 
-    rows = read_registry(registry, venue=venue, year=year)
+    rows = eligible_rows(read_registry(registry, venue=venue, year=year), track)
     root = Path(pdf_root)
     target = Path(out)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -213,6 +230,7 @@ def mirror_venue_year(
     min_free_bytes: int = DEFAULT_MIN_FREE_BYTES,
     free_bytes: Callable[[Path], int] = _free_bytes,
     out: str | Path | None = None,
+    track: str | None = "main",
 ) -> dict[str, Any]:
     """Download one venue-year's PDFs, then write its verified index.
 
@@ -222,7 +240,7 @@ def mirror_venue_year(
     null path in the index and stays searchable by abstract.
     """
 
-    rows = read_registry(registry, venue=venue, year=year)
+    rows = eligible_rows(read_registry(registry, venue=venue, year=year), track)
     root = Path(mirror_root)
     pdf_root = root / "pdfs"
     pdf_root.mkdir(parents=True, exist_ok=True)
@@ -268,6 +286,7 @@ def mirror_venue_year(
         pdf_root=pdf_root,
         out=index,
         mirror_revision=revision,
+        track=track,
     )
     return {
         "venue": venue,

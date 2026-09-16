@@ -196,3 +196,37 @@ def test_mirror_refuses_to_start_without_free_disk(tmp_path):
             min_free_bytes=10 * 1024**3,
             free_bytes=lambda path: 1024,
         )
+
+
+def test_only_rows_the_manifest_admits_are_fetched_or_indexed(tmp_path):
+    """Findings, workshops and submissions are filtered before the download."""
+
+    rows = [
+        _row(id="main1", track="ICLR 2024 poster"),
+        _row(
+            id="find1",
+            track="Findings of the Association for Computational Linguistics: ACL 2024",
+            hf_pdf_path="pdfs/iclr/2024/fi/find1.pdf",
+        ),
+        _row(id="sub1", track="Submitted to ICLR 2023",
+             hf_pdf_path="pdfs/iclr/2024/su/sub1.pdf"),
+        _row(id="ws1", track="Proceedings of the 8th Workshop on Things",
+             hf_pdf_path="pdfs/iclr/2024/ws/ws1.pdf"),
+    ]
+    registry = _registry(tmp_path / "papers.parquet", rows)
+    calls: list[str] = []
+    result = mirror_venue_year(
+        registry,
+        venue="ICLR",
+        year=2024,
+        mirror_root=tmp_path / "papercli",
+        revision="deadbeef",
+        fetch=_fetcher(b"%PDF-1.4 x", calls),
+    )
+    assert calls == ["pdfs/iclr/2024/6e/6eebfe7a884184e6.pdf"]
+    assert result["rows"] == 1
+    index = [
+        json.loads(line)
+        for line in (tmp_path / "papercli" / "iclr-2024.jsonl").read_text().splitlines()
+    ]
+    assert [record["id"] for record in index] == ["main1"]
