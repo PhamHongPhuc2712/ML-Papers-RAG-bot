@@ -1,0 +1,262 @@
+{"label": "main", "rows": 43483, "venues": ["AAAI", "CVPR", "ECCV", "ICCV", "IJCAI", "Interspeech", "JMLR", "WACV"]}
+{"label": "ICLR 2026 Poster", "rows": 5127, "venues": ["ICLR"]}
+{"label": "NeurIPS 2025 poster", "rows": 4522, "venues": ["NeurIPS"]}
+{"label": "NeurIPS 2024 poster", "rows": 3648, "venues": ["NeurIPS"]}
+{"label": "ICLR 2025 Poster", "rows": 3110, "venues": ["ICLR"]}
+{"label": "ICML 2025 poster", "rows": 2938, "venues": ["ICML"]}
+{"label": "NeurIPS 2023 poster", "rows": 2773, "venues": ["NeurIPS"]}
+{"label": "ICML 2024 Poster", "rows": 2275, "venues": ["ICML"]}
+{"label": "Submitted to ICLR 2023", "rows": 2219, "venues": ["ICLR"]}
+{"label": "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing", "rows": 1809, "venues": ["EMNLP"]}
+{"label": "ICLR 2024 poster", "rows": 1807, "venues": ["ICLR"]}
+{"label": "ICML 2023 Poster", "rows": 1673, "venues": ["ICML"]}
+{"label": "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)", "rows": 1603, "venues": ["ACL"]}
+{"label": "Findings of the Association for Computational Linguistics: EMNLP 2025", "rows": 1406, "venues": ["EMNLP"]}
+{"label": "Findings of the Association for Computational Linguistics: ACL 2025", "rows": 1387, "venues": ["ACL"]}
+{"label": "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing", "rows": 1268, "venues": ["EMNLP"]}
+{"label": "ICLR 2023 poster", "rows": 1202, "venues": ["ICLR"]}
+{"label": "Findings of the Association for Computational Linguistics: EMNLP 2023", "rows": 1058, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing", "rows": 1047, "venues": ["EMNLP"]}
+{"label": "Findings of the Association for Computational Linguistics: EMNLP 2024", "rows": 1002, "venues": ["EMNLP"]}
+{"label": "Findings of the Association for Computational Linguistics: ACL 2024", "rows": 974, "venues": ["ACL"]}
+{"label": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)", "rows": 912, "venues": ["ACL"]}
+{"label": "Findings of the Association for Computational Linguistics: ACL 2023", "rows": 900, "venues": ["ACL"]}
+{"label": "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)", "rows": 865, "venues": ["ACL"]}
+{"label": "NeurIPS 2025 spotlight", "rows": 687, "venues": ["NeurIPS"]}
+{"label": "Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers)", "rows": 638, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers)", "rows": 488, "venues": ["NAACL"]}
+{"label": "Findings of the Association for Computational Linguistics: NAACL 2025", "rows": 475, "venues": ["NAACL"]}
+{"label": "ICLR 2025 Spotlight", "rows": 380, "venues": ["ICLR"]}
+{"label": "NeurIPS 2023 spotlight", "rows": 378, "venues": ["NeurIPS"]}
+{"label": "ICLR 2024 spotlight", "rows": 367, "venues": ["ICLR"]}
+{"label": "Proceedings of the 19th International Workshop on Semantic Evaluation (SemEval-2025)", "rows": 330, "venues": ["ACL"]}
+{"label": "NeurIPS 2024 spotlight", "rows": 326, "venues": ["NeurIPS"]}
+{"label": "Proceedings of the 17th International Workshop on Semantic Evaluation (SemEval-2023)", "rows": 319, "venues": ["ACL"]}
+{"label": "Findings of the Association for Computational Linguistics: NAACL 2024", "rows": 297, "venues": ["NAACL"]}
+{"label": "ICLR 2023 notable top 25%", "rows": 281, "venues": ["ICLR"]}
+{"label": "Proceedings of the 18th International Workshop on Semantic Evaluation (SemEval-2024)", "rows": 280, "venues": ["NAACL"]}
+{"label": "ICLR 2026 Oral", "rows": 224, "venues": ["ICLR"]}
+{"label": "ICLR 2025 Oral", "rows": 213, "venues": ["ICLR"]}
+{"label": "ICML 2025 spotlightposter", "rows": 211, "venues": ["ICML"]}
+{"label": "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: Industry Track", "rows": 194, "venues": ["EMNLP"]}
+{"label": "ICML 2024 Spotlight", "rows": 191, "venues": ["ICML"]}
+{"label": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers)", "rows": 165, "venues": ["ACL"]}
+{"label": "ICML 2023 OralPoster", "rows": 155, "venues": ["ICML"]}
+{"label": "ICML 2024 Oral", "rows": 144, "venues": ["ICML"]}
+{"label": "Proceedings of The Third Arabic Natural Language Processing Conference: Shared Tasks", "rows": 139, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Ninth Conference on Machine Translation", "rows": 134, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fifth Workshop on Speech, Vision, and Language Technologies for Dravidian Languages", "rows": 128, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing: Industry Track", "rows": 122, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Tenth Conference on Machine Translation", "rows": 113, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 6: Industry Track)", "rows": 110, "venues": ["ACL"]}
+{"label": "ICML 2025 oral", "rows": 108, "venues": ["ICML"]}
+{"label": "Proceedings of the Second Arabic Natural Language Processing Conference", "rows": 108, "venues": ["ACL"]}
+{"label": "Proceedings of the 20th Workshop on Innovative Use of NLP for Building Educational Applications (BEA 2025)", "rows": 104, "venues": ["ACL"]}
+{"label": "Proceedings of the Eighth Conference on Machine Translation", "rows": 101, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers)", "rows": 98, "venues": ["ACL"]}
+{"label": "Proceedings of ArabicNLP 2023", "rows": 92, "venues": ["EMNLP"]}
+{"label": "ICLR 2023 notable top 5%", "rows": 90, "venues": ["ICLR"]}
+{"label": "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop)", "rows": 87, "venues": ["ACL"]}
+{"label": "ICLR 2024 oral", "rows": 86, "venues": ["ICLR"]}
+{"label": "Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 2: Short Papers)", "rows": 82, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 3: Industry Track)", "rows": 81, "venues": ["NAACL"]}
+{"label": "Proceedings of the 23rd Workshop on Biomedical Natural Language Processing", "rows": 80, "venues": ["ACL"]}
+{"label": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing: Industry Track", "rows": 78, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: System Demonstrations", "rows": 78, "venues": ["EMNLP"]}
+{"label": "NeurIPS 2025 oral", "rows": 77, "venues": ["NeurIPS"]}
+{"label": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 5: Industry Track)", "rows": 77, "venues": ["ACL"]}
+{"label": "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers)", "rows": 77, "venues": ["ACL"]}
+{"label": "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 2: Short Papers)", "rows": 76, "venues": ["NAACL"]}
+{"label": "Proceedings of the 22nd Workshop on Biomedical Natural Language Processing and BioNLP Shared Tasks", "rows": 70, "venues": ["ACL"]}
+{"label": "Proceedings of the 6th Clinical Natural Language Processing Workshop", "rows": 68, "venues": ["NAACL"]}
+{"label": "Proceedings of the Fourth Workshop on Generation, Evaluation and Metrics (GEM\u00b2)", "rows": 68, "venues": ["ACL"]}
+{"label": "NeurIPS 2023 oral", "rows": 67, "venues": ["NeurIPS"]}
+{"label": "Proceedings of the 18th Workshop on Innovative Use of NLP for Building Educational Applications (BEA 2023)", "rows": 66, "venues": ["ACL"]}
+{"label": "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 3: System Demonstrations)", "rows": 65, "venues": ["ACL"]}
+{"label": "Proceedings of the 13th Workshop on Computational Approaches to Subjectivity, Sentiment, & Social Media Analysis", "rows": 62, "venues": ["ACL"]}
+{"label": "NeurIPS 2024 oral", "rows": 61, "venues": ["NeurIPS"]}
+{"label": "Proceedings of the 19th Workshop on Innovative Use of NLP for Building Educational Applications (BEA 2024)", "rows": 59, "venues": ["NAACL"]}
+{"label": "Proceedings of the 5th Clinical Natural Language Processing Workshop", "rows": 59, "venues": ["ACL"]}
+{"label": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 3: System Demonstrations)", "rows": 59, "venues": ["ACL"]}
+{"label": "Proceedings of the 14th Workshop on Computational Approaches to Subjectivity, Sentiment, & Social Media Analysis", "rows": 54, "venues": ["ACL"]}
+{"label": "Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 4: Student Research Workshop)", "rows": 54, "venues": ["NAACL"]}
+{"label": "Proceedings of the 4th International Conference on Natural Language Processing for Digital Humanities", "rows": 54, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 5th International Conference on Natural Language Processing for Digital Humanities", "rows": 54, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing: System Demonstrations", "rows": 53, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing: System Demonstrations", "rows": 53, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 20th International Conference on Spoken Language Translation (IWSLT 2023)", "rows": 49, "venues": ["ACL"]}
+{"label": "Proceedings of the First Workshop on Bangla Language Processing (BLP-2023)", "rows": 49, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop)", "rows": 47, "venues": ["ACL"]}
+{"label": "Proceedings of the Workshop on Cognitive Modeling and Computational Linguistics", "rows": 47, "venues": ["ACL", "NAACL"]}
+{"label": "Proceedings of the 12th Joint Conference on Lexical and Computational Semantics (*SEM 2023)", "rows": 46, "venues": ["ACL"]}
+{"label": "Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (System Demonstrations)", "rows": 45, "venues": ["NAACL"]}
+{"label": "Proceedings of the 22nd International Conference on Spoken Language Translation (IWSLT 2025)", "rows": 45, "venues": ["ACL"]}
+{"label": "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 6: Industry Track)", "rows": 44, "venues": ["NAACL"]}
+{"label": "Proceedings of the Second Workshop on Patient-Oriented Language Processing (CL4Health)", "rows": 43, "venues": ["NAACL"]}
+{"label": "Proceedings of the 5th Workshop on Multilingual Representation Learning (MRL 2025)", "rows": 42, "venues": ["EMNLP"]}
+{"label": "Proceedings of the First BabyLM Workshop", "rows": 42, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 27th Conference on Computational Natural Language Learning (CoNLL)", "rows": 41, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 28th Conference on Computational Natural Language Learning", "rows": 41, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 29th Conference on Computational Natural Language Learning", "rows": 41, "venues": ["ACL"]}
+{"label": "Proceedings of the 9th Social Media Mining for Health Research and Applications (SMM4H 2024) Workshop and Shared Tasks", "rows": 41, "venues": ["ACL"]}
+{"label": "Proceedings of The Third Arabic Natural Language Processing Conference", "rows": 40, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 12th Argument mining Workshop", "rows": 40, "venues": ["ACL"]}
+{"label": "Proceedings of the 5th Workshop on Trustworthy NLP (TrustNLP 2025)", "rows": 39, "venues": ["NAACL"]}
+{"label": "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 3: System Demonstrations)", "rows": 39, "venues": ["ACL"]}
+{"label": "Proceedings of the The 9th Workshop on Online Abuse and Harms (WOAH)", "rows": 39, "venues": ["ACL"]}
+{"label": "Proceedings of the 21st International Conference on Spoken Language Translation (IWSLT 2024)", "rows": 38, "venues": ["ACL"]}
+{"label": "Proceedings of the 13th Joint Conference on Lexical and Computational Semantics (*SEM 2024)", "rows": 36, "venues": ["NAACL"]}
+{"label": "Proceedings of the 14th Joint Conference on Lexical and Computational Semantics (*SEM 2025)", "rows": 36, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 6th Workshop on Gender Bias in Natural Language Processing (GeBNLP)", "rows": 36, "venues": ["ACL"]}
+{"label": "Proceedings of the 7th BlackboxNLP Workshop: Analyzing and Interpreting Neural Networks for NLP", "rows": 36, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 1st Workshop for Research on Agent Language Models (REALM 2025)", "rows": 35, "venues": ["ACL"]}
+{"label": "Proceedings of the 24th Workshop on Biomedical Language Processing", "rows": 35, "venues": ["ACL"]}
+{"label": "Proceedings of the 24th Workshop on Biomedical Language Processing (Shared Tasks)", "rows": 35, "venues": ["ACL"]}
+{"label": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop)", "rows": 35, "venues": ["ACL"]}
+{"label": "Proceedings of the Fifth Workshop on Scholarly Document Processing (SDP 2025)", "rows": 35, "venues": ["ACL"]}
+{"label": "Proceedings of the Natural Legal Language Processing Workshop 2024", "rows": 34, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Second Workshop on Ancient Language Processing", "rows": 34, "venues": ["NAACL"]}
+{"label": "Proceedings of the 1st Joint Workshop on Large Language Models and Structure Modeling (XLLM 2025)", "rows": 33, "venues": ["ACL"]}
+{"label": "Proceedings of the 8th BlackboxNLP Workshop: Analyzing and Interpreting Neural Networks for NLP", "rows": 33, "venues": ["EMNLP"]}
+{"label": "Proceedings of the BabyLM Challenge at the 27th Conference on Computational Natural Language Learning", "rows": 33, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Natural Legal Language Processing Workshop 2025", "rows": 33, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Third Workshop on Natural Language Generation, Evaluation, and Metrics (GEM)", "rows": 33, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fourth Workshop on Scholarly Document Processing (SDP 2024)", "rows": 32, "venues": ["ACL"]}
+{"label": "Proceedings of the 19th Linguistic Annotation Workshop (LAW-XIX-2025)", "rows": 31, "venues": ["ACL"]}
+{"label": "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 4: Student Research Workshop)", "rows": 31, "venues": ["NAACL"]}
+{"label": "Proceedings of the 6th BlackboxNLP Workshop: Analyzing and Interpreting Neural Networks for NLP", "rows": 30, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 9th Widening NLP Workshop", "rows": 30, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fourth Workshop on Multilingual Representation Learning (MRL 2024)", "rows": 30, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 3rd Workshop for Natural Language Processing Open Source Software (NLP-OSS 2023)", "rows": 29, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 3rd Workshop on Trustworthy Natural Language Processing (TrustNLP 2023)", "rows": 29, "venues": ["ACL"]}
+{"label": "Proceedings of the 4th Workshop on Natural Language Processing for Indigenous Languages of the Americas (AmericasNLP 2024)", "rows": 29, "venues": ["NAACL"]}
+{"label": "Proceedings of the Seventh Fact Extraction and VERification Workshop (FEVER)", "rows": 29, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Sixth Workshop on African Natural Language Processing (AfricaNLP 2025)", "rows": 29, "venues": ["ACL"]}
+{"label": "Proceedings of the 10th Workshop on Computational Linguistics and Clinical Psychology (CLPsych 2025)", "rows": 28, "venues": ["NAACL"]}
+{"label": "Proceedings of the 10th Workshop on Slavic Natural Language Processing (Slavic NLP 2025)", "rows": 28, "venues": ["ACL"]}
+{"label": "Proceedings of the 20th SIGMORPHON workshop on Computational Research in Phonetics, Phonology, and Morphology", "rows": 28, "venues": ["ACL"]}
+{"label": "Proceedings of the 2nd Workshop on Uncertainty-Aware NLP (UncertaiNLP 2025)", "rows": 28, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 8th Workshop on Representation Learning for NLP (RepL4NLP 2023)", "rows": 28, "venues": ["ACL"]}
+{"label": "Proceedings of The 10th Workshop on Financial Technology and Natural Language Processing", "rows": 27, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 10th Workshop on Argument Mining", "rows": 27, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 17th Linguistic Annotation Workshop (LAW-XVII)", "rows": 27, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on Machine Learning for Ancient Languages (ML4AL 2024)", "rows": 27, "venues": ["ACL"]}
+{"label": "Proceedings of the 5th Workshop on Gender Bias in Natural Language Processing (GeBNLP)", "rows": 27, "venues": ["ACL"]}
+{"label": "Proceedings of the 9th Joint SIGHUM Workshop on Computational Linguistics for Cultural Heritage, Social Sciences, Humanities and Literature (LaTeCH-CLfL 2025)", "rows": 27, "venues": ["NAACL"]}
+{"label": "Proceedings of the Fourth Workshop on NLP for Positive Impact (NLP4PI)", "rows": 27, "venues": ["ACL"]}
+{"label": "Proceedings of the Natural Legal Language Processing Workshop 2023", "rows": 27, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fourth Workshop on Bridging Human-Computer Interaction and Natural Language Processing (HCI+NLP)", "rows": 26, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Third Workshop on NLP for Positive Impact", "rows": 26, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 1st Workshop on Customizable NLP: Progress and Challenges in Customizing NLP for a Domain, Application, Group, or Individual (CustomNLP4U)", "rows": 25, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 3rd Workshop on Multi-lingual Representation Learning (MRL)", "rows": 25, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 8th Workshop on Online Abuse and Harms (WOAH 2024)", "rows": 25, "venues": ["NAACL"]}
+{"label": "Proceedings of the Fourth Workshop on Simple and Efficient Natural Language Processing (SustaiNLP)", "rows": 25, "venues": ["ACL"]}
+{"label": "Proceedings of the Fourth Workshop on Text Simplification, Accessibility and Readability (TSAR 2025)", "rows": 25, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 4th International Workshop on Knowledge-Augmented Methods for Natural Language Processing", "rows": 24, "venues": ["NAACL"]}
+{"label": "Proceedings of the The 4th Workshop on Perspectivist Approaches to NLP", "rows": 24, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Workshop on Natural Language Processing for Indigenous Languages of the Americas (AmericasNLP)", "rows": 24, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on NLP for Science (NLP4Science)", "rows": 23, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Eighth Fact Extraction and VERification Workshop (FEVER)", "rows": 23, "venues": ["ACL"]}
+{"label": "Proceedings of the Eleventh Workshop on NLP for Similar Languages, Varieties, and Dialects (VarDial 2024)", "rows": 23, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 3: System Demonstrations)", "rows": 22, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2nd Workshop on Natural Language Processing Meets Climate Change (ClimateNLP 2025)", "rows": 22, "venues": ["ACL"]}
+{"label": "Proceedings of the 4th Table Representation Learning Workshop", "rows": 22, "venues": ["ACL"]}
+{"label": "Proceedings of the 4th Workshop on Trustworthy Natural Language Processing (TrustNLP 2024)", "rows": 22, "venues": ["NAACL"]}
+{"label": "Proceedings of the 10th SIGHAN Workshop on Chinese Language Processing (SIGHAN-10)", "rows": 21, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on Natural Language Processing Meets Climate Change (ClimateNLP 2024)", "rows": 21, "venues": ["ACL"]}
+{"label": "Proceedings of the 9th Workshop on Representation Learning for NLP (RepL4NLP-2024)", "rows": 21, "venues": ["ACL"]}
+{"label": "Proceedings of the Fourth Ukrainian Natural Language Processing Workshop (UNLP 2025)", "rows": 21, "venues": ["ACL"]}
+{"label": "Proceedings of the Seventh Workshop on Technologies for Machine Translation of Low-Resource Languages (LoResMT 2024)", "rows": 21, "venues": ["ACL"]}
+{"label": "Proceedings of the 11th Workshop on Argument Mining (ArgMining 2024)", "rows": 20, "venues": ["ACL"]}
+{"label": "Proceedings of the Fifth Workshop on Insights from Negative Results in NLP", "rows": 20, "venues": ["NAACL"]}
+{"label": "Proceedings of the 1st GenBench Workshop on (Benchmarking) Generalisation in NLP", "rows": 19, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 3rd Workshop on Advances in Language and Vision Research (ALVR)", "rows": 19, "venues": ["ACL"]}
+{"label": "Proceedings of the 4th Workshop on Computational Approaches to Discourse (CODI 2023)", "rows": 19, "venues": ["ACL"]}
+{"label": "Proceedings of the 5th Workshop on Computational Approaches to Historical Language Change", "rows": 19, "venues": ["ACL"]}
+{"label": "Proceedings of the 6th Workshop on Computational Approaches to Discourse, Context and Document-Level Inferences (CODI 2025)", "rows": 19, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fifth Workshop on Privacy in Natural Language Processing", "rows": 19, "venues": ["ACL"]}
+{"label": "Proceedings of the Sixth Workshop on Teaching NLP", "rows": 19, "venues": ["ACL"]}
+{"label": "The 7th Workshop on Online Abuse and Harms (WOAH)", "rows": 19, "venues": ["ACL"]}
+{"label": "Proceedings of the Eighth Workshop on Technologies for Machine Translation of Low-Resource Languages (LoResMT 2025)", "rows": 18, "venues": ["NAACL"]}
+{"label": "Proceedings of the First Workshop on Large Language Model Memorization (L2M2)", "rows": 18, "venues": ["ACL"]}
+{"label": "Proceedings of The 3rd Workshop on Mathematical Natural Language Processing (MathNLP 2025)", "rows": 17, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 1st Workshop on Towards Knowledgeable Language Models (KnowLLM 2024)", "rows": 17, "venues": ["ACL"]}
+{"label": "Proceedings of the 4th Workshop on Computational Approaches to Historical Language Change", "rows": 17, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 4th Workshop on Figurative Language Processing (FigLang 2024)", "rows": 17, "venues": ["NAACL"]}
+{"label": "Proceedings of the Fifth Workshop on NLP for Indigenous Languages of the Americas (AmericasNLP)", "rows": 17, "venues": ["NAACL"]}
+{"label": "Proceedings of the Tenth Workshop on Noisy and User-generated Text", "rows": 17, "venues": ["NAACL"]}
+{"label": "The Sixth Workshop on Insights from Negative Results in NLP", "rows": 17, "venues": ["NAACL"]}
+{"label": "Proceedings of TextGraphs-17: Graph-based Methods for Natural Language Processing", "rows": 16, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on Language + Molecules (L+M 2024)", "rows": 16, "venues": ["ACL"]}
+{"label": "Proceedings of the 7th Workshop on Research in Computational Linguistic Typology and Multilingual NLP", "rows": 16, "venues": ["ACL"]}
+{"label": "Proceedings of the The First Workshop on LLM Security (LLMSEC)", "rows": 16, "venues": ["ACL"]}
+{"label": "Proceedings of The 5th New Frontiers in Summarization Workshop", "rows": 15, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 10th Workshop on Representation Learning for NLP (RepL4NLP-2025)", "rows": 15, "venues": ["NAACL"]}
+{"label": "Proceedings of the Eighth Workshop on Computational Models of Reference, Anaphora and Coreference", "rows": 15, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 1st Workshop on Knowledge Graphs and Large Language Models (KaLLM 2024)", "rows": 14, "venues": ["ACL"]}
+{"label": "Proceedings of the 2nd GenBench Workshop on Generalisation (Benchmarking) in NLP", "rows": 14, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 4th New Frontiers in Summarization Workshop", "rows": 14, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 5th Workshop on NLP for Conversational AI (NLP4ConvAI 2023)", "rows": 14, "venues": ["ACL"]}
+{"label": "Proceedings of the Third Workshop on Text Simplification, Accessibility and Readability (TSAR 2024)", "rows": 14, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 1st Workshop on Natural Language Reasoning and Structured Explanations (NLRSE)", "rows": 13, "venues": ["ACL"]}
+{"label": "Proceedings of the 3rd Workshop on Towards Knowledgeable Foundation Models (KnowFM)", "rows": 13, "venues": ["ACL"]}
+{"label": "Proceedings of the 5th Workshop on Narrative Understanding", "rows": 13, "venues": ["ACL"]}
+{"label": "Proceedings of the First Workshop on Advancing Natural Language Processing for Wikipedia", "rows": 13, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Third DialDoc Workshop on Document-grounded Dialogue and Conversational Question Answering", "rows": 13, "venues": ["ACL"]}
+{"label": "Proceedings of the Workshop on Computation and Written Language (CAWL 2023)", "rows": 13, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on Language Models for Underserved Communities (LM4UC 2025)", "rows": 12, "venues": ["NAACL"]}
+{"label": "Proceedings of the 3rd Workshop on Cross-Cultural Considerations in NLP (C3NLP 2025)", "rows": 12, "venues": ["NAACL"]}
+{"label": "Proceedings of the Second Workshop on Social Influence in Conversations (SICon 2024)", "rows": 12, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Seventh Workshop on Computational Models of Reference, Anaphora and Coreference", "rows": 12, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Sixth Workshop on Natural Language Processing and Computational Social Science (NLP+CSS 2024)", "rows": 12, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2nd Workshop on Pattern-based Approaches to NLP in the Age of Deep Learning", "rows": 11, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Big Picture Workshop", "rows": 11, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fourth Workshop on Intelligent and Interactive Writing Assistants (In2Writing 2025)", "rows": 11, "venues": ["NAACL"]}
+{"label": "Proceedings of the Third Workshop on Social Influence in Conversations (SICon 2025)", "rows": 11, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on Multimodal Augmented Generation via Multimodal Retrieval (MAGMaR 2025)", "rows": 10, "venues": ["ACL"]}
+{"label": "Proceedings of the 21st SIGMORPHON workshop on Computational Research in Phonetics, Phonology, and Morphology", "rows": 10, "venues": ["NAACL"]}
+{"label": "Proceedings of the 21st Workshop on Multiword Expressions (MWE 2025)", "rows": 10, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2nd Workshop on Analogical Abstraction in Cognition, Perception, and Language (Analogy-Angle II)", "rows": 10, "venues": ["ACL"]}
+{"label": "Proceedings of the 2nd Workshop on Cross-Cultural Considerations in NLP", "rows": 10, "venues": ["ACL"]}
+{"label": "Proceedings of the 6th Workshop on Narrative Understanding", "rows": 10, "venues": ["EMNLP"]}
+{"label": "Proceedings of the First Workshop on Natural Language Processing for Turkic Languages (SIGTURK 2024)", "rows": 10, "venues": ["ACL"]}
+{"label": "Proceedings of the Sixth Workshop on Computational Models of Reference, Anaphora and Coreference (CRAC 2023)", "rows": 10, "venues": ["EMNLP"]}
+{"label": "Proceedings of the The 7th Workshop on Narrative Understanding", "rows": 10, "venues": ["NAACL"]}
+{"label": "Proceedings of the Third Workshop on Bridging Human--Computer Interaction and Natural Language Processing", "rows": 10, "venues": ["NAACL"]}
+{"label": "Proceedings of the Third Workshop on NLP Applications to Field Linguistics", "rows": 10, "venues": ["ACL"]}
+{"label": "Proceedings of the 2025 Annual Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 5: Tutorial Abstracts)", "rows": 9, "venues": ["NAACL"]}
+{"label": "Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 5: Tutorial Abstracts)", "rows": 9, "venues": ["ACL"]}
+{"label": "Proceedings of the 6th Workshop on Computational Approaches to Linguistic Code-Switching", "rows": 9, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 6th Workshop on NLP for Conversational AI (NLP4ConvAI 2024)", "rows": 9, "venues": ["ACL"]}
+{"label": "Proceedings of the First Workshop on Matching From Unstructured and Structured Data (MATCHING 2023)", "rows": 9, "venues": ["ACL"]}
+{"label": "Proceedings of the Fourth Workshop on NLP Applications to Field Linguistics", "rows": 9, "venues": ["ACL"]}
+{"label": "Proceedings of the Sixth Workshop on Privacy in Natural Language Processing", "rows": 9, "venues": ["NAACL"]}
+{"label": "Proceedings of the 1st Human-Centered Large Language Modeling Workshop", "rows": 8, "venues": ["ACL"]}
+{"label": "Proceedings of the 1st Workshop on AI and Scientific Discovery: Directions and Opportunities", "rows": 8, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: Tutorial Abstracts", "rows": 8, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 2nd Workshop on Natural Language Reasoning and Structured Explanations (@ACL 2024)", "rows": 8, "venues": ["ACL"]}
+{"label": "Proceedings of the 3rd Workshop on Knowledge Augmented Methods for NLP", "rows": 8, "venues": ["ACL"]}
+{"label": "Proceedings of the First Workshop on Social Influence in Conversations (SICon 2023)", "rows": 8, "venues": ["ACL"]}
+{"label": "Proceedings of the Workshop on the Future of Event Detection (FuturED)", "rows": 8, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing: Tutorial Abstracts", "rows": 7, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 5: Tutorial Abstracts)", "rows": 7, "venues": ["NAACL"]}
+{"label": "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing: Tutorial Abstracts", "rows": 7, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 4th Shared Task on Discourse Relation Parsing and Treebanking (DISRPT 2025)", "rows": 7, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 6: Tutorial Abstracts)", "rows": 7, "venues": ["ACL"]}
+{"label": "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 5: Tutorial Abstracts)", "rows": 7, "venues": ["ACL"]}
+{"label": "Proceedings of the 7th Workshop on Computational Approaches to Linguistic Code-Switching", "rows": 7, "venues": ["NAACL"]}
+{"label": "Proceedings of the CRAC 2023 Shared Task on Multilingual Coreference Resolution", "rows": 6, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Eleventh Workshop on Asian Translation (WAT 2024)", "rows": 6, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Fifth Workshop on Data Science with Human-in-the-Loop (DaSH 2024)", "rows": 6, "venues": ["NAACL"]}
+{"label": "Proceedings of the Queer in AI Workshop", "rows": 6, "venues": ["NAACL"]}
+{"label": "Proceedings of the 1st Workshop on Data Contamination (CONDA)", "rows": 5, "venues": ["ACL"]}
+{"label": "Proceedings of the 22nd SIGMORPHON workshop on Computational Morphology, Phonology, and Phonetics", "rows": 5, "venues": ["NAACL"]}
+{"label": "Proceedings of the 3rd Shared Task on Discourse Relation Parsing and Treebanking (DISRPT 2023)", "rows": 5, "venues": ["ACL"]}
+{"label": "Proceedings of the 2nd Workshop on Advancing Natural Language Processing for Wikipedia (WikiNLP 2025)", "rows": 4, "venues": ["ACL"]}
+{"label": "Proceedings of the 4th Workshop on Spatial Language Understanding and Grounded Communication for Robotics (SpLU-RoboNLP 2024)", "rows": 4, "venues": ["ACL"]}
+{"label": "Proceedings of the 3rd Combined Workshop on Spatial Language Understanding and Grounded Communication for Robotics (SpLU-RoboNLP 2023)", "rows": 2, "venues": ["EMNLP"]}
+{"label": "Proceedings of the 5th Wordplay: When Language meets Games Workshop (Wordplay 2025)", "rows": 1, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Eighth Widening NLP Workshop", "rows": 1, "venues": ["EMNLP"]}
+{"label": "Proceedings of the First Workshop on Tailoring AI: Exploring Active and Passive LLM Personalization (PALS 2025)", "rows": 1, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Seventh Widening NLP Workshop (WiNLP 2023)", "rows": 1, "venues": ["EMNLP"]}
+{"label": "Proceedings of the Workshop on Novel Ideas in Learning-to-Learn through Interaction (NILLI 2023)", "rows": 1, "venues": ["EMNLP"]}

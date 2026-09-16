@@ -22,13 +22,14 @@ sources:
   # views, which publish no authors, no track and no PDF path. For ICLR 2024
   # the registry gives 100% author and abstract coverage over all 2,260 rows.
   #
-  # `track` carries the venue's own label, so acceptance is observable per
-  # record rather than asserted. Until that mapping lands the manifest still
-  # asserts it: membership_is_acceptance was checked against ICLR 2024's
-  # published total of 2,260. Do not copy the assertion to another venue-year
-  # without repeating the check — the ICLR 2023 shard holds 3,792 rows against
-  # roughly 1,574 accepted papers, the difference being 2,219 rows labelled
-  # "Submitted to ICLR 2023".
+  # Membership is read off each record's own `track` label by classify_track,
+  # not asserted for the listing: ICLR 2023's 3,792 rows resolve to 1,573
+  # accepted plus 2,219 labelled "Submitted to ICLR 2023", matching the venue's
+  # published count. Across 2023-2026 the registry's 262 labels classify as
+  # 85,732 accepted main-conference rows, 7,499 Findings, 4,883 workshop, 2,219
+  # submissions, 1,118 co-located conferences, 706 industry, 414 demo, 157
+  # shared-task and 61 tutorial. Only `track: main` above is ingested; an
+  # unrecognized label classifies as "other" and is excluded.
   papercli:
     enabled: true
     root_dir: ${DATA_DIR}/sources/papercli
@@ -38,7 +39,6 @@ sources:
     pdf_dataset: GenAI4ELab/papercli-papers-iclr
     pdf_dataset_revision: 050f8a4983fb3ff656e9cbaa32b8aeb3f561d2ef
     page_size: 500
-    membership_is_acceptance: true
     # The dataset card declares CC-BY-4.0, but per-paper rights are unverified,
     # so nothing is marked redistributable for P1.5's export filter.
     redistribution: unknown

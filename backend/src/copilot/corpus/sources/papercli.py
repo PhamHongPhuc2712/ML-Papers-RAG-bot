@@ -13,10 +13,11 @@ views this adapter previously read carried none of those. Two consequences:
 
 * Records carry real ``authors``, so P1.2's title matching keeps its
   author-compatibility signal.
-* ``source_track`` carries the venue's own label (``ICLR 2024 poster``,
-  ``Submitted to ICLR 2023``, ``main``), which is the evidence a decision is
-  derived from. Until that mapping lands, membership is still asserted per
-  manifest through ``membership_is_acceptance``.
+* ``track`` carries the venue's own label (``ICLR 2024 poster``, ``Submitted
+  to ICLR 2023``, ``Findings of the ACL: EMNLP 2024``, ``main``), so membership
+  is read off each record by :func:`classify_track` rather than asserted for a
+  whole listing. A record keeps the raw label in ``source_track`` beside the
+  canonical track it was classified into.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from ..mirror import split_authors
-from .base import Transport, utc_now
+from .base import Transport, classify_track, utc_now
 
 _OPENREVIEW_HOSTS = frozenset({"openreview.net", "api2.openreview.net"})
 
@@ -73,7 +74,6 @@ class PapercliSource:
         self.revision = str(config.get("dataset_revision", "")) or "unknown"
         self.pdf_dataset = str(config.get("pdf_dataset", ""))
         self.pdf_revision = str(config.get("pdf_dataset_revision", "")) or "unknown"
-        self.membership_is_acceptance = bool(config.get("membership_is_acceptance", False))
         self.redistribution = str(config.get("redistribution", "unknown"))
         self.venue = venue
         self.year = year
@@ -126,7 +126,10 @@ class PapercliSource:
         authors = row.get("authors")
         names = split_authors(authors) if isinstance(authors, str) else list(authors or [])
         year = row.get("year")
-        decision = "accepted" if self.membership_is_acceptance else "unknown"
+        # The venue's own label is the membership evidence; an absent or
+        # unrecognized one classifies as ineligible rather than as accepted.
+        source_track = row.get("track")
+        track, decision = classify_track(source_track)
         return {
             "source": self.source,
             "source_item_id": item_id,
@@ -135,15 +138,15 @@ class PapercliSource:
             "title": str(row.get("title") or ""),
             "authors": [str(name) for name in names],
             "abstract": row.get("abstract") or row.get("snippet"),
-            "venue": {"name": str(row.get("venue") or self.venue), "track": self.track},
+            "venue": {"name": str(row.get("venue") or self.venue), "track": track},
             "year": int(year) if isinstance(year, int) else self.year,
-            "track": self.track,
-            # The venue's own label, kept verbatim as the evidence a decision
-            # is derived from rather than being flattened into one here.
-            "source_track": row.get("track"),
+            "track": track,
+            # The label kept verbatim beside the track it classified into, so a
+            # record carries the evidence and not only the conclusion.
+            "source_track": source_track,
             "decision": decision,
             "withdrawn": False,
-            "acceptance_decision": decision if self.membership_is_acceptance else None,
+            "acceptance_decision": decision,
             "retrieved_at": self.now().isoformat(),
             "source_url": row.get("forum_url"),
             "pdf_url": row.get("pdf_url") or row.get("openreview_pdf_url"),

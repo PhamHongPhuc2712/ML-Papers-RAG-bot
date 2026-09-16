@@ -651,7 +651,6 @@ def _mirror(tmp_path: Path, *, pdf_path: str = "pdfs/a.pdf") -> tuple[Path, dict
                 "dataset_revision": "90a1fbd",
                 "pdf_dataset": "GenAI4ELab/papercli-papers-iclr",
                 "pdf_dataset_revision": "050f8a4",
-                "membership_is_acceptance": True,
                 "page_size": 100,
             }
         },

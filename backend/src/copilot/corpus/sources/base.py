@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -13,6 +14,85 @@ import yaml
 
 DECISIONS = ("accepted", "rejected", "desk_rejected", "withdrawn", "under_review", "unknown")
 PRESENTATION_TYPES = ("oral", "spotlight", "poster")
+
+# Canonical tracks. Only "main" is the accepted main conference a manifest asks
+# for; everything else is a real publication in a track this corpus excludes.
+TRACKS = (
+    "main",
+    "findings",
+    "workshop",
+    "industry",
+    "demo",
+    "shared_task",
+    "tutorial",
+    "other",
+    "unknown",
+)
+
+# The ACL Anthology encodes the track in the volume title, and a venue-year's
+# rows mix the main conference with Findings, workshops, industry and demo
+# volumes, and whole co-located conferences (WMT, IWSLT, ArabicNLP) that the
+# registry still files under venue ACL or EMNLP. Main is therefore matched
+# positively: an unrecognized label is "other", never silently the main track.
+_ACL_MAIN_VOLUMES = (
+    re.compile(
+        r"^proceedings of the \d+(st|nd|rd|th) annual meeting of the association for "
+        r"computational linguistics \(volume [12]: (long|short) papers\)$"
+    ),
+    re.compile(
+        r"^proceedings of the \d{4} conference on empirical methods in natural language "
+        r"processing$"
+    ),
+    re.compile(
+        r"^proceedings of the \d{4} conference of the (north american chapter|nations of the "
+        r"americas chapter) of the association for computational linguistics: human language "
+        r"technologies \(volume [12]: (long|short) papers\)$"
+    ),
+)
+_SUBMISSION = re.compile(r"submitted to|under review")
+_PRESENTATION = re.compile(r"poster|oral|spotlight|notable top|^accept")
+
+
+def classify_track(label: object) -> tuple[str, str]:
+    """Map a venue's own label onto (canonical track, decision).
+
+    The label is the only membership evidence the registry carries, and it is
+    specific: OpenReview venues publish a presentation type for accepted work
+    and "Submitted to <venue>" for the rest, while proceedings venues publish a
+    volume title. Order matters — 163 of the 165 workshop labels begin with
+    "Proceedings of", so the workshop test has to precede the volume patterns
+    or 4,847 workshop papers would read as main-conference ones.
+    """
+
+    text = " ".join(str(label or "").split())
+    if not text:
+        return ("unknown", "unknown")
+    lowered = text.lower()
+    if _SUBMISSION.search(lowered):
+        # An unaccepted submission still belongs to the venue's main track.
+        return ("main", "under_review")
+    if "findings" in lowered:
+        return ("findings", "accepted")
+    if "workshop" in lowered:
+        return ("workshop", "accepted")
+    if "shared task" in lowered:
+        return ("shared_task", "accepted")
+    if "industry track" in lowered:
+        return ("industry", "accepted")
+    if "system demonstration" in lowered or "demonstrations" in lowered:
+        return ("demo", "accepted")
+    if "tutorial" in lowered:
+        return ("tutorial", "accepted")
+    if _PRESENTATION.search(lowered):
+        return ("main", "accepted")
+    # Proceedings venues (AAAI, the CVF conferences, IJCAI, Interspeech, JMLR)
+    # publish only accepted main-conference papers, and the registry labels
+    # them "main"; their pdf_url hosts are the official proceedings sites.
+    if lowered == "main":
+        return ("main", "accepted")
+    if any(pattern.match(lowered) for pattern in _ACL_MAIN_VOLUMES):
+        return ("main", "accepted")
+    return ("other", "accepted")
 
 
 def normalize_decision(value: object) -> str:
