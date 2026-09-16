@@ -133,3 +133,118 @@ duplicate papers, zero canonical ID churn, zero chunk identity churn.
   `test_kill_after_parse_write_is_resumable`.
 - Timing is for a warm local mirror. It excludes the 17.5 minutes spent
   collecting the 13.70 GB of PDFs, which is a one-off per venue-year.
+
+---
+
+# Re-run 2026-09-16 — model-token chunking, registry records, observed membership
+
+Task: A4, validating the three pipeline changes committed as `c82b2c2`
+(model-token windows), `359dca7` (registry-backed records) and `f917341`
+(membership from the venue label) before the multi-venue run.
+Host: WSL2 Linux, 12 cores / 23 GB RAM, `postgres:17.11-bookworm`.
+Run IDs: `ICLR-2024-20260916T062711Z-07408b04` (pilot),
+`ICLR-2024-20260916T062855Z-82cc3fa8` (replay).
+Database: `copilot_pilot_v2`, created empty for this run so the superseded
+2026-09-15 pilot in `copilot` stays intact for comparison.
+
+## What changed since the 2026-09-15 run
+
+| | 2026-09-15 | 2026-09-16 |
+|---|---|---|
+| Chunk window | 450 **whitespace words** | 450 **BGE-M3 tokens** (`5617a9f`, pinned by sha256) |
+| `chunker_version` | `fixed-window-v1` | `fixed-window-v2` |
+| Records from | `browse/iclr/2024.parquet` (5 columns) | `papers.parquet` (11 columns) via `corpus mirror-index` |
+| Authors | none — `paper_authors` empty | **561 distinct, 568 authorships, 0 papers without** |
+| Acceptance | asserted per manifest | **observed** per record from the venue's label |
+| Aliases per paper | `openreview` | `papercli` + `openreview` |
+
+The deterministic sample is ordered by `source_item_id`, which is now the
+registry id rather than the OpenReview forum id, so this is **a different 100
+papers**: only 5 titles overlap with the 2026-09-15 sample. Counts below are
+therefore not a like-for-like comparison with that report. Ordering by an
+opaque registry id is closer to a random deterministic sample than ordering by
+forum id, which correlates with submission time.
+
+## Pilot run
+
+```text
+corpus ingest --manifest configs/corpus.yaml --limit 100     2 s
+worker run  x4 (a4-1 … a4-4)                                69 s wall clock, 300 jobs
+```
+
+| Measure | Value |
+|---|---|
+| Jobs | 300 succeeded (100 `resolve_record`, 100 `adopt_pdf`, 100 `parse_pdf`) |
+| Retries | **0** — maximum attempt across all jobs is 1 |
+| Papers / identifiers / versions | 100 / **200** / 100 |
+| Authors / authorships | 561 / 568 (max 34 on one paper) |
+| Parse outcomes | 100 `parsed`, no typed failures |
+| Chunks | **7,500** (75.0 per paper) |
+| Acceptance recorded on source records | 100 `accepted`, observed from the label |
+| Identity conflicts / quarantined | 0 / 0 |
+| Papers without authors / without abstract | **0 / 0** |
+| Checkpoint | `papercli` / `ICLR:2024:main` / `complete:pages=5:eligible=2260:selected=100` |
+
+Chunk composition: body 3,216 · references 2,789 · table 473 · appendix 412 ·
+figure 351 · abstract 105 · front matter 100 · acknowledgments 54.
+
+## Chunk sizing — the defect this run exists to check
+
+Every stored chunk was re-tokenized with the configured BGE-M3 tokenizer:
+
+| | Value |
+|---|---|
+| Stored `token_count` | median **450**, mean 344, max 450 |
+| Re-measured from stored text | median **450**, mean 345, max **467** |
+| **Over the 600-token hard cap** | **0 of 7,500 (0.00%)** — was 51.4% on 2026-09-15 |
+
+Re-measuring a stored chunk can exceed its recorded `token_count` by a few
+tokens (max 467 against a 450 window) because a boundary piece re-encodes
+differently in isolation. It stays well inside the cap and affects nothing
+downstream.
+
+Chunks per paper rose 47 → 75 as a direct consequence of counting real tokens.
+Extrapolated to the 85,732 eligible main-conference papers that is roughly
+**6.4 M chunks**, of which about 2.4 M would be reference lists — already
+excluded from default evidence, and worth excluding from the first index too.
+
+## Replay
+
+Re-running `corpus ingest` and `worker run` against the same mirror revision
+enqueued **no new job** and the worker processed **0**.
+
+| Field | Pilot | Replay | Same |
+|---|---|---|---|
+| papers / identifiers / versions | 100 / 200 / 100 | identical | yes |
+| authors / authorships | 561 / 568 | identical | yes |
+| chunks | 7,500 | 7,500 | yes |
+| canonical identity digest | `e7dfd1d07ebab0b0` | `e7dfd1d07ebab0b0` | **yes** |
+| version digest | `3903a97d8d44db92` | `3903a97d8d44db92` | **yes** |
+| chunk identity digest | `408534b00f8f6021` | `408534b00f8f6021` | **yes** |
+| jobs by status | 300 succeeded | 300 succeeded | yes |
+| checkpoint cursor | `complete:pages=5:…` | identical | yes |
+
+## Coverage gaps
+
+Closed since 2026-09-15: **authors** (0 papers without) and **acceptance**,
+which is now read from each record's own label rather than asserted per
+manifest.
+
+Still open, all recorded rather than worked around:
+
+- **Redistribution unknown** for every record. The dataset card declares
+  CC-BY-4.0 but per-paper rights are unverified, so P1.5's export filter will
+  emit no full text from this corpus until rights are established per paper.
+- **No publication date**, only a year, so P3.3's freshness component is
+  year-granular.
+- **No citation counts**, so §8's popularity component has no signal. In-corpus
+  citation edges are derivable from the stored reference chunks without any
+  further download.
+- Enrichment not exercised: `semantic_scholar` stays disabled.
+
+## Limits
+
+One venue-year, 100 of 2,260 papers, one machine. Four worker processes did
+contend for leases here, which the 2026-09-15 single-worker run did not
+exercise; kill/restart resumption is still covered by the fixture suite rather
+than by this run.

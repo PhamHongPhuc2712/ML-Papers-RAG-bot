@@ -1,14 +1,14 @@
 # ML Research Copilot — Progress Tracker
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-16.
 
 ## Current state
 
 - Implementation: **4 / 30 tasks complete** (P1.1–P1.4); P1.3's parser audit and P1.4's pilot and replay are both closed. Next task: P1.5.
 - MVP implementation: **4 / 25 tasks complete**.
 - Passing implementation gates: **0 / 6** (G1's parser audit passes at 95% usable text and the 100-paper replay passes with zero identity churn; only the snapshot export/restore from P1.5 remains).
-- Corpus ingested: 100 ICLR 2024 papers, 4,713 chunks in local PostgreSQL. Corpus **indexed** (Qdrant): none yet — that is P2.2. Benchmarks observed: none yet. User-study observations: none yet.
-- Test evidence on this host (2026-09-14, WSL/Linux, Docker 29.4.3): full suite **120 passed**; Ruff and mypy strict clean. Corpus on disk: 2,260 ICLR 2024 PDFs (13.70 GB) plus metadata, under `${DATA_DIR}/sources/papercli/`.
+- Corpus ingested: 100 ICLR 2024 papers, **7,500 chunks** in `copilot_pilot_v2` (2026-09-16 re-run on model-token windows, registry records and observed membership). The superseded 2026-09-15 pilot — 100 papers, 4,713 word-counted chunks — still sits in the `copilot` database and should be dropped before the multi-venue run. Corpus **indexed** (Qdrant): none yet — that is P2.2. Benchmarks observed: none yet. User-study observations: none yet.
+- Test evidence on this host (2026-09-16, WSL/Linux, 12 cores / 23 GB RAM): full suite **161 passed**; Ruff clean; mypy clean **under the project's strict config**, which the documented command had never loaded (see the note below the session log). Corpus on disk: 2,260 ICLR 2024 PDFs (13.70 GB), the 89 MB `papers.parquet` registry and the derived venue-year index, under `${DATA_DIR}/sources/papercli/`.
 
 Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **Blocked**. No placeholder is evidence; a task is Done only when every named acceptance case ran, its report exists and its commit is recorded.
 
@@ -101,6 +101,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | 2026-09-15 | `sources/papercli.py` mirror adapter and `adopt_pdf` handler; 100-paper pilot and replay | 134 passed, Ruff, mypy; 300 jobs, 0 retries, 100 papers / 4,713 chunks; replay identical on identity, version and chunk digests with 0 new jobs | [ingestion evidence](../../reports/m1-ingestion.md) | P1.5: export snapshots, coverage endpoint and data card |
 
 | 2026-09-16 | mypy was never running strict | 27 files clean under `--config-file backend/pyproject.toml`; 4 pre-existing errors fixed (untyped lifespan, unparameterized dict, Any return, redundant cast) | pending commit | A3 |
+| 2026-09-16 | Pilot re-run and replay on the new pipeline (A4) | 100 papers, 200 identifiers, 561 authors, **7,500 chunks**, 300 jobs, 0 retries, 69 s across 4 workers; 0 of 7,500 chunks over the 600-token cap (was 51.4%); replay enqueued 0 jobs with all three digests identical | [ingestion evidence](../../reports/m1-ingestion.md) | B1: `corpus mirror` download half, then the venue-by-venue run |
 | 2026-09-16 | Per-record membership from the venue label (A3) | 161 passed, Ruff, mypy strict; all 262 registry labels classify with exact row totals asserted; real ICLR 2024 index yields 2,260 eligible, all main/accepted (1,807 poster, 367 spotlight, 86 oral) | pending commit | A4: re-run the pilot end to end on the new chunker, authors and observed decisions |
 | 2026-09-16 | Registry-backed mirror index (A2) | 143 passed, Ruff clean; `corpus mirror-index --venue ICLR --year 2024` → 2,260 rows, 2,260 with verified local PDFs, 0 missing; 100% authors and abstracts | pending commit | A3: map `track` to a canonical track and an observed decision |
 | 2026-09-16 | Chunk window measured in model tokens (A1) | 138 passed (78 offline), Ruff, mypy; 15 pilot papers re-chunked with the pinned tokenizer: 1,010 chunks, median 450 tokens, 0 over the 600 cap | pending commit | A2: read `papers.parquet` (authors, abstract, track, `hf_pdf_path`) instead of the 5-column browse shard |
