@@ -1,0 +1,69 @@
+# Ordered venue-year plan for the corpus run (spec §4 coverage).
+#
+# 42 venue-years, 85,732 eligible accepted main-conference papers for 2023-2026,
+# counted by classify_track over the pinned registry. Findings, workshops,
+# industry and demo tracks, shared tasks, tutorials, co-located conferences and
+# unaccepted submissions are excluded by the same classifier and are not listed
+# here.
+#
+# Order is ascending by eligible paper count, so the cheap venue-years complete
+# and bank their text before the large ones start; a run that dies overnight
+# loses the least. ICLR 2024 is already mirrored on this machine, so its
+# download stage is a no-op.
+#
+# The driver mirrors one venue-year, ingests it, runs the workers, verifies that
+# no job is still pending, then deletes that venue-year's PDFs — keeping any
+# whose paper did not parse, because that copy is the only thing a retry can
+# read. Peak disk is therefore the largest single venue-year (ICLR 2026, about
+# 48 GB), not the ~450 GB the whole corpus would need at once.
+defaults:
+  # Parse workers. 12 cores here; 9 leaves room for PostgreSQL and the
+  # concurrent download of the next venue-year.
+  workers: 9
+  download_workers: 8
+  # Refuse to start a venue-year with less than this free, so a run cannot fill
+  # the disk out from under the database mid-parse.
+  min_free_gb: 80
+venue_years:
+  - {venue: JMLR, year: 2025}   # 308 eligible
+  - {venue: JMLR, year: 2023}   # 401 eligible
+  - {venue: JMLR, year: 2024}   # 421 eligible
+  - {venue: NAACL, year: 2024}   # 564 eligible
+  - {venue: WACV, year: 2023}   # 639 eligible
+  - {venue: NAACL, year: 2025}   # 720 eligible
+  - {venue: WACV, year: 2026}   # 831 eligible
+  - {venue: WACV, year: 2024}   # 846 eligible
+  - {venue: IJCAI, year: 2023}   # 851 eligible
+  - {venue: WACV, year: 2025}   # 929 eligible
+  - {venue: ACL, year: 2024}   # 942 eligible
+  - {venue: EMNLP, year: 2023}   # 1047 eligible
+  - {venue: IJCAI, year: 2024}   # 1048 eligible
+  - {venue: Interspeech, year: 2024}   # 1065 eligible
+  - {venue: ACL, year: 2023}   # 1077 eligible
+  - {venue: Interspeech, year: 2023}   # 1141 eligible
+  - {venue: Interspeech, year: 2025}   # 1179 eligible
+  - {venue: EMNLP, year: 2024}   # 1268 eligible
+  - {venue: IJCAI, year: 2025}   # 1279 eligible
+  - {venue: ICLR, year: 2023}   # 1573 eligible
+  - {venue: ACL, year: 2025}   # 1701 eligible
+  - {venue: EMNLP, year: 2025}   # 1809 eligible
+  - {venue: ICML, year: 2023}   # 1828 eligible
+  - {venue: AAAI, year: 2023}   # 2023 eligible
+  - {venue: ICCV, year: 2023}   # 2156 eligible
+  - {venue: ICLR, year: 2024}   # 2260 eligible
+  - {venue: CVPR, year: 2023}   # 2353 eligible
+  - {venue: ECCV, year: 2024}   # 2387 eligible
+  - {venue: ICML, year: 2024}   # 2610 eligible
+  - {venue: ICCV, year: 2025}   # 2701 eligible
+  - {venue: CVPR, year: 2024}   # 2716 eligible
+  - {venue: AAAI, year: 2024}   # 2864 eligible
+  - {venue: CVPR, year: 2025}   # 2871 eligible
+  - {venue: NeurIPS, year: 2023}   # 3218 eligible
+  - {venue: ICML, year: 2025}   # 3257 eligible
+  - {venue: AAAI, year: 2025}   # 3486 eligible
+  - {venue: ICLR, year: 2025}   # 3703 eligible
+  - {venue: NeurIPS, year: 2024}   # 4035 eligible
+  - {venue: CVPR, year: 2026}   # 4068 eligible
+  - {venue: AAAI, year: 2026}   # 4920 eligible
+  - {venue: NeurIPS, year: 2025}   # 5286 eligible
+  - {venue: ICLR, year: 2026}   # 5351 eligible

@@ -161,6 +161,138 @@ def run_mirror(
     )
 
 
+def run_corpus(
+    *,
+    config: Path,
+    database_url: str,
+    data_dir: Path,
+    base_manifest: Path,
+    parsing_config: Path,
+    only: list[str] | None,
+    keep_pdfs: bool,
+    dry_run: bool,
+    workers: int | None,
+) -> dict[str, object]:
+    """Drive the venue-year plan: mirror, ingest, work, verify, sweep, repeat."""
+
+    import subprocess
+    import sys
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    import yaml
+
+    from .corpus.ingest import ingest
+    from .corpus.mirror import mirror_venue_year, resolve_revision, shard_repo
+    from .corpus.sources.base import HttpxTransport, load_manifest
+    from .corpus.venues import (
+        CampaignPaths,
+        VenueYear,
+        load_venue_plan,
+        parsed_checksums,
+        pending_jobs,
+        run_campaign,
+        sweep_pdfs,
+        venue_manifest,
+    )
+
+    plan, defaults = load_venue_plan(config)
+    if only:
+        wanted = set(only)
+        plan = [item for item in plan if item.key in wanted or item.venue in wanted]
+    parse_workers = workers or int(defaults.get("workers", 4))
+    download_workers = int(defaults.get("download_workers", 8))
+    min_free_bytes = int(float(defaults.get("min_free_gb", 80)) * 1024**3)
+
+    campaign_id = f"corpus-{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
+    paths = CampaignPaths(data_dir=data_dir, run_dir=data_dir / "runs" / campaign_id)
+    paths.run_dir.mkdir(parents=True, exist_ok=True)
+    engine = make_engine(database_url)
+    transport = HttpxTransport()
+    base = load_manifest(base_manifest)
+    revisions: dict[str, str] = {}
+
+    def revision(venue: str) -> str:
+        if venue not in revisions:
+            revisions[venue] = resolve_revision(shard_repo(venue))
+        return revisions[venue]
+
+    def mirror(item: VenueYear) -> dict[str, object]:
+        return mirror_venue_year(
+            paths.registry,
+            venue=item.venue,
+            year=item.year,
+            mirror_root=paths.mirror_root,
+            revision=revision(item.venue),
+            workers=download_workers,
+            min_free_bytes=min_free_bytes,
+            out=paths.index(item.venue, item.year),
+        )
+
+    def enqueue(item: VenueYear) -> str:
+        manifest = venue_manifest(
+            base,
+            venue=item.venue,
+            year=item.year,
+            index=paths.index(item.venue, item.year),
+            mirror_root=paths.mirror_root,
+            pdf_revision=revision(item.venue),
+        )
+        target = paths.manifest(item.venue, item.year)
+        target.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+        return ingest(target, None, engine=engine, transport=transport)
+
+    def work(item: VenueYear, run_id: str) -> dict[str, object]:
+        manifest = paths.manifest(item.venue, item.year)
+        command = [
+            sys.executable, "-m", "copilot.cli", "worker", "run",
+            "--database-url", database_url,
+            "--manifest", str(manifest),
+            "--parsing-config", str(parsing_config),
+            "--staging-dir", str(data_dir / "sources"),
+            "--data-dir", str(data_dir),
+        ]
+        processes = [
+            subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+                [*command, "--worker-id", f"{item.venue.lower()}{item.year}-{index}"]
+            )
+            for index in range(parse_workers)
+        ]
+        for process in processes:
+            process.wait()
+        unfinished, failed_jobs = pending_jobs(engine, run_id)
+        return {
+            "workers": parse_workers,
+            "unfinished": unfinished,
+            "failed_jobs": failed_jobs,
+            "parsed_sha256": parsed_checksums(engine),
+        }
+
+    def sweep(item: VenueYear, checksums: set[str]) -> dict[str, int]:
+        return sweep_pdfs(
+            paths.index(item.venue, item.year),
+            checksums,
+            paths.pdf_root,
+            dry_run=dry_run,
+        )
+
+    try:
+        migrate_database(engine)
+        result = run_campaign(
+            plan,
+            mirror=mirror,
+            ingest=enqueue,
+            work=work,
+            sweep=sweep,
+            state_path=paths.run_dir / "state.json",
+            keep_pdfs=keep_pdfs,
+        )
+        return {"campaign_id": campaign_id, "run_dir": str(paths.run_dir), **result}
+    finally:
+        transport.close()
+        engine.dispose()
+
+
 def run_worker(
     *,
     database_url: str,
@@ -246,6 +378,23 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--min-free-gb", type=float, default=80.0)
     capture.add_argument("--data-dir", type=Path, default=None)
 
+    corpus_run = corpus_commands.add_parser(
+        "run", help="mirror, ingest, parse and sweep each venue-year in the plan"
+    )
+    corpus_run.add_argument("--config", type=Path, default=Path("configs/venues.yaml"))
+    corpus_run.add_argument("--base-manifest", type=Path, default=DEFAULT_MANIFEST_PATH)
+    corpus_run.add_argument("--parsing-config", type=Path, default=DEFAULT_PARSING_PATH)
+    corpus_run.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+    corpus_run.add_argument("--data-dir", type=Path, default=None)
+    corpus_run.add_argument(
+        "--only", action="append", default=None, help="limit to VENUE or VENUE:YEAR; repeatable"
+    )
+    corpus_run.add_argument("--workers", type=int, default=None)
+    corpus_run.add_argument("--keep-pdfs", action="store_true", help="never delete source PDFs")
+    corpus_run.add_argument(
+        "--dry-run", action="store_true", help="report what the sweep would delete"
+    )
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -300,6 +449,18 @@ def main(argv: list[str] | None = None) -> int:
             workers=args.workers,
             min_free_gb=args.min_free_gb,
             data_dir=_data_dir(args.data_dir, parser),
+        )
+    elif args.command == "corpus" and args.corpus_command == "run":
+        result = run_corpus(
+            config=args.config,
+            database_url=_database_url(args.database_url),
+            data_dir=_data_dir(args.data_dir, parser),
+            base_manifest=args.base_manifest,
+            parsing_config=args.parsing_config,
+            only=args.only,
+            keep_pdfs=args.keep_pdfs,
+            dry_run=args.dry_run,
+            workers=args.workers,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
