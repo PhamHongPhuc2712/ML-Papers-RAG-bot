@@ -248,3 +248,55 @@ One venue-year, 100 of 2,260 papers, one machine. Four worker processes did
 contend for leases here, which the 2026-09-15 single-worker run did not
 exercise; kill/restart resumption is still covered by the fixture suite rather
 than by this run.
+
+---
+
+# Smoke run 2026-09-16 — JMLR 2025, the full venue-year loop
+
+Task: B3, proving `corpus run`'s mirror → ingest → work → verify → sweep loop on
+the smallest venue-year before committing to all 42.
+Campaign `corpus-20260916T065119Z-4e5836a9`, run `JMLR-2025-20260916T065314Z-ffa7921a`,
+state under `${DATA_DIR}/runs/corpus-20260916T065119Z-4e5836a9/`.
+
+```text
+corpus run --only JMLR:2025
+```
+
+| Stage | Result |
+|---|---|
+| Mirror | 308 downloaded, 0 already present, **0 failed**, 0 missing; 709 MB in ~115 s (~6.2 MB/s) |
+| Shard revision | `GenAI4ELab/papercli-papers-jmlr` at `a5b19b5df86f3f2f884f3f1b3a313304a6f113a5`, recorded on every index record |
+| Ingest + parse | 924 jobs, **0 failed, 0 unfinished**, 170 s across 9 workers (91–115 jobs each) |
+| Stored | 308 papers, 1,159 authorships, **37,433 chunks**, 308/308 `parsed`, 0 papers without authors |
+| Chunk sizing | median **450** tokens, max 450 — the cap holds on a second venue |
+| **Sweep** | **308 deleted, 0 kept, 0 missing, 709 MB freed**; no PDF remains under `pdfs/jmlr/` |
+
+Nothing was kept because every paper parsed. The keep-on-failure path is covered
+by the unit suite rather than by this run, which had no failures to exercise it.
+
+Chunk composition: body 16,161 · appendix 14,705 · references 2,978 · figure
+1,744 · table 722 · abstract 534 · front matter 312 · acknowledgments 277.
+
+## Two measurements that change the plan's arithmetic
+
+**Chunks per paper vary by venue far more than expected.** JMLR gives **121.5**
+against ICLR 2024's 75.0 — journal articles carry appendices nearly as large as
+their bodies (14,705 appendix chunks against 16,161 body). A single
+chunks-per-paper figure cannot size the corpus; the earlier 6.4 M projection was
+built from the ICLR rate alone and should be treated as a floor until more
+venues are measured.
+
+**Download throughput is lower on small files.** 6.2 MB/s here against the
+13 MB/s measured on the ICLR shard, because JMLR's files average 2.3 MB and
+per-file overhead dominates with 8 concurrent downloads. At 6.2 MB/s the ~450 GB
+corpus would take about 20 hours of downloading rather than 10, which would make
+the whole run roughly 20–22 hours rather than 14–16. Raising
+`defaults.download_workers` is the obvious lever and is worth measuring on the
+next venue-year before the long run starts.
+
+## What the smoke proves
+
+The loop is resumable and self-describing: the campaign state file records the
+completed venue-year with its mirror counts, run ID, worker outcome and sweep
+result, and a re-run skips it. Peak disk for this venue-year was 709 MB, and it
+returned to zero afterwards.
