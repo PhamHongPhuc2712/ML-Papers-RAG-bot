@@ -15,14 +15,21 @@ DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
 DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
 
 
-def default_staging_dir() -> Path | None:
-    """Raw source artifacts live under the configured data root unless overridden."""
+def default_data_dir() -> Path | None:
+    """The single local data root, read from the environment (spec §3)."""
 
     root = os.environ.get("COPILOT_DATA_DIR") or os.environ.get("DATA_DIR") or ""
     root = root.strip()
     if not root:
         return None
-    return Path(root.rstrip("\\/") or root) / "sources"
+    return Path(root.rstrip("\\/") or root)
+
+
+def default_staging_dir() -> Path | None:
+    """Raw source artifacts live under the configured data root unless overridden."""
+
+    root = default_data_dir()
+    return None if root is None else root / "sources"
 
 
 def load_fixtures(
@@ -81,6 +88,13 @@ def _staging_dir(explicit: Path | None, parser: argparse.ArgumentParser) -> Path
     return staging_dir
 
 
+def _data_dir(explicit: Path | None, parser: argparse.ArgumentParser) -> Path:
+    data_dir = explicit or default_data_dir()
+    if data_dir is None:
+        parser.error("--data-dir is required when DATA_DIR is not set")
+    return data_dir
+
+
 def run_ingest(
     manifest: Path, limit: int | None, *, database_url: str, staging_dir: Path
 ) -> dict[str, object]:
@@ -102,6 +116,7 @@ def run_worker(
     *,
     database_url: str,
     staging_dir: Path,
+    data_dir: Path,
     manifest: Path,
     parsing_config: Path,
     worker_id: str,
@@ -121,6 +136,7 @@ def run_worker(
             manifest=load_manifest(manifest),
             transport=transport,
             staging_dir=staging_dir,
+            data_dir=data_dir,
             parsing_config=load_parsing_config(parsing_config),
         )
         worker = Worker(engine, build_handlers(context))
@@ -170,6 +186,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--parsing-config", type=Path, default=DEFAULT_PARSING_PATH)
     run.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
     run.add_argument("--staging-dir", type=Path, default=None)
+    run.add_argument(
+        "--data-dir", type=Path, default=None, help="local data root; defaults to DATA_DIR"
+    )
     return parser
 
 
@@ -195,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run_worker(
             database_url=_database_url(args.database_url),
             staging_dir=_staging_dir(args.staging_dir, parser),
+            data_dir=_data_dir(args.data_dir, parser),
             manifest=args.manifest,
             parsing_config=args.parsing_config,
             worker_id=args.worker_id,

@@ -10,7 +10,7 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -18,7 +18,11 @@ import pytest
 import yaml
 from sqlalchemy import func, select, text
 
-from copilot.corpus.chunk import load_parsing_config
+from copilot.corpus.chunk import (
+    TokenizerSpec,
+    load_parsing_config,
+    tokenizer_cache_path,
+)
 from copilot.corpus.ingest import IngestContext, build_handlers, ingest
 from copilot.corpus.parse import PARSER_VERSION
 from copilot.db.models import Chunk, Job, Paper, PaperIdentifier, PaperVersion, SourceCheckpoint
@@ -73,6 +77,31 @@ class FakeStream:
 
     def close(self) -> None:
         return None
+
+
+FIXTURE_TOKENIZER = ROOT / "data" / "fixtures" / "tokenizer" / "tokenizer.json"
+
+
+def parsing_config_for(data_dir: Path) -> object:
+    """Load the real policy but pin it to the committed fixture tokenizer.
+
+    The suite exercises the same pinned-artifact path as production — cache
+    location, checksum, ``Tokenizer.from_file`` — without shipping BGE-M3's
+    17 MB file into CI.
+    """
+
+    payload = FIXTURE_TOKENIZER.read_bytes()
+    spec = TokenizerSpec(
+        kind="model",
+        repo="fixtures/tiny-bpe",
+        revision="v1",
+        sha256=hashlib.sha256(payload).hexdigest(),
+    )
+    target = tokenizer_cache_path(spec, data_dir)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    config = load_parsing_config(ROOT / "configs" / "parsing.yaml")
+    return replace(config, chunker=replace(config.chunker, tokenizer=spec))
 
 
 class FakeTransport:
@@ -203,7 +232,8 @@ def pipeline(migrated_database, test_settings, tmp_path) -> Iterator[Pipeline]:
         manifest=yaml.safe_load(manifest.read_text(encoding="utf-8")),
         transport=transport,
         staging_dir=tmp_path / "sources",
-        parsing_config=load_parsing_config(ROOT / "configs" / "parsing.yaml"),
+        data_dir=tmp_path,
+        parsing_config=parsing_config_for(tmp_path),
         resolver=lambda host: [PUBLIC_IP],
     )
     handlers = build_handlers(context)
@@ -636,7 +666,8 @@ def _run_mirror(engine, tmp_path: Path, **kwargs) -> tuple[FakeTransport, int]:
         manifest=data,
         transport=transport,
         staging_dir=tmp_path / "sources",
-        parsing_config=load_parsing_config(ROOT / "configs" / "parsing.yaml"),
+        data_dir=tmp_path,
+        parsing_config=parsing_config_for(tmp_path),
     )
     worker = Worker(engine, build_handlers(context))
     ingest(manifest, None, engine=engine, transport=transport)

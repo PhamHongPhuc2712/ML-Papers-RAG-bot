@@ -15,8 +15,7 @@ from copilot.corpus.chunk import (
     chunk_id,
     chunk_sections,
     load_parsing_config,
-    whitespace_detokenize,
-    whitespace_tokenize,
+    whitespace_spans,
 )
 from copilot.corpus.parse import (
     PARSER_VERSION,
@@ -262,8 +261,7 @@ def test_fixture_chunks_under_the_versioned_policy_exclude_references_by_default
     sections = parse_pdf(FIXTURE_PDF)
     chunks = chunk_sections(
         sections,
-        whitespace_tokenize,
-        whitespace_detokenize,
+        whitespace_spans,
         target=config.chunker.target_tokens,
         overlap=config.chunker.overlap_tokens,
         hard_cap=config.chunker.hard_cap_tokens,
@@ -274,7 +272,7 @@ def test_fixture_chunks_under_the_versioned_policy_exclude_references_by_default
     assert references and not any(chunk["evidence_default"] for chunk in references)
     assert any(chunk["kind"] == "table" for chunk in chunks)
     assert config.parser.parser_version == PARSER_VERSION
-    assert config.chunker.chunker_version == "fixed-window-v1"
+    assert config.chunker.chunker_version == "fixed-window-v2"
     assert isinstance(config.chunker.uuid_namespace, UUID)
 
 
@@ -311,8 +309,7 @@ def test_parse_results_persist_with_stable_chunk_identity(migrated_database, tmp
         def persist(chunker_version: str) -> list[UUID]:
             chunks = chunk_sections(
                 result.sections,
-                whitespace_tokenize,
-                whitespace_detokenize,
+                whitespace_spans,
                 target=config.chunker.target_tokens,
                 overlap=config.chunker.overlap_tokens,
                 hard_cap=config.chunker.hard_cap_tokens,

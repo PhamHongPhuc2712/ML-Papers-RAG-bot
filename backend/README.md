@@ -60,6 +60,28 @@ JSON is retained by checksum under `${DATA_DIR}/sources` unless
 uv run --project backend python -m copilot.cli fixtures load --database-url $env:TEST_DATABASE_URL
 ```
 
+## Chunking tokenizer
+
+Chunk windows (450 target, 600 cap, 60 overlap) are counted in the tokens of
+the pinned embedding tokenizer named in `configs/parsing.yaml`, not in words.
+The worker refuses to start when that artifact is missing or its checksum does
+not match — it never falls back to counting words, because a word-counted
+window put 51.4% of the pilot's chunks over the documented cap. Fetch it once
+into the data root:
+
+```powershell
+$rev = '5617a9f61b028005a4858fdac845db406aefb181'
+$dir = "$env:DATA_DIR/models/tokenizers/BAAI/bge-m3/$rev"
+New-Item -ItemType Directory -Force -Path $dir
+curl.exe -sSL -o "$dir/tokenizer.json" "https://huggingface.co/BAAI/bge-m3/resolve/$rev/tokenizer.json"
+# expect 21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08
+(Get-FileHash "$dir/tokenizer.json" -Algorithm SHA256).Hash.ToLower()
+```
+
+The offline suite never downloads it: `data/fixtures/tokenizer/tokenizer.json`
+is a 9 KB BPE trained on the repository's own CC0 fixture text, rebuilt by
+`build_tokenizer.py`, and it exercises the same pinned-artifact code path.
+
 ## Pilot ingestion
 
 `corpus ingest` lists a venue-year through its membership sources, keeps

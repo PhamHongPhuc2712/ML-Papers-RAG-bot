@@ -27,7 +27,7 @@ from ..db.models import Paper, PaperAuthor, PaperIdentifier, PaperVersion, Sourc
 from ..db.session import session_scope
 from ..jobs.queue import LeasedJob, enqueue
 from ..jobs.worker import Handler, Heartbeat, JobError, JobOutcome, ThrottledError
-from .chunk import ParsingConfig, chunk_sections, whitespace_detokenize, whitespace_tokenize
+from .chunk import ParsingConfig, chunk_sections, token_spans_for
 from .dedupe import IdentityConflictError, QuarantineError, RecordValidationError, resolve_paper
 from .documents import store_parsed_document
 from .download import DEFAULT_ALLOWED_HOSTS, DownloadPolicyError, Resolver, default_resolver
@@ -68,6 +68,8 @@ class IngestContext:
     manifest: dict[str, Any]
     transport: Transport
     staging_dir: Path
+    # The one local data root: the pinned chunking tokenizer is cached under it.
+    data_dir: Path
     parsing_config: ParsingConfig
     resolver: Resolver = default_resolver
     now: Callable[[], datetime] = field(default=utc_now)
@@ -286,6 +288,9 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
 
     parser = context.parsing_config.parser
     chunker = context.parsing_config.chunker
+    # Resolved once, at worker startup: an absent or altered tokenizer must stop
+    # the run here rather than silently re-measure windows in the middle of it.
+    spans = token_spans_for(chunker.tokenizer, context.data_dir)
 
     def resolve_record(job: LeasedJob, beat: Heartbeat) -> JobOutcome:
         record = dict(job.payload["record"])
@@ -464,8 +469,7 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
         chunks = (
             chunk_sections(
                 parsed.sections,
-                whitespace_tokenize,
-                whitespace_detokenize,
+                spans,
                 target=chunker.target_tokens,
                 overlap=chunker.overlap_tokens,
                 hard_cap=chunker.hard_cap_tokens,
