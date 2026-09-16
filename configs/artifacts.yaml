@@ -1,0 +1,17 @@
+# Corpus export and coverage settings (spec §4).
+schema_version: 1
+export:
+  # Local snapshots stage here, relative to DATA_DIR, outside the repository.
+  directory: exports
+  # Full text leaves only for records explicitly marked with this value. Every
+  # paper in this corpus is currently "unknown": the papercli dataset card
+  # declares CC-BY-4.0 for the collection, but per-paper rights are unverified,
+  # and public availability of a PDF is not a redistribution right.
+  redistribution_allowed: allowed
+coverage:
+  # Authoritative published totals, only where they have actually been checked
+  # against the venue. A venue-year absent from this map reports a null
+  # coverage percentage rather than implying completeness.
+  expected:
+    ICLR:
+      2024: 2260   # verified 2026-09-15 against the venue's published accepted count

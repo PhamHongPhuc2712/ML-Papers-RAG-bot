@@ -13,6 +13,7 @@ from .db.session import make_engine, migrate_database, session_factory
 DEFAULT_FIXTURE_PATH = Path("data/fixtures/metadata.jsonl")
 DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
 DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
+DEFAULT_ARTIFACTS_PATH = Path("configs/artifacts.yaml")
 
 
 def default_data_dir() -> Path | None:
@@ -159,6 +160,76 @@ def run_mirror(
         workers=workers,
         min_free_bytes=int(min_free_gb * 1024**3),
     )
+
+
+def _exports_dir(data_dir: Path, config: Path) -> Path:
+    """Snapshots stage under the data root, never inside the repository."""
+
+    import yaml
+
+    raw = yaml.safe_load(config.read_text(encoding="utf-8")) if config.is_file() else {}
+    directory = ((raw or {}).get("export") or {}).get("directory", "exports")
+    return data_dir / str(directory)
+
+
+def _snapshot_path(value: Path, data_dir: Path, config: Path) -> Path:
+    return value if value.is_absolute() else _exports_dir(data_dir, config) / value
+
+
+def run_export(
+    *, run_id: str, out: Path, database_url: str, data_dir: Path, artifacts: Path
+) -> dict[str, object]:
+    """Write an immutable snapshot of the corpus's exportable content."""
+
+    from .corpus.export import export_snapshot
+
+    destination = _snapshot_path(out, data_dir, artifacts)
+    engine = make_engine(database_url)
+    try:
+        manifest = export_snapshot(run_id, destination, engine=engine)
+        return {"out": str(destination), **{k: manifest[k] for k in ("counts", "rights")}}
+    finally:
+        engine.dispose()
+
+
+def run_validate(*, manifest: Path, data_dir: Path, artifacts: Path) -> dict[str, object]:
+    from .corpus.export import validate_manifest
+
+    path = _snapshot_path(manifest, data_dir, artifacts)
+    checked = validate_manifest(path)
+    return {
+        "manifest": str(path),
+        "valid": True,
+        "run_id": checked["run_id"],
+        "counts": checked["counts"],
+        "shards": [shard["path"] for shard in checked["shards"]],
+    }
+
+
+def run_restore(
+    *, manifest: Path, database_url: str, data_dir: Path, artifacts: Path
+) -> dict[str, object]:
+    """Load a validated snapshot into an empty database to prove portability."""
+
+    from .corpus.export import restore_snapshot
+
+    path = _snapshot_path(manifest, data_dir, artifacts)
+    engine = make_engine(database_url)
+    try:
+        migrate_database(engine)
+        return {"manifest": str(path), **restore_snapshot(path, engine=engine)}
+    finally:
+        engine.dispose()
+
+
+def run_coverage(*, database_url: str, artifacts: Path) -> dict[str, object]:
+    from .corpus.api import corpus_coverage, expected_totals
+
+    engine = make_engine(database_url)
+    try:
+        return corpus_coverage(engine, expected_totals(artifacts))
+    finally:
+        engine.dispose()
 
 
 def run_corpus(
@@ -418,6 +489,30 @@ def _parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="report what the sweep would delete"
     )
 
+    export = corpus_commands.add_parser("export", help="write an immutable corpus snapshot")
+    export.add_argument("--run", required=True, dest="run_id")
+    export.add_argument("--out", type=Path, required=True)
+    export.add_argument("--database-url", default=None)
+    export.add_argument("--data-dir", type=Path, default=None)
+    export.add_argument("--artifacts", type=Path, default=DEFAULT_ARTIFACTS_PATH)
+
+    validate = corpus_commands.add_parser("validate", help="verify a snapshot's checksums")
+    validate.add_argument("--manifest", type=Path, required=True)
+    validate.add_argument("--data-dir", type=Path, default=None)
+    validate.add_argument("--artifacts", type=Path, default=DEFAULT_ARTIFACTS_PATH)
+
+    restore = corpus_commands.add_parser(
+        "restore", help="restore a snapshot into an empty database"
+    )
+    restore.add_argument("--manifest", type=Path, required=True)
+    restore.add_argument("--database-url", required=True, help="must name an empty database")
+    restore.add_argument("--data-dir", type=Path, default=None)
+    restore.add_argument("--artifacts", type=Path, default=DEFAULT_ARTIFACTS_PATH)
+
+    coverage = corpus_commands.add_parser("coverage", help="print venue-year coverage")
+    coverage.add_argument("--database-url", default=None)
+    coverage.add_argument("--artifacts", type=Path, default=DEFAULT_ARTIFACTS_PATH)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -487,6 +582,31 @@ def main(argv: list[str] | None = None) -> int:
             download_workers=args.download_workers,
             state=args.state,
             fresh=args.fresh,
+        )
+    elif args.command == "corpus" and args.corpus_command == "export":
+        result = run_export(
+            run_id=args.run_id,
+            out=args.out,
+            database_url=_database_url(args.database_url),
+            data_dir=_data_dir(args.data_dir, parser),
+            artifacts=args.artifacts,
+        )
+    elif args.command == "corpus" and args.corpus_command == "validate":
+        result = run_validate(
+            manifest=args.manifest,
+            data_dir=_data_dir(args.data_dir, parser),
+            artifacts=args.artifacts,
+        )
+    elif args.command == "corpus" and args.corpus_command == "restore":
+        result = run_restore(
+            manifest=args.manifest,
+            database_url=args.database_url,
+            data_dir=_data_dir(args.data_dir, parser),
+            artifacts=args.artifacts,
+        )
+    elif args.command == "corpus" and args.corpus_command == "coverage":
+        result = run_coverage(
+            database_url=_database_url(args.database_url), artifacts=args.artifacts
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(

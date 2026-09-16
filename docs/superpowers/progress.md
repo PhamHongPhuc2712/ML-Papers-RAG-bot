@@ -4,9 +4,9 @@ Last updated: 2026-09-16.
 
 ## Current state
 
-- Implementation: **4 / 30 tasks complete** (P1.1–P1.4); P1.3's parser audit and P1.4's pilot and replay are both closed. Next task: P1.5.
-- MVP implementation: **4 / 25 tasks complete**.
-- Passing implementation gates: **0 / 6** (G1's parser audit passes at 95% usable text and the 100-paper replay passes with zero identity churn; only the snapshot export/restore from P1.5 remains).
+- Implementation: **5 / 30 tasks complete** (P1.1–P1.5). M1 is complete and **G1 passes**. Next milestone: M2, starting with P2.1.
+- MVP implementation: **5 / 25 tasks complete**.
+- Passing implementation gates: **1 / 6** — G1 met on 2026-09-16: zero duplicate strong IDs across 8,499 papers, replay leaves canonical IDs unchanged, all four parse failures classified, 95% audited usable text, and a snapshot restored into a clean database with matching identity digests.
 - Corpus ingested: **308 JMLR 2025 papers, 37,433 chunks** in `copilot` (B3 smoke of the full venue-year loop, PDFs swept), plus a 100-paper ICLR 2024 validation corpus in `copilot_pilot_v2`. The superseded 2026-09-15 pilot was truncated on 2026-09-16. Corpus **indexed** (Qdrant): none yet — that is P2.2. Benchmarks observed: none yet. User-study observations: none yet.
 - Test evidence on this host (2026-09-16, WSL/Linux, 12 cores / 23 GB RAM): full suite **161 passed**; Ruff clean; mypy clean **under the project's strict config**, which the documented command had never loaded (see the note below the session log). Corpus on disk: 2,260 ICLR 2024 PDFs (13.70 GB), the 89 MB `papers.parquet` registry and the derived venue-year index, under `${DATA_DIR}/sources/papercli/`.
 
@@ -31,7 +31,7 @@ Status vocabulary: **Not started**, **In progress**, **In review**, **Done**, **
 CLAUDE.md, compose.yaml, .env.example, .gitattributes, .gitignore
 .github/workflows/checks.yml
 infra/Dockerfile.backend
-configs/parsing.yaml, configs/corpus.yaml
+configs/parsing.yaml, configs/corpus.yaml, configs/venues.yaml, configs/artifacts.yaml
 data/fixtures/metadata.jsonl
 data/fixtures/papers/{fixture.pdf, fixture.txt, LICENSE.txt, build_fixture.py}
 backend/{pyproject.toml, uv.lock, alembic.ini, README.md}
@@ -39,7 +39,7 @@ backend/migrations/env.py
 backend/migrations/versions/{0000_foundation, 0001_corpus, 0002_chunks, 0003_jobs}.py
 backend/src/copilot/{__init__, app, cli, config, contracts}.py
 backend/src/copilot/db/{__init__, models, session}.py
-backend/src/copilot/corpus/{__init__, normalize, dedupe, parse, chunk, documents, download, ingest}.py
+backend/src/copilot/corpus/{__init__, normalize, dedupe, parse, chunk, documents, download, ingest, mirror, venues, export, releases, api}.py
 backend/src/copilot/corpus/sources/{__init__, base, openreview, proceedings, arxiv, semantic_scholar}.py
 backend/src/copilot/jobs/{__init__, queue, worker}.py
 backend/tests/conftest.py
@@ -56,7 +56,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | P1.2 | Normalize publication identity and preserve version provenance | Done | P1.1 | `35c0da1`; [identity evidence](../../reports/m1-identity.md) (local) |
 | P1.3 | Parse documents into traceable sections and chunks | Done; 20-paper audit measured 2026-09-14 at 95% usable text, parser retained, and all five measured defects repaired in `pypdf-text-v2` (prose chunk median 182 → 401 tokens) | P1.2 | `9bbef4a`, `4f8a3b7`, `c541429`; [parser evidence](../../reports/m1-parser-audit.md) |
 | P1.4 | Ingest an accepted-paper pilot through resumable jobs | Done; 100-paper pilot and replay run 2026-09-15 from a local mirror, identity/version/chunk digests identical across runs, 0 retries | P1.2, P1.3 | `d3fad84`; [ingestion evidence](../../reports/m1-ingestion.md) |
-| P1.5 | Export immutable corpus snapshots and publish coverage | Not started | P1.4 | Not produced |
+| P1.5 | Export immutable corpus snapshots and publish coverage | Done; snapshot `m1-20260916T093334Z` exported, validated and restored into a clean database with matching paper-ID and identifier digests; `GET /v1/corpus/coverage` live; data card written | P1.4 | [corpus evidence](../../reports/m1-corpus.md), [data card](../data-card.md) |
 | P2.1–P2.5 | Retrieval and ranking | Not started | P1.5 | Not produced |
 | P3.1–P3.5 | Recommendation workspace | Not started | P2.4 | Not produced |
 | P4.1–P4.5 | Evidence assistant | Not started | P2.3, P3.1 | Not produced |
@@ -67,7 +67,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 
 | Gate | Required evidence | State |
 |---|---|---|
-| G1 | 100-paper replay, identity checks, 20-paper parser audit, snapshot restore | Partly met — identity checks pass; parser audit passes (19/20 usable, 2026-09-14); 100-paper replay passes with zero duplicate strong IDs and no canonical ID change (2026-09-15); snapshot export/restore outstanding with P1.5 |
+| G1 | 100-paper replay, identity checks, 20-paper parser audit, snapshot restore | **Met 2026-09-16.** Identity: 0 conflicts and 0 quarantined across 8,499 papers. Replay: identity, version and chunk digests identical, 0 jobs re-enqueued. Parser audit: 19/20 usable text against a ≥90% rule. Failures: 4, every one typed (`oversized` ×2, `corrupt`, `not_pdf`) with its PDF kept for retry. Restore: snapshot validated and restored into an empty database, paper-ID digest `8c22d782f3c92b7a` and identifier digest `a785bd9f8355378b` matching source |
 | G2–G6 | See specification §11 | Not started |
 
 ## Decisions recorded during implementation
@@ -101,6 +101,7 @@ backend/tests/fixtures/providers/openreview_notes_offset_{0,2}.json
 | 2026-09-15 | `sources/papercli.py` mirror adapter and `adopt_pdf` handler; 100-paper pilot and replay | 134 passed, Ruff, mypy; 300 jobs, 0 retries, 100 papers / 4,713 chunks; replay identical on identity, version and chunk digests with 0 new jobs | [ingestion evidence](../../reports/m1-ingestion.md) | P1.5: export snapshots, coverage endpoint and data card |
 
 | 2026-09-16 | mypy was never running strict | 27 files clean under `--config-file backend/pyproject.toml`; 4 pre-existing errors fixed (untyped lifespan, unparameterized dict, Any return, redundant cast) | pending commit | A3 |
+| 2026-09-16 | P1.5 export, coverage and restore; **G1 met** | 200 passed, Ruff, mypy strict; snapshot of 8,499 papers exported and validated, 0 of 513,335 chunks released under unverified rights, restore into a clean database matched both identity digests; coverage endpoint live over 12 venue-years | [corpus evidence](../../reports/m1-corpus.md), [data card](../data-card.md) | M2: P2.1 labelled retrieval data, metrics and a true BM25 baseline |
 | 2026-09-16 | Full venue-year loop smoked on JMLR 2025 (B3) | 308 downloaded / 0 failed, 924 jobs / 0 failed in 170 s on 9 workers, 37,433 chunks at a 450-token median, sweep freed 709 MB leaving 0 PDFs; measured 121.5 chunks/paper (vs ICLR's 75) and 6.2 MB/s on small files | [ingestion evidence](../../reports/m1-ingestion.md) | Raise download workers and measure, then start the 42 venue-year run |
 | 2026-09-16 | Venue-by-venue driver and plan (B2) | 179 passed, Ruff, mypy strict; `configs/venues.yaml` orders 42 venue-years / 85,732 eligible papers ascending by size; sweep keeps unparsed papers' PDFs and refuses paths outside the mirror | pending commit | B3: smoke the loop on the smallest venue-year, deletion included |
 | 2026-09-16 | `corpus mirror` capture command (B1) | 172 passed, Ruff, mypy strict; live path verified against `papercli-papers-jmlr` (revision resolved in 1.0 s, two members fetched and checksummed); superseded v1 pilot truncated from the `copilot` database | pending commit | B2 driver, then the WACV 2023 smoke run |

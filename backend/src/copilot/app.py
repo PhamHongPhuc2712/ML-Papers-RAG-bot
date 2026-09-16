@@ -14,6 +14,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from .config import Settings
+from .corpus.api import router as corpus_router
 from .db.models import CorpusRelease
 from .db.session import get_active_release, make_engine
 
@@ -108,6 +109,8 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
         version="0.1.0",
         lifespan=lifespan,
     )
+    artifacts = app_overrides.get("artifacts_config") or "configs/artifacts.yaml"
+    app.include_router(corpus_router(engine, str(artifacts)))
     app.state.settings = settings
     app.state.overrides = app_overrides
     app.state.db_engine = engine
