@@ -172,6 +172,7 @@ def run_corpus(
     keep_pdfs: bool,
     dry_run: bool,
     workers: int | None,
+    download_workers: int | None = None,
 ) -> dict[str, object]:
     """Drive the venue-year plan: mirror, ingest, work, verify, sweep, repeat."""
 
@@ -201,7 +202,7 @@ def run_corpus(
         wanted = set(only)
         plan = [item for item in plan if item.key in wanted or item.venue in wanted]
     parse_workers = workers or int(defaults.get("workers", 4))
-    download_workers = int(defaults.get("download_workers", 8))
+    fetch_workers = download_workers or int(defaults.get("download_workers", 8))
     min_free_bytes = int(float(defaults.get("min_free_gb", 80)) * 1024**3)
 
     campaign_id = f"corpus-{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
@@ -224,7 +225,7 @@ def run_corpus(
             year=item.year,
             mirror_root=paths.mirror_root,
             revision=revision(item.venue),
-            workers=download_workers,
+            workers=fetch_workers,
             min_free_bytes=min_free_bytes,
             out=paths.index(item.venue, item.year),
         )
@@ -389,7 +390,10 @@ def _parser() -> argparse.ArgumentParser:
     corpus_run.add_argument(
         "--only", action="append", default=None, help="limit to VENUE or VENUE:YEAR; repeatable"
     )
-    corpus_run.add_argument("--workers", type=int, default=None)
+    corpus_run.add_argument("--workers", type=int, default=None, help="parse workers")
+    corpus_run.add_argument(
+        "--download-workers", type=int, default=None, help="concurrent shard downloads"
+    )
     corpus_run.add_argument("--keep-pdfs", action="store_true", help="never delete source PDFs")
     corpus_run.add_argument(
         "--dry-run", action="store_true", help="report what the sweep would delete"
@@ -461,6 +465,7 @@ def main(argv: list[str] | None = None) -> int:
             keep_pdfs=args.keep_pdfs,
             dry_run=args.dry_run,
             workers=args.workers,
+            download_workers=args.download_workers,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
