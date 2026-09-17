@@ -19,6 +19,8 @@ from tokenizers import Tokenizer
 TokenSpans = Callable[[str], Sequence[tuple[int, int]]]
 _WORD = re.compile(r"\S+")
 
+POLICIES = ("fixed-window", "paragraph-pack")
+
 # Namespace for UUIDv5 chunk identifiers; configs/parsing.yaml may override it.
 DEFAULT_CHUNK_NAMESPACE = uuid.UUID("9d2f5a6c-7b3e-4c1a-8e5d-2f6b9c1d3e47")
 EVIDENCE_EXCLUDED_KINDS = frozenset({"references"})
@@ -121,6 +123,10 @@ class ChunkerConfig:
     references_in_default_evidence: bool
     uuid_namespace: uuid.UUID
     tokenizer: TokenizerSpec
+    # paragraph-pack policy only; ignored by fixed-window.
+    max_tokens: int = 900
+    paragraph_max_tokens: int = 1200
+    overlap_sentences: int = 2
 
 
 @dataclass(frozen=True)
@@ -185,10 +191,18 @@ def load_parsing_config(path: str | Path) -> ParsingConfig:
         overlap_tokens=_require(chunker, "overlap_tokens", int),
         references_in_default_evidence=bool(chunker.get("references_in_default_evidence", False)),
         uuid_namespace=namespace,
+        max_tokens=int(chunker.get("max_tokens", 900)),
+        paragraph_max_tokens=int(chunker.get("paragraph_max_tokens", 1200)),
+        overlap_sentences=int(chunker.get("overlap_sentences", 2)),
     )
-    _validate_window(
-        chunker_config.target_tokens, chunker_config.overlap_tokens, chunker_config.hard_cap_tokens
-    )
+    if chunker_config.policy not in POLICIES:
+        raise ValueError(f"parsing_config_invalid:policy:{chunker_config.policy}")
+    if chunker_config.policy == "fixed-window":
+        _validate_window(
+            chunker_config.target_tokens,
+            chunker_config.overlap_tokens,
+            chunker_config.hard_cap_tokens,
+        )
     return ParsingConfig(
         schema_version=_require(raw, "schema_version", int),
         parser=ParserConfig(
@@ -326,3 +340,34 @@ def _chunk_table(
                 fragment=f"{index}/{total}",
             )
         )
+
+
+def chunk_document(
+    sections: Sequence[Section], spans: TokenSpans, chunker: ChunkerConfig
+) -> list[dict[str, Any]]:
+    """Chunk one document under the configured policy.
+
+    Both policies return the same chunk shape and both keep windows inside a
+    section, so the persistence layer and chunk identity are unchanged by the
+    choice. The policy name is part of ``chunker_version``, so switching it
+    changes every chunk ID — which is the intended provenance signal.
+    """
+
+    if chunker.policy == "paragraph-pack":
+        from .chunk_paragraph import pack_paragraphs
+
+        return pack_paragraphs(
+            sections,
+            spans,
+            target_tokens=chunker.target_tokens,
+            max_tokens=chunker.max_tokens,
+            paragraph_max_tokens=chunker.paragraph_max_tokens,
+            overlap_sentences=chunker.overlap_sentences,
+        )
+    return chunk_sections(
+        sections,
+        spans,
+        target=chunker.target_tokens,
+        overlap=chunker.overlap_tokens,
+        hard_cap=chunker.hard_cap_tokens,
+    )

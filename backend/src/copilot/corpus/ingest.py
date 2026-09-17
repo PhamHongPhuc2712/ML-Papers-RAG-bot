@@ -27,7 +27,7 @@ from ..db.models import Paper, PaperAuthor, PaperIdentifier, PaperVersion, Sourc
 from ..db.session import session_scope
 from ..jobs.queue import LeasedJob, enqueue
 from ..jobs.worker import Handler, Heartbeat, JobError, JobOutcome, ThrottledError
-from .chunk import ParsingConfig, chunk_sections, token_spans_for
+from .chunk import ParsingConfig, chunk_document, token_spans_for
 from .dedupe import IdentityConflictError, QuarantineError, RecordValidationError, resolve_paper
 from .documents import store_parsed_document
 from .download import DEFAULT_ALLOWED_HOSTS, DownloadPolicyError, Resolver, default_resolver
@@ -467,13 +467,7 @@ def build_handlers(context: IngestContext) -> dict[str, Handler]:
         payload = job.payload
         parsed = parse_pdf_result(Path(str(payload["path"])), max_bytes=parser.max_pdf_bytes)
         chunks = (
-            chunk_sections(
-                parsed.sections,
-                spans,
-                target=chunker.target_tokens,
-                overlap=chunker.overlap_tokens,
-                hard_cap=chunker.hard_cap_tokens,
-            )
+            chunk_document(parsed.sections, spans, chunker)
             if parsed.status is ParseStatus.PARSED
             else []
         )

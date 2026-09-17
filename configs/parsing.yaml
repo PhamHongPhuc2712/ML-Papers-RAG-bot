@@ -17,6 +17,16 @@ parser:
   max_pdf_bytes: 52428800
   reject_encrypted: true
 chunker:
+  # Two policies exist. `fixed-window` cuts every `target_tokens`, which is
+  # simple and uniform but lands mid-sentence about half the time.
+  # `paragraph-pack` packs whole paragraphs up to `max_tokens`, splitting only a
+  # paragraph past `paragraph_max_tokens` and then on sentence boundaries; it
+  # cuts mid-sentence roughly a third as often and produces about 20% fewer
+  # chunks. Measured comparison: reports/m1-chunking-comparison.md, reproducible
+  # with `corpus compare-chunkers`.
+  #
+  # Switching the policy changes `chunker_version`, and therefore every chunk
+  # ID, so it means re-chunking the corpus.
   policy: fixed-window
   chunker_version: fixed-window-v2
   target_tokens: 450
@@ -24,6 +34,11 @@ chunker:
   overlap_tokens: 60
   references_in_default_evidence: false
   uuid_namespace: 9d2f5a6c-7b3e-4c1a-8e5d-2f6b9c1d3e47
+  # paragraph-pack only: the packing budget, the ceiling a single paragraph may
+  # occupy alone, and how many trailing sentences the next chunk repeats.
+  max_tokens: 900
+  paragraph_max_tokens: 1200
+  overlap_sentences: 2
   # Pinned by revision and checksum, cached under ${DATA_DIR}/models/tokenizers/
   # and never fetched at run time. Startup fails if it is absent or altered;
   # it must never fall back to counting words.

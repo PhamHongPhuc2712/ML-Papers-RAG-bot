@@ -232,6 +232,29 @@ def run_coverage(*, database_url: str, artifacts: Path) -> dict[str, object]:
         engine.dispose()
 
 
+def run_compare_chunkers(
+    *, source: Path, sample: int, seed: int, data_dir: Path, parsing_config: Path
+) -> dict[str, object]:
+    """Chunk the same PDFs under both policies and report where each one cuts."""
+
+    from .corpus.chunk import load_parsing_config, token_spans_for
+    from .corpus.compare import compare_policies
+
+    config = load_parsing_config(parsing_config)
+    spans = token_spans_for(config.chunker.tokenizer, data_dir)
+    pdfs = sorted(Path(source).rglob("*.pdf"))
+    if not pdfs:
+        raise SystemExit(f"no PDFs under {source}")
+    return compare_policies(
+        pdfs,
+        spans,
+        config.chunker,
+        max_pdf_bytes=config.parser.max_pdf_bytes,
+        sample=sample,
+        seed=seed,
+    )
+
+
 def run_corpus(
     *,
     config: Path,
@@ -513,6 +536,15 @@ def _parser() -> argparse.ArgumentParser:
     coverage.add_argument("--database-url", default=None)
     coverage.add_argument("--artifacts", type=Path, default=DEFAULT_ARTIFACTS_PATH)
 
+    compare = corpus_commands.add_parser(
+        "compare-chunkers", help="measure both chunking policies over the same PDFs"
+    )
+    compare.add_argument("--source", type=Path, required=True, help="directory of PDFs")
+    compare.add_argument("--sample", type=int, default=40)
+    compare.add_argument("--seed", type=int, default=2026)
+    compare.add_argument("--data-dir", type=Path, default=None)
+    compare.add_argument("--parsing-config", type=Path, default=DEFAULT_PARSING_PATH)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -607,6 +639,14 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "corpus" and args.corpus_command == "coverage":
         result = run_coverage(
             database_url=_database_url(args.database_url), artifacts=args.artifacts
+        )
+    elif args.command == "corpus" and args.corpus_command == "compare-chunkers":
+        result = run_compare_chunkers(
+            source=args.source,
+            sample=args.sample,
+            seed=args.seed,
+            data_dir=_data_dir(args.data_dir, parser),
+            parsing_config=args.parsing_config,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
