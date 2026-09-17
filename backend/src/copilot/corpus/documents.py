@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, true
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -45,15 +45,6 @@ def store_parsed_document(
     if result.status is not ParseStatus.PARSED:
         return []
 
-    session.execute(
-        delete(Chunk).where(
-            Chunk.paper_version_id == version.id,
-            or_(
-                Chunk.parser_version != result.parser_version,
-                Chunk.chunker_version != chunker_version,
-            ),
-        )
-    )
     rows: list[dict[str, Any]] = []
     for chunk in chunks:
         identifier = chunk_id(
@@ -83,6 +74,16 @@ def store_parsed_document(
                 "fragment": chunk.get("fragment"),
             }
         )
+    # Remove every chunk of this version that the new chunking does not produce.
+    # Matching on the processing revisions alone was not enough: a version whose
+    # document checksum changed keeps its ordinals while every chunk ID moves, so
+    # the stale rows survived and collided on (paper_version_id, ordinal).
+    session.execute(
+        delete(Chunk).where(
+            Chunk.paper_version_id == version.id,
+            Chunk.id.notin_([row["id"] for row in rows]) if rows else true(),
+        )
+    )
     if rows:
         session.execute(pg_insert(Chunk).values(rows).on_conflict_do_nothing(index_elements=["id"]))
     session.flush()

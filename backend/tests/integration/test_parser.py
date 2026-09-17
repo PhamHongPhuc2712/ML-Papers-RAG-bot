@@ -19,6 +19,7 @@ from copilot.corpus.chunk import (
 )
 from copilot.corpus.parse import (
     PARSER_VERSION,
+    ParseResult,
     ParsedPage,
     ParseErrorCode,
     ParseStatus,
@@ -343,3 +344,97 @@ def test_parse_results_persist_with_stable_chunk_identity(migrated_database, tmp
         changed = persist("fixed-window-v2")
         assert set(changed).isdisjoint(first)
         session.rollback()
+
+
+@pytest.mark.integration
+def test_reparsing_a_version_from_a_different_document_replaces_its_chunks(
+    migrated_database, tmp_path
+):
+    """The corpus run hit this: one version, two documents, colliding ordinals.
+
+    Two registry rows for the same work resolve to one paper and share a version
+    row, so the second document overwrites the version's checksum. Every chunk ID
+    then moves while the ordinals stay put, and matching only on parser and
+    chunker revision left the old rows in place to collide on
+    (paper_version_id, ordinal).
+    """
+
+    from sqlalchemy import select
+
+    from copilot.corpus.dedupe import resolve_paper
+    from copilot.corpus.documents import store_parsed_document
+    from copilot.db.models import Chunk, PaperVersion
+    from copilot.db.session import session_factory
+
+    config = load_parsing_config(CONFIG)
+    record = {
+        "source": "fixture",
+        "external_ids": {"doi": "10.5555/parser-rechunk"},
+        "title": "A work the registry lists twice",
+        "authors": ["Ada Lovelace"],
+        "venue": {"name": "ICLR", "track": "main"},
+        "year": 2025,
+        "source_revision": "revision-1",
+        "retrieved_at": "2025-06-01T12:00:00+00:00",
+        "acceptance_decision": "accepted",
+        "source_url": "https://papers.example.test/twice.pdf",
+    }
+    factory = session_factory(migrated_database)
+    with factory() as session:
+        with session.begin():
+            paper_id = resolve_paper(record, session, staging_dir=tmp_path)
+            version = session.execute(
+                select(PaperVersion).where(PaperVersion.paper_id == paper_id)
+            ).scalar_one()
+            version_id = version.id
+
+    def store(sha: str, text_body: str) -> list[UUID]:
+        """Persist one document against the shared version row."""
+
+        sections = sections_from_pages([ParsedPage(number=1, text=text_body)])
+        result = ParseResult(
+            status=ParseStatus.PARSED,
+            error_code=None,
+            sections=tuple(sections),
+            content_sha256=sha,
+            parser_version=PARSER_VERSION,
+            page_count=1,
+            quality="low",
+        )
+        chunks = chunk_sections(
+            result.sections,
+            whitespace_spans,
+            target=config.chunker.target_tokens,
+            overlap=config.chunker.overlap_tokens,
+            hard_cap=config.chunker.hard_cap_tokens,
+        )
+        with factory() as session:
+            with session.begin():
+                version = session.get(PaperVersion, version_id)
+                assert version is not None
+                return store_parsed_document(
+                    session,
+                    version,
+                    result,
+                    chunks,
+                    chunker_version=config.chunker.chunker_version,
+                    namespace=config.chunker.uuid_namespace,
+                )
+
+    first = store("aa" * 32, "Abstract\nOne two three four five six seven eight.")
+    second = store("bb" * 32, "Abstract\nA different document entirely, shorter.")
+    assert first and second
+    # A different document means different chunk IDs at the same ordinals.
+    assert set(first).isdisjoint(second)
+    with factory() as session:
+        stored = list(
+            session.execute(
+                select(Chunk.id).where(Chunk.paper_version_id == version_id)
+            ).scalars()
+        )
+    # Only the current document's chunks survive, so the ordinals cannot collide.
+    assert sorted(stored) == sorted(second)
+    with factory() as session:
+        version = session.get(PaperVersion, version_id)
+        assert version is not None
+        assert version.content_sha256 == "bb" * 32

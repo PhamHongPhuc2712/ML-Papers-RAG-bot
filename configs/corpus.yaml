@@ -73,10 +73,22 @@ sources:
     enabled: false
     api_base: https://api.semanticscholar.org/graph/v1
 download:
+  # A paper the mirror does not carry falls back to its publisher, so every
+  # venue in configs/venues.yaml needs its official proceedings host here. The
+  # scheme, resolved-IP, redirect, size and magic-byte checks still apply to
+  # each of them; this list only says which hosts may be asked at all.
   allowed_hosts:
     - api2.openreview.net
     - openreview.net
     - arxiv.org
     - export.arxiv.org
+    - aclanthology.org
+    - openaccess.thecvf.com
+    - www.ecva.net
+    - ojs.aaai.org
+    - www.ijcai.org
+    - www.isca-archive.org
+    - jmlr.org
+    - proceedings.mlr.press
   max_bytes: 52428800
   timeout_seconds: 60
