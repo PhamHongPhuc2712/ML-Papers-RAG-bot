@@ -189,4 +189,5 @@ def test_rechunking_is_resumable_and_idempotent(migrated_database, test_settings
     assert first.versions == 1
     assert second.versions == 0
     with factory() as session:
-        assert session.execute(text("select count(*) from chunks")).scalar_one() == first.chunks_after
+        stored = session.execute(text("select count(*) from chunks")).scalar_one()
+    assert stored == first.chunks_after
