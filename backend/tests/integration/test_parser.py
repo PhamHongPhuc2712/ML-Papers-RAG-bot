@@ -19,9 +19,9 @@ from copilot.corpus.chunk import (
 )
 from copilot.corpus.parse import (
     PARSER_VERSION,
-    ParseResult,
     ParsedPage,
     ParseErrorCode,
+    ParseResult,
     ParseStatus,
     PDFParseError,
     parse_pdf,
