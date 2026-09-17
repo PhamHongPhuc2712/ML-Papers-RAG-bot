@@ -255,6 +255,49 @@ def run_compare_chunkers(
     )
 
 
+def run_rechunk(
+    *,
+    database_url: str,
+    data_dir: Path,
+    parsing_config: Path,
+    source_overlap: int,
+    limit: int | None,
+    shards: int,
+    shard: int,
+) -> dict[str, object]:
+    """Re-chunk stored documents under the configured policy, without PDFs."""
+
+    import sys
+
+    from .corpus.chunk import load_parsing_config, token_spans_for
+    from .corpus.rechunk import RechunkStats, rechunk_corpus
+
+    config = load_parsing_config(parsing_config)
+    spans = token_spans_for(config.chunker.tokenizer, data_dir)
+    engine = make_engine(database_url)
+    try:
+        factory = session_factory(engine)
+
+        def report(stats: RechunkStats) -> None:
+            print(json.dumps({"progress": stats.as_dict()}, sort_keys=True), file=sys.stderr)
+
+        stats = rechunk_corpus(
+            engine,
+            spans,
+            config.chunker,
+            source_overlap_tokens=source_overlap,
+            session_factory=factory,
+            limit=limit,
+            shards=shards,
+            shard=shard,
+            progress=report,
+        )
+        return {"policy": config.chunker.policy, "chunker_version": config.chunker.chunker_version,
+                **stats.as_dict()}
+    finally:
+        engine.dispose()
+
+
 def run_corpus(
     *,
     config: Path,
@@ -545,6 +588,19 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("--data-dir", type=Path, default=None)
     compare.add_argument("--parsing-config", type=Path, default=DEFAULT_PARSING_PATH)
 
+    rechunk = corpus_commands.add_parser(
+        "rechunk", help="re-chunk stored documents under the configured policy"
+    )
+    rechunk.add_argument("--database-url", default=None)
+    rechunk.add_argument("--data-dir", type=Path, default=None)
+    rechunk.add_argument("--parsing-config", type=Path, default=DEFAULT_PARSING_PATH)
+    rechunk.add_argument(
+        "--source-overlap", type=int, default=60, help="overlap the stored chunks were cut with"
+    )
+    rechunk.add_argument("--limit", type=int, default=None)
+    rechunk.add_argument("--shards", type=int, default=1)
+    rechunk.add_argument("--shard", type=int, default=0)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -647,6 +703,16 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             data_dir=_data_dir(args.data_dir, parser),
             parsing_config=args.parsing_config,
+        )
+    elif args.command == "corpus" and args.corpus_command == "rechunk":
+        result = run_rechunk(
+            database_url=_database_url(args.database_url),
+            data_dir=_data_dir(args.data_dir, parser),
+            parsing_config=args.parsing_config,
+            source_overlap=args.source_overlap,
+            limit=args.limit,
+            shards=args.shards,
+            shard=args.shard,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
