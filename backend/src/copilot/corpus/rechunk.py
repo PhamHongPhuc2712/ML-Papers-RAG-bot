@@ -16,6 +16,7 @@ and the boundary is recovered by re-tokenizing instead.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -29,14 +30,23 @@ from .chunk import ChunkerConfig, Section, TokenSpans, chunk_document
 from .documents import store_parsed_document
 from .parse import ParseResult, ParseStatus
 
+logger = logging.getLogger(__name__)
+
 # How much of the next chunk identifies the overlap, and how far back to look.
 ANCHOR_CHARS = 80
+# Overlap repeats a little text; anything past this is a defect, not a policy.
+MAX_EXPANSION = 1.6
 SEARCH_WINDOW = 8000
+
+
+class RechunkExpansionError(RuntimeError):
+    """Re-chunking produced far more text than the document contains."""
 
 
 @dataclass
 class RechunkStats:
     versions: int = 0
+    skipped: int = 0
     sections: int = 0
     exact_joins: int = 0
     trimmed_joins: int = 0
@@ -46,6 +56,7 @@ class RechunkStats:
     def as_dict(self) -> dict[str, int]:
         return {
             "versions": self.versions,
+            "skipped": self.skipped,
             "sections": self.sections,
             "exact_joins": self.exact_joins,
             "trimmed_joins": self.trimmed_joins,
@@ -157,6 +168,16 @@ def rechunk_version(
         quality="low",
     )
     chunks = chunk_document(sections, spans, chunker)
+
+    # These chunks are the only copy of this text — the PDFs are swept — and
+    # rewriting is destructive, so refuse output that cannot be right. A policy
+    # may repeat a little text as overlap; it may never multiply the document.
+    # This is the guard the duplicating overlap slipped past.
+    produced = sum(int(chunk["token_count"]) for chunk in chunks)
+    available = sum(len(spans(section.text)) for section in sections)
+    if available and produced > available * MAX_EXPANSION:
+        raise RechunkExpansionError(f"{version.id}: {produced} tokens from {available}")
+
     written = store_parsed_document(
         session,
         version,
@@ -228,14 +249,20 @@ def rechunk_corpus(
                 version = session.get(PaperVersion, version_id)
                 if version is None:
                     continue
-                rechunk_version(
-                    session,
-                    version,
-                    spans,
-                    chunker,
-                    source_overlap_tokens=source_overlap_tokens,
-                    stats=stats,
-                )
+                try:
+                    rechunk_version(
+                        session,
+                        version,
+                        spans,
+                        chunker,
+                        source_overlap_tokens=source_overlap_tokens,
+                        stats=stats,
+                    )
+                except RechunkExpansionError:
+                    # Leave this version on the old revision, intact, and move on.
+                    session.rollback()
+                    stats.skipped += 1
+                    logger.warning("rechunk refused for %s: output too large", version_id)
         if progress and stats.versions % progress_every == 0:
             progress(stats)
     return stats
