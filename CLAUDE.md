@@ -4,72 +4,202 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-P1.1 (API + isolated persistence harness) and P1.2 (paper identity + provenance) are implemented under `backend/`. They were restored from the pre-reset implementation at `04f6e3e` and adapted to the 2026-09-09 design revision (`DATA_DIR`, bind-mount Compose, test-root guard, hardening constraints folded into `0001_corpus`). Unit tests, Ruff and mypy pass; check the latest commit messages for whether the integration suite has run on this host yet.
+**M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
+isolated persistence harness, canonical paper identity with provenance, parser and
+chunker, durable job queue with source adapters, and immutable corpus snapshots with a
+coverage endpoint. `docs/superpowers/progress.md` is the live task and gate board — read
+it before assuming anything about status. Next milestone is M2, starting with P2.1.
 
-P1.3 (pypdf parser behind a `PageAdapter`, versioned chunker, `chunks` table) and P1.4 (PostgreSQL-leased job queue, source adapters, hardened download, `corpus ingest` / `worker run`) are implemented and green against synthetic fixtures. The next task is P1.5 in `docs/superpowers/plans/2026-09-05-01-corpus-foundation.md`.
+Beyond the plan tasks, the corpus pipeline gained a venue-by-venue runner (`corpus
+mirror` / `corpus run`) that mirrors one venue-year, ingests it, parses with N workers,
+verifies, then deletes that venue-year's PDFs so peak disk stays at one venue-year
+rather than the ~450 GB the whole corpus needs at once.
 
-**OpenReview gates guest API access** with a browser challenge (HTTP 403 `ChallengeRequiredError`) on both the notes and PDF routes. The adapter logs in with a free account and sends a bearer token; the live pilot needs `OPENREVIEW_USERNAME` / `OPENREVIEW_PASSWORD` in `.env`. PDFs come from `api2.openreview.net/attachment?name=pdf&id=…`, not `openreview.net/pdf`.
+**Current corpus state (2026-09-18):** a full rebuild is running into the `copilot_v2`
+database so every paper is chunked under the new `paragraph-pack` policy directly from
+its PDF. The previous corpus — 85,729 papers across all 42 venue-years, chunked with
+`fixed-window-v2` — is intact in `copilot` as a fallback. Databases on this host:
+`copilot` (previous corpus), `copilot_v2` (rebuild in progress), `copilot_pilot_v2` and
+`copilot_restore_check` (validation leftovers).
+
+## This host
+
+WSL2 Linux, 12 cores, 23 GB RAM, RTX 3080 Laptop with 16 GB VRAM (spec §14's "is there a
+usable GPU" question — yes). `DATA_DIR=/home/phamphucintern/ml-copilot-data` on ext4,
+outside the repository. `uv` **is** on PATH; the `py -3.12 -m uv` prefix in older evidence
+reports describes the earlier Windows host and does not apply here.
+
+Two gitignored env files at the repository root:
+
+- `.env` — full development configuration, including `HF_TOKEN` for shard downloads.
+- `.env.test` — only `DATA_DIR`, `TEST_DATABASE_URL`, `TEST_QDRANT_URL`,
+  `TEST_QDRANT_COLLECTION_PREFIX`.
+
+**Never pass `.env` to pytest.** `DATABASE_URL` in the process environment beats the
+conftest fixture's keyword arguments (pydantic aliases outrank init keywords) and the
+suite then targets the developer database.
 
 ## Sources of truth, in reading order
 
-1. `docs/superpowers/specs/2026-09-05-ml-research-copilot-design.md` — architecture, schemas (§5), contracts (§6), ranking formulas (§7–8), evidence pipeline (§9), API (§10), evaluation gates (§11), operations (§12). This is the contract source of truth.
-2. `docs/superpowers/plans/2026-09-05-0N-*.md` — six milestone plans (M1–M6). Each task section (P1.1 … P6.5) names the files it owns, its interfaces, a regression example, implementation logic, acceptance cases, the suites to run and the exact commit message.
-3. `docs/superpowers/README.md` — roadmap, working rhythm, test strategy.
+1. `docs/superpowers/specs/2026-09-05-ml-research-copilot-design.md` — architecture,
+   schemas (§5), contracts (§6), ranking formulas (§7–8), evidence pipeline (§9), API
+   (§10), evaluation gates (§11), operations (§12). The contract source of truth.
+2. `docs/superpowers/plans/2026-09-05-0N-*.md` — six milestone plans (M1–M6). Each task
+   section names the files it owns, its interfaces, a regression example, acceptance
+   cases, the suites to run and the exact commit message.
+3. `docs/superpowers/progress.md` — live status, gate board, recorded decisions and the
+   session log. Update it when a task or decision changes.
+4. `reports/` — measured evidence per task: foundation, identity, parser audit,
+   ingestion, corpus/export, chunking comparison, parse failures.
+5. `docs/data-card.md` — what the corpus is, where it comes from, what it excludes and
+   what may be exported.
 
-Implement only the task asked for. Do not pull later-task schemas or infrastructure forward without a demonstrated need.
+Implement only the task asked for. Do not pull later-task schemas or infrastructure
+forward without a demonstrated need.
 
-## Git gotchas
+## Corpus facts worth knowing before touching the pipeline
 
-- `docs/` and `reports/` are gitignored **and untracked** — the owner keeps the design documents local-only. They were removed from the index on 2026-09-10; the last tracked copy is at `dd9b4eb` (`git show dd9b4eb:docs/superpowers/specs/2026-09-05-ml-research-copilot-design.md`). A fresh clone has no `docs/` until they are copied in. Task reports under `reports/` likewise stay local unless force-added.
-- There is currently no progress tracker (`docs/superpowers/progress.md` was deleted). Plan steps that say "update the progress tracker" have no target until one is recreated.
-- `.gitattributes` normalizes to LF, but three plan files are CRLF on disk. Byte-level edit scripts must tolerate both.
+- **Source is a Hugging Face mirror, not OpenReview.** `GenAI4ELab/papercli-papers`
+  supplies the registry (`papers.parquet`, 11 columns, pinned at `90a1fbd3…`) and
+  `GenAI4ELab/papercli-papers-<venue>` the PDFs. Read the **root registry**, never the
+  five-column `browse/<venue>/<year>.parquet` views — those carry no authors, no track
+  and no PDF path. OpenReview guest access returns `ChallengeRequiredError` (403) on both
+  the notes and attachment routes, which is why the mirror exists.
+- **Membership is observed, not asserted.** `classify_track` maps each record's own venue
+  label onto a canonical track and a decision. Main is matched **positively**, so an
+  unrecognized label is `other` and excluded. Across 2023–2026 that admits 85,732
+  accepted main-conference papers and excludes Findings, workshops, industry and demo
+  tracks, shared tasks, tutorials, co-located conferences and unaccepted submissions.
+  `data/fixtures/tracks/registry-tracks.jsonl` freezes all 262 labels for the test that
+  asserts the full mapping.
+- **Chunk windows are counted in the pinned BGE-M3 tokenizer**, cached under
+  `${DATA_DIR}/models/tokenizers/` and verified by sha256. The worker refuses to start
+  without it and never falls back to counting words — counting words put 51.4% of chunks
+  over the documented cap.
+- **PDFs are deleted after their venue-year is stored**, except for papers that failed to
+  parse, whose copy is the only thing a retry could read. Re-parsing therefore means
+  re-downloading; settle parser and chunker choices before a bulk run.
 
-## Hard constraints (spec §2 Global Constraints, duplicated at the top of every plan)
+## Hard constraints (spec §2, duplicated at the top of every plan)
 
-- **Zero infrastructure budget, permanently.** PostgreSQL and Qdrant run self-hosted in Docker Desktop Linux containers on this Windows machine. No Supabase, Qdrant Cloud, or managed storage unless a future explicitly-recorded decision changes it. Docker Desktop 4.90 and the WSL 2.7 runtime were installed on this host on 2026-09-09 via winget; confirm `docker info` answers before running the integration suite.
-- **The one paid resource** is the hosted LLM/multimodal generation API, funded personally by the developer. Its per-request cost logging and operator-configured daily spend cap (P5.2) are required, not optional.
-- **All persistent local data lives under `DATA_DIR`** (documented default `C:\ml-copilot-data\`; read from environment, never hardcoded; startup fails in every environment if unset). Postgres and Qdrant bind-mount subdirectories of it; uploads, exports, backups, the model-weight cache and the `test` profile's data all live under it. Deleting that directory deletes the entire dataset — keep that guarantee true.
-- **Auth is self-hosted** — Argon2id credentials in local Postgres, application-issued JWTs, `POST /v1/auth/token`. Supabase Auth was explicitly superseded (spec §10 records why).
-- **Portfolio scope, not production.** The MVP is M1–M4 plus the free-tier subset of M5. P5.3's staged deployment and RPO/RTO drill and P5.2's public multi-tenant rate limiting are *deferred, not deleted*; account deletion and local backup/restore remain required.
-- PowerShell commands from the repository root must work; no Bash-only scripts in the critical development path. Python 3.12, Node.js 22, TypeScript strict, UTC timestamps, locked dependencies, pinned images and model revisions.
-- User identity comes only from a verified token — never a client-supplied `user_id`. Public corpus data and private uploads never share a Qdrant collection or storage namespace. Hugging Face is an offline artifact destination and is never queried during a user request.
-- Never report tests, benchmarks, corpus coverage or user observations that did not actually run. Planned examples are not measured results.
+- **Zero infrastructure budget, permanently.** PostgreSQL and Qdrant are self-hosted in
+  Docker containers on this machine. No Supabase, Qdrant Cloud or managed storage unless
+  a future explicitly-recorded decision changes it.
+- **The one paid resource** is the hosted LLM/multimodal generation API, funded
+  personally by the developer. Per-request cost logging and the operator-configured daily
+  spend cap (P5.2) are required, not optional.
+- **All persistent local data lives under `DATA_DIR`** — read from environment, never
+  hardcoded, startup fails in every environment when unset. Deleting that one directory
+  deletes the entire dataset; keep that guarantee true.
+- **Auth is self-hosted** — Argon2id credentials in local Postgres, application-issued
+  JWTs, `POST /v1/auth/token`. Supabase Auth was explicitly superseded (spec §10).
+- **Portfolio scope, not production.** The MVP is M1–M4 plus the free-tier subset of M5.
+  P5.3's staged deployment and RPO/RTO drill and P5.2's public rate limiting are
+  *deferred, not deleted*.
+- Python 3.12, Node.js 22, TypeScript strict, UTC timestamps, locked dependencies, pinned
+  images and model revisions.
+- User identity comes only from a verified token — never a client-supplied `user_id`.
+  Public corpus data and private uploads never share a Qdrant collection or storage
+  namespace. **Hugging Face is an offline artifact destination** and is never queried
+  during a user request; `corpus mirror` is the only code that contacts it.
+- Never report tests, benchmarks, corpus coverage or user observations that did not
+  actually run. Planned examples are not measured results.
 
 ## Commands
 
-Backend package is `copilot` under `backend/src`, managed by uv 0.12.10 with `backend/.venv` as the only environment; frontend (M3, not built yet) will be Next.js under `frontend/`. `uv` is not on PATH on this machine — `py -3.12 -m uv` is the equivalent prefix for every command below. Frontend commands do not run yet.
+Backend package is `copilot` under `backend/src`, managed by uv with `backend/.venv` as
+the only environment. Frontend (M3) does not exist yet.
 
-```powershell
+```bash
 uv sync --project backend --frozen --group dev
 uv run --project backend ruff check backend
 uv run --project backend mypy --config-file backend/pyproject.toml backend/src
-uv run --project backend pytest backend/tests -m "not integration" -q   # offline CI set
-uv run --project backend pytest backend/tests -q                        # full, needs services
-uv run --project backend pytest backend/tests/unit/test_foo.py -q       # one file
-uv run --project backend pytest backend/tests -k test_name -q           # one test
-uv run --project backend alembic -c backend/alembic.ini upgrade head
-docker compose --profile test up -d                                     # isolated Postgres + Qdrant
-docker compose --profile core up -d postgres qdrant                     # dev services for the pilot
-uv run --project backend python -m copilot.cli corpus ingest --manifest configs/corpus.yaml --limit 100
-uv run --project backend python -m copilot.cli worker run --worker-id pilot-1   # until nothing is due
-npm --prefix frontend run typecheck   # also: lint, build, test:e2e
+uv run --env-file .env.test --project backend pytest backend/tests -q          # full suite
+uv run --project backend pytest backend/tests -m "not integration" -q          # offline CI set
+docker compose --profile test up -d postgres-test qdrant-test                  # for integration tests
+docker compose --profile core up -d postgres qdrant                            # dev services
 ```
 
-The CLI reads `DATABASE_URL` and `DATA_DIR` from `.env`, but `--staging-dir` defaults from the `DATA_DIR` *environment variable*, so export it (or pass the flag) in a shell that has not loaded `.env`. Provider transports, DNS resolution and the clock are injected; `backend/tests/fixtures/providers/` holds captured synthetic responses.
+`mypy` **must** be given `--config-file`: run from the repository root it finds no
+configuration and silently drops `strict`, which is how four real errors survived until
+2026-09-16.
 
-Compose profiles: `core` (Postgres, Qdrant, API, worker, frontend), `models` (embedding/reranker), `test` (isolated services under `${DATA_DIR}/test/`). Integration tests need the explicit test services; a destructive fixture must refuse any database or Qdrant collection prefix not starting with `test_` and any data root outside the test subdirectory. Missing services are a setup failure, never a silent skip. Normal CI is deterministic and offline; real-model evaluations are explicit, versioned, budgeted runs.
+Corpus pipeline, all reading `DATABASE_URL`, `DATA_DIR` and `HF_TOKEN` from `.env`:
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli corpus mirror --venue ICLR --year 2024
+uv run --env-file .env --project backend python -m copilot.cli corpus mirror-index --venue ICLR --year 2024
+uv run --env-file .env --project backend python -m copilot.cli corpus run            # the whole venue plan
+uv run --env-file .env --project backend python -m copilot.cli corpus run --only JMLR:2025
+uv run --env-file .env --project backend python -m copilot.cli corpus rechunk        # re-chunk without PDFs
+uv run --env-file .env --project backend python -m copilot.cli corpus export --run SNAP --out SNAP
+uv run --env-file .env --project backend python -m copilot.cli corpus validate --manifest SNAP/manifest.json
+uv run --env-file .env --project backend python -m copilot.cli corpus restore --manifest SNAP/manifest.json --database-url ...
+uv run --env-file .env --project backend python -m copilot.cli corpus coverage
+uv run --env-file .env --project backend python -m copilot.cli corpus compare-chunkers --source <pdf dir>
+uv run --env-file .env --project backend python -m copilot.cli worker run --worker-id w1
+```
+
+`corpus run` is resumable: progress lives in `${DATA_DIR}/runs/<plan>-state.json`, keyed
+to the plan rather than the invocation, so a restart continues at the next venue-year.
+`--state` points it elsewhere and `--fresh` starts the plan over.
+
+Compose profiles: `core` (Postgres, Qdrant, API, worker, frontend), `models`
+(embedding/reranker), `test` (isolated services under `${DATA_DIR}/test/`). Integration
+tests need the explicit test services; destructive fixtures refuse any database or Qdrant
+prefix not starting with `test_` and any data root outside the test subdirectory. Missing
+services are a setup failure, never a silent skip.
 
 ## Architecture in brief (spec §3–§9)
 
-One modular Python application plus one durable worker process, sharing typed domain contracts in `backend/src/copilot/contracts.py` — Pydantic models with `extra="forbid"`, and Protocols for model adapters (`EmbeddingModel.encode`, `Reranker.score`, `Generator.answer`) so providers never leak their own types into the domain. No network boundaries between search, recommendation and RAG initially. GPU work never runs in the ASGI event loop.
+One modular Python application plus one durable worker process, sharing typed domain
+contracts in `backend/src/copilot/contracts.py` — Pydantic models with `extra="forbid"`,
+and Protocols for model adapters (`EmbeddingModel.encode`, `Reranker.score`,
+`Generator.answer`) so providers never leak their own types into the domain. GPU work
+never runs in the ASGI event loop.
 
-- **PostgreSQL** owns canonical paper identity (generated UUID work IDs, an alias table for DOI/arXiv/etc., a redirect table for merges), all application and user state, the job queue (transactional leases via `SKIP LOCKED`, idempotency keys, heartbeats — no Redis/Celery unless measured load justifies it), and the singleton `active_release` pointer.
-- **Qdrant** is a rebuildable serving index. Every corpus release gets immutable `paper_abstracts_<release>` / `paper_chunks_<release>` collections with named dense (BGE-M3, 1024-d, cosine) and exact-BM25 sparse vectors; a request reads the active-release pointer once and uses it throughout; the pointer switches transactionally only after count/dimension/checksum/canary validation. Private uploads live in a separate `user_documents_<embedding_revision>` collection, dense-only, always filtered by server-derived `user_id`.
-- **Search** (§7): 100 BM25 + 100 dense candidates → RRF `sum(1/(60+rank))` implemented in application code → cross-encoder rerank of at most 50 → 20 results. Degrades explicitly: reranker timeout returns RRF order with a warning; one branch down returns the other with a warning; both down is a retryable 503.
-- **Recommendations** (§8): content-based profile from decayed positive feedback plus topic/seed priors; bounded heuristic score; MMR diversification; reasons come from real score components, never from an LLM.
-- **Evidence and chat** (§9): research mode retrieves papers, then chunks within them; generation returns structured claims with evidence IDs that are structurally validated against the selected evidence before any answer text streams; SSE over POST with `status/evidence/delta/final/error`; idempotent `request_id`. Research mode never silently searches private documents.
-- **Corpus pipeline** (§4): versioned per-venue-year source manifests; DOI/arXiv normalization with contradictory strong-ID collisions held as conflicts; parse → section-aware chunks (450 tokens, cap 600, 60 overlap within a section); Parquet exports carrying redistribution eligibility, with private data never exported.
+- **PostgreSQL** owns canonical paper identity (generated UUID work IDs, an alias table,
+  a redirect table for merges), all application state, the job queue (transactional
+  leases via `SKIP LOCKED`, idempotency keys, heartbeats) and the singleton
+  `active_release` pointer.
+- **Qdrant** is a rebuildable serving index. Each corpus release gets immutable
+  `paper_abstracts_<release>` / `paper_chunks_<release>` collections with named dense
+  (BGE-M3, 1024-d, cosine) and exact-BM25 sparse vectors; the pointer switches
+  transactionally only after count, dimension, checksum and canary validation. Private
+  uploads live in a separate collection, dense-only, filtered by server-derived `user_id`.
+- **Search** (§7): 100 BM25 + 100 dense candidates → RRF `sum(1/(60+rank))` in
+  application code → cross-encoder rerank of at most 50 → 20 results. Degrades explicitly.
+- **Recommendations** (§8): content-based profile from decayed positive feedback plus
+  topic/seed priors; bounded heuristic score; MMR diversification; reasons come from real
+  score components, never from an LLM.
+- **Evidence and chat** (§9): research mode retrieves papers then chunks within them;
+  claims carry evidence IDs validated structurally before any answer text streams.
+- **Corpus pipeline** (§4): versioned per-venue-year manifests; identity resolution with
+  contradictory strong-ID collisions held as conflicts; parse into heading-aware sections
+  with page spans; chunk under a versioned policy; Parquet exports carrying
+  redistribution eligibility, with private data never exported.
+
+### Chunking policies
+
+Two exist, selected by `chunker.policy` in `configs/parsing.yaml`. The version name
+states the policy, so switching changes every chunk ID.
+
+- **`paragraph-pack-v1`** (current): split a section into paragraphs, pack whole ones to
+  800 tokens, close the chunk when the next would pass 900, split a paragraph over 1,200
+  on sentence boundaries, and repeat the previous chunk's last 2 sentences as overlap
+  (bounded to a quarter of the budget). Over 40 real papers it ends 14.4% of prose chunks
+  mid-sentence against the fixed window's 47.2%, with 16% fewer chunks.
+- **`fixed-window-v2`**: 450-token windows, 600 cap, 60 overlap, never crossing a section.
+
+Paragraphs must be **inferred**: pypdf's extracted text contains no blank lines, so a
+paragraph's last line is detected as one that both ends a sentence and falls short of the
+column width. `reports/m1-chunking-comparison.md` has the measured comparison;
+`corpus compare-chunkers` reproduces it.
 
 ## How a task is executed (plan convention)
 
-Write the task's regression test first and confirm it fails for the stated reason; implement one behavior at a time using the reference logic; add the listed acceptance cases; run the listed suites, then Ruff, mypy and every relevant integration or migration check; record actual commands, versions and outcomes; inspect `git diff --check` and the full diff; stage only the files the task owns; commit with the message the plan specifies.
+Write the task's regression test first and confirm it fails for the stated reason;
+implement one behavior at a time; add the listed acceptance cases; run the listed suites,
+then Ruff, mypy and every relevant integration check; record actual commands, versions and
+outcomes in `reports/` and the progress tracker; inspect `git diff --check` and the full
+diff; stage only the files the task owns; commit with the message the plan specifies.

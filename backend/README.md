@@ -1,8 +1,8 @@
 # Backend development
 
-Python 3.12 backend managed by uv 0.12.10 with `backend/.venv` as the only
-project environment. `uv` may not be on `PATH` on this machine; every command
-below also works as `py -3.12 -m uv ...`.
+Python 3.12 backend managed by uv with `backend/.venv` as the only project
+environment. On the current WSL host `uv` is on `PATH`; the `py -3.12 -m uv`
+prefix in older evidence reports refers to the earlier Windows host.
 
 ## Setup
 
@@ -89,9 +89,10 @@ eligible records, sorts them by source item ID, takes the sample limit and
 enqueues one durable job per paper; `worker run` processes the resolve →
 download → parse chain until nothing is due. Both read `DATABASE_URL` and
 `DATA_DIR` from `.env`; PDFs and raw source JSON land under
-`${DATA_DIR}/sources`. OpenReview's API challenges guest requests, so set
-`OPENREVIEW_USERNAME` and `OPENREVIEW_PASSWORD` (a free account) in `.env`
-first.
+`${DATA_DIR}/sources`. The corpus comes from the papercli Hugging Face mirror,
+not OpenReview, whose API challenges guest requests; set `HF_TOKEN` in `.env` so
+shard downloads are not rate-limited. `corpus run` drives the whole venue plan:
+mirror a venue-year, ingest it, parse it, verify, delete its PDFs, continue.
 
 ```powershell
 uv run --project backend python -m copilot.cli corpus ingest --manifest configs/corpus.yaml --limit 100

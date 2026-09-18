@@ -1,7 +1,10 @@
 # ML Research Copilot corpus — data card
 
-Status: **in progress.** The figures below are a point-in-time reading taken at
-2026-09-16T09:35Z while the venue run was still working through its plan. The
+Status: **being rebuilt.** The coverage figures below are a point-in-time reading taken
+at 2026-09-16T09:35Z, when 12 of 42 venue-years had landed and chunking used the
+`fixed-window-v2` policy. Since then the full plan completed at 85,729 papers, and on
+2026-09-18 a rebuild began under the `paragraph-pack-v1` policy, re-parsing every paper
+from its PDF into a fresh database. Treat the venue-year table as historical; the
 authoritative live figures come from `GET /v1/corpus/coverage` or
 `python -m copilot.cli corpus coverage`.
 
@@ -85,10 +88,14 @@ verified, and a PDF being publicly readable is not a right to republish it. So:
 pypdf text extraction (`pypdf-text-v2`) behind a swappable adapter, repaired for
 NUL bytes, unpaired surrogates, ligatures, line-break hyphenation and repeated
 page furniture. Sections are heading-aware with page spans; captions are bounded
-blocks rather than section boundaries. Chunks are `fixed-window-v2`: 450 tokens
-target, 600 hard cap, 60 overlap, measured in the pinned **BAAI/bge-m3**
+blocks rather than section boundaries. Chunks are `paragraph-pack-v1`: whole
+paragraphs packed to 800 tokens, closed when the next would pass 900, a paragraph
+over 1,200 split on sentence boundaries, and the previous chunk's last two
+sentences repeated as overlap — all measured in the pinned **BAAI/bge-m3**
 tokenizer (`5617a9f61b028005a4858fdac845db406aefb181`) and never crossing a
-section. References are chunked but excluded from default evidence. Chunk IDs
+section. The earlier build used `fixed-window-v2` (450 target, 600 cap, 60
+overlap); it ended 47.2% of prose chunks mid-sentence against the current
+policy's 14.4%. References are chunked but excluded from default evidence. Chunk IDs
 are UUIDv5 over work ID, document checksum, parser and chunker revisions and the
 section/chunk ordinals.
 

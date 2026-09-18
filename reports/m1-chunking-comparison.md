@@ -80,11 +80,32 @@ re-measured after cutting, because a slice re-tokenizes a token or two higher
 than the window it came from. The comparison above reports 0 chunks over the
 ceiling for both policies.
 
-## Status
+## Status — adopted 2026-09-17
 
-`paragraph-pack` is implemented, tested (18 unit tests) and selectable through
-`configs/parsing.yaml`, but **the production policy is unchanged**: the corpus
-is still built with `fixed-window`. Switching would change `chunker_version` and
-therefore every chunk ID, which means re-chunking — and re-chunking needs the
-PDFs, which the venue sweep deletes. So adopting it is a decision to make
-deliberately, ideally at the same time as any other re-parse.
+`paragraph-pack` is now the configured policy (`paragraph-pack-v1`). The corpus is being
+rebuilt under it from the source PDFs, venue-year by venue-year, so every paper is
+parsed and chunked afresh rather than converted.
+
+An earlier attempt converted the stored corpus in place, reconstructing each section
+from its own fixed-window chunks to avoid re-downloading 450 GB. That path is
+implemented and tested (`corpus rechunk`, 99.67% of sections reconstruct byte-exactly),
+but it was abandoned for this change in favour of rebuilding from source.
+
+## Defect found after adoption, and fixed
+
+Running the policy across the whole corpus surfaced a defect the 40-paper comparison had
+not: `_carry` exempted its first sentence from the overlap budget, so a chunk whose text
+contains **no sentence boundary** — a table dump, a math-heavy block — carried *itself*
+forward whole into the next chunk. Each pass repeated the last and the output grew
+without bound; one real document produced 7,975 chunks of 1,200 tokens from 254 KB of
+text, and the run died on PostgreSQL's 65,535-parameter limit while inserting them.
+
+The budget now binds from the first sentence, so an oversized sentence is not carried.
+The regression test packs a 3,000-token blob with no sentence boundary and requires the
+output to stay within 1.5x its input. `corpus rechunk` additionally refuses any version
+whose output exceeds 1.6x the tokens its sections contain, because that path rewrites in
+place and the stored chunks are the only copy of the text once PDFs are swept.
+
+Damage was bounded before the rebuild decision: across 26,945 converted versions the
+median was 16,502 tokens against fixed-window's 15,838 — a 4% difference explained by
+overlap — with 184 versions (0.7%) above 100k tokens. The rebuild makes the question moot.
