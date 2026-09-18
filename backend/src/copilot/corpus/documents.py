@@ -14,6 +14,9 @@ from ..db.models import Chunk, PaperVersion
 from .chunk import DEFAULT_CHUNK_NAMESPACE, chunk_id
 from .parse import ParseResult, ParseStatus
 
+# 14 bound columns per row against PostgreSQL's 65535-parameter ceiling.
+INSERT_BATCH = 2000
+
 
 def store_parsed_document(
     session: Session,
@@ -84,7 +87,12 @@ def store_parsed_document(
             Chunk.id.notin_([row["id"] for row in rows]) if rows else true(),
         )
     )
-    if rows:
-        session.execute(pg_insert(Chunk).values(rows).on_conflict_do_nothing(index_elements=["id"]))
+    # PostgreSQL binds at most 65535 parameters per statement, so a document
+    # with thousands of chunks has to be written in batches.
+    for start in range(0, len(rows), INSERT_BATCH):
+        batch = rows[start : start + INSERT_BATCH]
+        session.execute(
+            pg_insert(Chunk).values(batch).on_conflict_do_nothing(index_elements=["id"])
+        )
     session.flush()
     return [row["id"] for row in rows]

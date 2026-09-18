@@ -12,6 +12,8 @@ import pytest
 from pypdf import PdfWriter
 
 from copilot.corpus.chunk import (
+    POLICIES,
+    chunk_document,
     chunk_id,
     chunk_sections,
     load_parsing_config,
@@ -260,20 +262,22 @@ def test_numbered_table_rows_do_not_open_sections():
 def test_fixture_chunks_under_the_versioned_policy_exclude_references_by_default():
     config = load_parsing_config(CONFIG)
     sections = parse_pdf(FIXTURE_PDF)
-    chunks = chunk_sections(
-        sections,
-        whitespace_spans,
-        target=config.chunker.target_tokens,
-        overlap=config.chunker.overlap_tokens,
-        hard_cap=config.chunker.hard_cap_tokens,
-    )
+    # Whichever policy the repository is configured for, these hold.
+    chunks = chunk_document(sections, whitespace_spans, config.chunker)
     assert chunks
-    assert all(chunk["token_count"] <= config.chunker.hard_cap_tokens for chunk in chunks)
+    ceiling = (
+        config.chunker.paragraph_max_tokens
+        if config.chunker.policy == "paragraph-pack"
+        else config.chunker.hard_cap_tokens
+    )
+    assert all(chunk["token_count"] <= ceiling for chunk in chunks)
     references = [chunk for chunk in chunks if chunk["kind"] == "references"]
     assert references and not any(chunk["evidence_default"] for chunk in references)
     assert any(chunk["kind"] == "table" for chunk in chunks)
     assert config.parser.parser_version == PARSER_VERSION
-    assert config.chunker.chunker_version == "fixed-window-v2"
+    assert config.chunker.policy in POLICIES
+    # The version names the policy, so switching cannot silently keep old IDs.
+    assert config.chunker.policy.split("-")[0] in config.chunker.chunker_version
     assert isinstance(config.chunker.uuid_namespace, UUID)
 
 

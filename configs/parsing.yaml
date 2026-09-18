@@ -27,10 +27,13 @@ chunker:
   #
   # Switching the policy changes `chunker_version`, and therefore every chunk
   # ID, so it means re-chunking the corpus.
-  policy: fixed-window
-  chunker_version: fixed-window-v2
-  target_tokens: 450
-  hard_cap_tokens: 600
+  policy: paragraph-pack
+  chunker_version: paragraph-pack-v1
+  # paragraph-pack: the packing target and, below, the ceiling a single
+  # paragraph may occupy alone. fixed-window reads target/hard_cap/overlap
+  # instead, which is what the corpus was first built with (450/600/60).
+  target_tokens: 800
+  hard_cap_tokens: 1200
   overlap_tokens: 60
   references_in_default_evidence: false
   uuid_namespace: 9d2f5a6c-7b3e-4c1a-8e5d-2f6b9c1d3e47

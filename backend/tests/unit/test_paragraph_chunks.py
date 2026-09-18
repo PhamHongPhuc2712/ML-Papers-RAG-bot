@@ -124,12 +124,22 @@ def test_an_oversized_paragraph_is_split_on_sentence_boundaries():
 
 
 def test_overlap_repeats_whole_sentences_from_the_previous_chunk():
-    first = "Alpha one. " + _para("alpha", 600)
-    second = _para("beta", 600)
+    # Ordinary prose sentences, well inside the carry budget.
+    first = " ".join(_para("alpha", 30) for _ in range(20))
+    second = " ".join(_para("beta", 30) for _ in range(20))
     chunks = _pack(Section("Method", f"{first}\n\n{second}", 1, 2, 0), overlap_sentences=1)
-    assert len(chunks) == 2
+    assert len(chunks) >= 2
     tail = split_sentences(chunks[0]["text"])[-1]
     assert chunks[1]["text"].startswith(tail)
+
+
+def test_a_sentence_larger_than_the_carry_budget_is_not_repeated():
+    """Carrying it would duplicate the chunk rather than overlap it."""
+
+    first = _para("alpha", 600)
+    second = _para("beta", 600)
+    chunks = _pack(Section("Method", f"{first}\n\n{second}", 1, 2, 0), overlap_sentences=1)
+    assert [c["token_count"] for c in chunks] == [600, 600]
 
 
 def test_packing_never_crosses_a_section_boundary():
@@ -198,3 +208,22 @@ def test_overlap_from_huge_sentences_cannot_blow_the_budget():
     text = "\n\n".join([blob, blob, blob])
     chunks = _pack(Section("References", text, 9, 9, 2, kind="references"), overlap_sentences=2)
     assert all(c["token_count"] <= 1200 for c in chunks), [c["token_count"] for c in chunks]
+
+
+def test_packing_cannot_emit_more_text_than_it_was_given():
+    """Regression: a chunk with no sentence boundary used to carry itself forward.
+
+    The overlap exempted its first sentence from the budget, so a boundary-free
+    chunk was repeated into the next one and the output grew without bound — one
+    real document reconstructed to 254 KB and produced 7,975 chunks of 1,200
+    tokens, far more text than it contained.
+    """
+
+    blob = " ".join(["ref"] * 3000)  # no sentence boundary anywhere
+    section = Section("References", blob, 9, 9, 0, kind="references")
+    chunks = _pack(section, overlap_sentences=2)
+    produced = sum(c["token_count"] for c in chunks)
+    given = len(whitespace_spans(blob))
+    # Overlap may repeat a little; it must not multiply the document.
+    assert produced <= given * 1.5, f"{produced} tokens produced from {given}"
+    assert len(chunks) < 10

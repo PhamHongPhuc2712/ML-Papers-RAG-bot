@@ -196,7 +196,10 @@ def _carry(text: str, spans: TokenSpans, sentences: int, budget: int) -> list[st
     total = 0
     for sentence in reversed(split_sentences(text)[-sentences:]):
         size = len(spans(sentence))
-        if carried and total + size > budget:
+        # The budget binds from the first sentence. Exempting it let a chunk
+        # with no sentence boundary carry itself forward whole, so each pass
+        # re-emitted the previous chunk and the output grew without bound.
+        if total + size > budget:
             break
         carried.insert(0, sentence)
         total += size
