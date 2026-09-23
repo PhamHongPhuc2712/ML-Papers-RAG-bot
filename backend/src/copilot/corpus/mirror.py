@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -203,15 +204,38 @@ def hf_fetch(repo: str, revision: str, member: str, root: Path) -> Path:
     )
 
 
-def resolve_revision(repo: str) -> str:
-    """The shard's current commit, so a run records the revision it captured."""
-
+def _hf_api() -> Any:
     from huggingface_hub import HfApi
 
-    sha = HfApi().dataset_info(repo).sha
-    if not sha:
-        raise MirrorIndexError("revision_unresolved", repo)
-    return str(sha)
+    return HfApi()
+
+
+_RETRY_SLEEP = time.sleep
+REVISION_ATTEMPTS = 5
+
+
+def resolve_revision(repo: str) -> str:
+    """The shard's current commit, so a run records the revision it captured.
+
+    Retried, because this one metadata call gates a whole venue-year. A 503
+    from the hub ended a 42-venue-year campaign at venue 31 on 2026-09-21: the
+    lookup is momentary and the run behind it is a day long, so a transient
+    failure here must never be the thing that stops it.
+    """
+
+    last = ""
+    for attempt in range(REVISION_ATTEMPTS):
+        try:
+            sha = _hf_api().dataset_info(repo).sha
+        except Exception as error:  # noqa: BLE001 - any hub failure is retryable here
+            last = f"{type(error).__name__}: {error}"
+        else:
+            if sha:
+                return str(sha)
+            last = "empty_sha"
+        if attempt < REVISION_ATTEMPTS - 1:
+            _RETRY_SLEEP(2**attempt)
+    raise MirrorIndexError("revision_unresolved", f"{repo} ({last})")
 
 
 def _free_bytes(path: Path) -> int:

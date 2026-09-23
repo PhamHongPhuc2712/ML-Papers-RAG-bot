@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from copilot.corpus import mirror
 from copilot.corpus.mirror import (
     MirrorIndexError,
     build_index,
@@ -230,3 +232,32 @@ def test_only_rows_the_manifest_admits_are_fetched_or_indexed(tmp_path):
         for line in (tmp_path / "papercli" / "iclr-2024.jsonl").read_text().splitlines()
     ]
     assert [record["id"] for record in index] == ["main1"]
+
+
+def test_resolve_revision_retries_a_transient_server_error(monkeypatch):
+    """A 503 on the metadata lookup killed a 42-venue-year run at venue 31."""
+
+    calls: list[int] = []
+
+    class _Api:
+        def dataset_info(self, repo: str):
+            calls.append(1)
+            if len(calls) < 3:
+                raise ConnectionError("503 Service Unavailable")
+            return SimpleNamespace(sha="abc123")
+
+    monkeypatch.setattr(mirror, "_hf_api", _Api)
+    monkeypatch.setattr(mirror, "_RETRY_SLEEP", lambda _seconds: None)
+    assert mirror.resolve_revision("GenAI4ELab/papercli-papers-cvpr") == "abc123"
+    assert len(calls) == 3
+
+
+def test_resolve_revision_gives_up_after_the_last_attempt(monkeypatch):
+    class _Api:
+        def dataset_info(self, repo: str):
+            raise ConnectionError("503 Service Unavailable")
+
+    monkeypatch.setattr(mirror, "_hf_api", _Api)
+    monkeypatch.setattr(mirror, "_RETRY_SLEEP", lambda _seconds: None)
+    with pytest.raises(MirrorIndexError, match="revision_unresolved"):
+        mirror.resolve_revision("GenAI4ELab/papercli-papers-cvpr")
