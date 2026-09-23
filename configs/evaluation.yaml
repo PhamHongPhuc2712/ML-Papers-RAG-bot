@@ -30,9 +30,39 @@ benchmarks:
     # Verified 2026-09-21: 597 queries, 64,183 documents.
     queries: 597
     documents: 64183
-    # No license is declared on the dataset repo. Until that is resolved this
-    # data is local-use-only and never enters a corpus export.
+    # Verified 2026-09-23: the dataset repo declares no license — cardData
+    # license is null and no license tag is present. Local-use-only: the data
+    # lives under DATA_DIR, never in the repository, and never enters an export.
     redistribution: unknown
+    # Fetched 2026-09-23 into ${DATA_DIR}/benchmarks/litsearch, 2.85 GB.
+    checksums:
+      corpus_clean/full-00000-of-00006.parquet: f0477a38be6f83a87ac76e76c5c6fa9dd590c7e388bd0c9cf3a602b909e52d86
+      corpus_clean/full-00001-of-00006.parquet: a82e002f8423e4c150b2e07bc983bc25425baa90af4dd2b9877e54617ace5beb
+      corpus_clean/full-00002-of-00006.parquet: 30ee83c73f547e9dc841e74f9f88e3f132018599bd3c04c2e06ad69750a54cd0
+      corpus_clean/full-00003-of-00006.parquet: bbc5b74d533e6d978a7621724864c24aa8a2e9c1ec7d1ace51f6c4ad7e62d9f6
+      corpus_clean/full-00004-of-00006.parquet: c9c110a457efe2553f90ff1a4419c1f4a6a50a8b49bce47bf89ff01b7871d6ad
+      corpus_clean/full-00005-of-00006.parquet: 38d333622bd085d623c306c31a871b9d19c80230b28eeb9f0aaa555acc6e674a
+      corpus_s2orc/full-00000-of-00008.parquet: 298967ffdc74130ddf60c3868ee4ad3b9cb2b90ff82247630c78114617b2b310
+      corpus_s2orc/full-00001-of-00008.parquet: 1b0328da266edb6d9177f4d25616cdab457de5aa2addc01c42a22a0198db886b
+      corpus_s2orc/full-00002-of-00008.parquet: ba542c640513987789ac8c24cbd2d87665ff2d1f595d11cb33e1290966516f4c
+      corpus_s2orc/full-00003-of-00008.parquet: 95b869730d07ca48c815a9b6e506711411cf4d66095695e54ac70499ff4497b6
+      corpus_s2orc/full-00004-of-00008.parquet: b212e451b46484f88aa4e324df5a17065600bbf9dfaea8fa22972b44d1413e6d
+      corpus_s2orc/full-00005-of-00008.parquet: 08fa62f42c4c3ad506ba07cfa998e71f2b89cc7bc1c24ec6c085cdf440146e0f
+      corpus_s2orc/full-00006-of-00008.parquet: 859bf933308afa6aa240602f805a62602c42b3caf60e15a41667ab2351f8d53e
+      corpus_s2orc/full-00007-of-00008.parquet: 2e1562ca694c4e332fad40339a55f23c28ece0f78a49bcb677d461a61ff1f8d9
+      query/full-00000-of-00001.parquet: 38cdbe4a6b7a7f5776d08055bfbf6e4511000aa2a523866592b4bb273388b914
+    # Measured 2026-09-23 against the finished corpus (85,729 papers).
+    # Coverage is not uniform: the author-written query sets are almost fully
+    # covered and the citation-derived ones are almost absent, because inline
+    # queries target cited work that predates our 2023-2026 window.
+    gold_coverage:
+      overall: 0.419
+      manual_acl: 1.000
+      manual_iclr: 0.967
+      inline_nonacl: 0.028
+      inline_acl: 0.000
+    # The in-domain evaluation slice: the two author-written sets, 243 queries.
+    indomain_query_sets: [manual_acl, manual_iclr]
     splits:
       seed: 42
       development: 0.6

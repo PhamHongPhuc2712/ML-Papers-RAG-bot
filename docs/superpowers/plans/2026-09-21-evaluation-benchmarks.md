@@ -57,7 +57,7 @@ rebuild was 47% complete (39,957 of 85,732 papers).
 | Corpus | 64,183 documents; `corpus_clean` carries `corpusid`, `title`, `abstract`, `citations`, `full_paper` |
 | Full text present | 10,696 of 10,698 rows in shard 0 (99.98%) |
 | Corpus-wide title overlap with ours | 1,284 of 10,698 shard-0 titles (12.0%) |
-| **Gold-paper coverage in our corpus** | **102 of the 150 queries whose gold falls in shard 0 (68%)** |
+| **Gold-paper coverage in our corpus** | **superseded — E1 measured 41.9% overall on the finished corpus; see below** |
 
 The last row is the one that makes this plan viable. Corpus-wide overlap is low because
 LitSearch's corpus is mostly the older work that recent papers cite, which our 2023–2026
@@ -65,8 +65,15 @@ window excludes. But the *gold* papers are the recent ML/NLP papers the queries 
 for, and those are largely inside our window. A 68% in-domain slice is a real benchmark;
 12% would not have been.
 
-Both figures are samples — one of six shards, against a corpus that was 47% built. E1
-re-measures both on the finished corpus and neither number is quoted anywhere until it does.
+**E1 has now run, and it replaced both figures.** Gold coverage on the finished corpus is
+**41.9%**, not 68% — the sample was biased toward the author-written query sets. More
+usefully, coverage is nearly binary by query set: `manual_acl` 100%, `manual_iclr` 96.7%,
+`inline_nonacl` 2.8%, `inline_acl` 0%. Inline queries are built from citation sentences, so
+their gold papers are the *cited* work, which predates our window by construction.
+
+The in-domain slice is therefore **the 243 author-written queries**, not a 42% scatter
+across all four sets. E4 uses those; E3 runs all 597 against LitSearch's own corpus.
+Measurements and the matcher's validation are in `reports/e1-litsearch-coverage.md`.
 
 **License is unresolved.** The dataset repo declares no license tag. Until E1 establishes
 the terms, LitSearch data is local-use-only: it never enters a corpus export, and
@@ -142,7 +149,11 @@ def test_unpinned_fetch_is_refused(tmp_path):
 - [ ] Resolve the license. Check the dataset card, the LitSearch paper and the project's
       GitHub repository. Record the finding verbatim in `reports/e1-litsearch-coverage.md`.
       If it stays unresolved, that is the finding, and local-use-only stands.
-- [ ] Confirm `corpus_s2orc` exposes `externalids`. If it does, match on DOI, arXiv ID and ACL
+- [x] **Done.** `corpus_s2orc` exposes `externalids`, but our corpus stores none of those
+      schemes — only papercli and OpenReview ids. The ACL Anthology PDF URL is the only
+      bridge; title matching covers the rest, validated at 765/765 method agreement and
+      0 false positives in a hand-checked 50. Original instruction:
+      Confirm `corpus_s2orc` exposes `externalids`. If it does, match on DOI, arXiv ID and ACL
       Anthology ID against `paper_identifiers` **first**, falling back to normalized title only
       for rows with no strong ID. Strong-ID matching is what makes the coverage number
       trustworthy; title normalization alone silently misses papers whose titles were

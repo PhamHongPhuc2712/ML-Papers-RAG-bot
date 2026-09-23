@@ -111,7 +111,9 @@ forward without a demonstrated need.
 - User identity comes only from a verified token — never a client-supplied `user_id`.
   Public corpus data and private uploads never share a Qdrant collection or storage
   namespace. **Hugging Face is an offline artifact destination** and is never queried
-  during a user request; `corpus mirror` is the only code that contacts it.
+  during a user request. Two offline callers contact it — `corpus mirror` for the corpus
+  and `evaluation/litsearch.py` for the benchmark — and both fetch at a pinned revision.
+  Nothing in the serving path may join them.
 - Never report tests, benchmarks, corpus coverage or user observations that did not
   actually run. Planned examples are not measured results.
 
