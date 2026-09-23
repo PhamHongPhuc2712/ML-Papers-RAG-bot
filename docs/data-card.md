@@ -1,12 +1,9 @@
 # ML Research Copilot corpus — data card
 
-Status: **being rebuilt.** The coverage figures below are a point-in-time reading taken
-at 2026-09-16T09:35Z, when 12 of 42 venue-years had landed and chunking used the
-`fixed-window-v2` policy. Since then the full plan completed at 85,729 papers, and on
-2026-09-18 a rebuild began under the `paragraph-pack-v1` policy, re-parsing every paper
-from its PDF into a fresh database. Treat the venue-year table as historical; the
-authoritative live figures come from `GET /v1/corpus/coverage` or
-`python -m copilot.cli corpus coverage`.
+Status: **complete.** The rebuild under `paragraph-pack-v1` finished 2026-09-22; the
+figures below are the finished corpus, read from `copilot_v2` on 2026-09-23. Verification
+evidence is in `reports/m1-rebuild.md`. Live figures come from `GET /v1/corpus/coverage`
+or `python -m copilot.cli corpus coverage`.
 
 ## What this corpus is
 
@@ -45,30 +42,64 @@ papers**. Excluded, with the count each accounts for:
 Main is matched positively, so a label this project has not seen classifies as
 `other` and is excluded rather than silently admitted.
 
-## Coverage as of 2026-09-16T09:35Z
+## Coverage as of 2026-09-23
 
-8,499 papers across 12 venue-years; 8,463 carry an abstract and 8,494 have full
-text. Four papers failed to parse.
+**85,729 papers across all 42 venue-years, 3,426,221 chunks.** 85,694 carry an abstract
+and 81,929 have full text. The `No text` column counts papers with no chunks.
 
-| Venue | Year | Papers | Abstract | Full text | Failed | Published total | Coverage |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| ACL | 2024 | 942 | 939 | 942 | 0 | unknown | — |
-| EMNLP | 2023 | 1,047 | 1,046 | 1,046 | 0 | unknown | — |
-| IJCAI | 2023 | 851 | 851 | 850 | 1 | unknown | — |
-| JMLR | 2023 | 401 | 401 | 400 | 1 | unknown | — |
-| JMLR | 2024 | 421 | 421 | 421 | 0 | unknown | — |
-| JMLR | 2025 | 308 | 308 | 308 | 0 | unknown | — |
-| NAACL | 2024 | 564 | 562 | 564 | 0 | unknown | — |
-| NAACL | 2025 | 720 | 695 | 720 | 0 | unknown | — |
-| WACV | 2023 | 639 | 637 | 639 | 0 | unknown | — |
-| WACV | 2024 | 846 | 845 | 845 | 1 | unknown | — |
-| WACV | 2025 | 929 | 927 | 929 | 0 | unknown | — |
-| WACV | 2026 | 831 | 831 | 830 | 1 | unknown | — |
+| Venue | Year | Papers | Abstract | Full text | No text |
+|---|---:|---:|---:|---:|---:|
+| AAAI | 2023 | 2,023 | 2,023 | 2,021 | 2 |
+| AAAI | 2024 | 2,864 | 2,864 | 2,864 | — |
+| AAAI | 2025 | 3,485 | 3,485 | 3,485 | — |
+| AAAI | 2026 | 4,920 | 4,920 | 4,920 | — |
+| ACL | 2023 | 1,077 | 1,075 | 1,077 | — |
+| ACL | 2024 | 942 | 939 | 942 | — |
+| ACL | 2025 | 1,701 | 1,699 | 1,701 | — |
+| CVPR | 2023 | 2,353 | 2,353 | 2,350 | 3 |
+| CVPR | 2024 | 2,716 | 2,713 | 2,712 | 4 |
+| CVPR | 2025 | 2,871 | 2,870 | 2,870 | 1 |
+| CVPR | 2026 | 4,068 | 4,067 | 4,067 | 1 |
+| ECCV | 2024 | 2,387 | 2,387 | 2,377 | 10 |
+| EMNLP | 2023 | 1,047 | 1,046 | 1,047 | — |
+| EMNLP | 2024 | 1,268 | 1,236 | 1,268 | — |
+| EMNLP | 2025 | 1,809 | 1,808 | 1,809 | — |
+| ICCV | 2023 | 2,156 | 2,156 | 2,155 | 1 |
+| ICCV | 2025 | 2,701 | 2,701 | 2,699 | 2 |
+| ICLR | 2023 | 1,573 | 1,573 | 1,571 | 2 |
+| ICLR | 2024 | 2,260 | 2,260 | 2,259 | 1 |
+| ICLR | 2025 | 3,702 | 3,702 | 3,702 | — |
+| ICLR | 2026 | 5,351 | 5,351 | 3,615 | **incomplete** |
+| ICML | 2023 | 1,828 | 1,828 | 1,828 | — |
+| ICML | 2024 | 2,610 | 2,610 | 2,610 | — |
+| ICML | 2025 | 3,257 | 3,257 | 3,257 | — |
+| IJCAI | 2023 | 851 | 851 | 850 | 1 |
+| IJCAI | 2024 | 1,048 | 1,048 | 1,048 | — |
+| IJCAI | 2025 | 1,279 | 1,279 | 1,279 | — |
+| Interspeech | 2023 | 1,141 | 1,141 | 1,141 | — |
+| Interspeech | 2024 | 1,065 | 1,065 | 1,065 | — |
+| Interspeech | 2025 | 1,179 | 1,179 | 1,175 | 4 |
+| JMLR | 2023 | 401 | 401 | 400 | 1 |
+| JMLR | 2024 | 421 | 421 | 421 | — |
+| JMLR | 2025 | 308 | 308 | 308 | — |
+| NAACL | 2024 | 564 | 562 | 564 | — |
+| NAACL | 2025 | 720 | 695 | 720 | — |
+| NeurIPS | 2023 | 3,218 | 3,218 | 3,216 | 2 |
+| NeurIPS | 2024 | 4,034 | 4,034 | 4,034 | — |
+| NeurIPS | 2025 | 5,286 | 5,286 | 3,259 | **incomplete** |
+| WACV | 2023 | 639 | 637 | 639 | — |
+| WACV | 2024 | 846 | 845 | 845 | 1 |
+| WACV | 2025 | 929 | 927 | 929 | — |
+| WACV | 2026 | 831 | 831 | 830 | 1 |
 
-A published total is recorded only where it has been checked against the venue
-— so far only ICLR 2024 (2,260), which this run has not yet reached. Every other
-denominator is unknown, and **an unknown denominator reports a null coverage
-percentage** rather than an implied 100%.
+Two venue-years are marked **incomplete**: NeurIPS 2025 is missing 2,027 of 5,286 (38.3%)
+and ICLR 2026 is missing 1,736 of 5,351 (32.4%), because the mirror published zero-byte
+PDFs for those papers. This is a source gap, not a parse failure — see **Known gaps**.
+Across the other 40 venue-years, 39 papers of 75,092 lack text (0.05%).
+
+Published totals are recorded only where checked against the venue — so far ICLR 2024
+(2,260), which matches. Every other denominator is unknown, and **an unknown denominator
+reports a null coverage percentage** rather than an implied 100%.
 
 ## Rights, and what that means for exports
 
@@ -112,8 +143,15 @@ whose appendices are nearly as large as their bodies.
   downloading; global counts would need an enrichment pass.
 - **No DOI or arXiv identifiers.** Papers are keyed by the registry id plus, for
   OpenReview-hosted venues, the forum id.
-- **Four parse failures** so far — two oversized, one corrupt, one 0-byte file
-  in the shard. Each keeps its PDF for retry; see `reports/m1-parse-failures.md`.
+- **3,802 papers have no full text (4.4%).** 3,759 of them are zero-byte PDFs *at the
+  source*: `get_hf_file_metadata` reports `size: 0` and the index records the
+  empty-string SHA-256. They are concentrated in NeurIPS 2025 and ICLR 2026, the two
+  newest venue-years, where the mirror appears to have published placeholders before the
+  proceedings were final. The recorded OpenReview URLs return 403, so these are not
+  recoverable from here; they need a repopulated upstream shard or another source. The
+  remaining 43 are ordinary parse failures — oversized, corrupt or not-a-PDF — each
+  keeping its PDF for retry; see `reports/m1-parse-failures.md` and
+  `reports/m1-rebuild.md`.
 - Full-text quality is inferred from abstract fidelity; body text has not been
   measured against ground truth, and page-span correctness has not been
   inspected by hand.

@@ -15,12 +15,22 @@ mirror` / `corpus run`) that mirrors one venue-year, ingests it, parses with N w
 verifies, then deletes that venue-year's PDFs so peak disk stays at one venue-year
 rather than the ~450 GB the whole corpus needs at once.
 
-**Current corpus state (2026-09-18):** a full rebuild is running into the `copilot_v2`
-database so every paper is chunked under the new `paragraph-pack` policy directly from
-its PDF. The previous corpus — 85,729 papers across all 42 venue-years, chunked with
-`fixed-window-v2` — is intact in `copilot` as a fallback. Databases on this host:
-`copilot` (previous corpus), `copilot_v2` (rebuild in progress), `copilot_pilot_v2` and
-`copilot_restore_check` (validation leftovers).
+**Current corpus state (2026-09-23):** the rebuild **finished 2026-09-22**. `copilot_v2`
+is the live corpus — all 42 venue-years, **85,729 papers and 3,426,221 chunks**, every one
+`paragraph-pack-v1`, parsed from source PDFs. Verified: max token count 1,200 with zero
+chunks over the ceiling, ordinals contiguous from 0 in all 81,929 documents, body prose
+ending mid-sentence 15.2% against the 14.4% predicted. Evidence in
+`reports/m1-rebuild.md`.
+
+**Two venue-years are incomplete and cannot be fixed here.** 3,802 papers have no text;
+3,759 of those are zero-byte PDFs *at the source* — NeurIPS 2025 (38.3% of it) and ICLR
+2026 (32.4%). The mirror published empty placeholders, the recorded OpenReview URLs return
+403, and the accepted decision is to ship without them. Do not treat this as a parse bug
+and do not re-run those venue-years expecting different output.
+
+Databases on this host: `copilot_v2` (**live**), `copilot` (previous `fixed-window-v2`
+corpus, kept as a fallback), `copilot_pilot_v2` and `copilot_restore_check` (validation
+leftovers).
 
 ## This host
 
