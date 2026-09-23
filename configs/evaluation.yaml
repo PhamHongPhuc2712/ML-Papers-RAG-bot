@@ -1,0 +1,43 @@
+# Evaluation configuration. Every value here is part of a run's identity: a
+# benchmark result is only comparable to another if these matched.
+
+lexical:
+  # Spec §7. Baked into the stored document weights, so changing either forces
+  # a new corpus release and a re-encode of every sparse vector.
+  k1: 1.2
+  b: 0.75
+  # Unicode NFKC, lowercase, alphanumeric runs. Acronyms survive as single
+  # terms; punctuation does not become one.
+  tokenizer: nfkc-lower-alnum-v1
+  # Papers and chunks keep separate corpus statistics (spec §7). Both are
+  # recorded on the run manifest.
+  document_text: "title + '\\n' + abstract"
+
+metrics:
+  # Reported at these cutoffs for G2.
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  # An unlabelled result is unjudged, not irrelevant. Every reported score
+  # carries the coverage it was computed at (spec §11).
+  require_judged_coverage: true
+  max_grade: 3
+
+benchmarks:
+  litsearch:
+    repo: princeton-nlp/LitSearch
+    revision: 9573fb284a1026c998df47024b888a163f0f0e25
+    # Verified 2026-09-21: 597 queries, 64,183 documents.
+    queries: 597
+    documents: 64183
+    # No license is declared on the dataset repo. Until that is resolved this
+    # data is local-use-only and never enters a corpus export.
+    redistribution: unknown
+    splits:
+      seed: 42
+      development: 0.6
+      validation: 0.2
+      test: 0.2
+
+run:
+  seed: 42
