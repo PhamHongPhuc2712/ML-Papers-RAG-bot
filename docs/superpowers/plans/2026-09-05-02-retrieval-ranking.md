@@ -89,6 +89,50 @@ Implement BM25 using the exact tokenizer and parameters in spec §7. Oracle term
 
 **Depends on:** P2.1
 
+**Prerequisite — there is no release snapshot to index (found 2026-09-24).**
+
+This task builds from `--manifest data/releases/<release>/manifest.json`, an immutable
+export, not from the live database. None exists for the rebuilt corpus: `data/releases/`
+is absent, `corpus_releases` in `copilot_v2` holds 0 rows, and the only snapshot under
+`${DATA_DIR}/exports/` is `m1-20260916T093334Z` — 8,499 papers under `fixed-window-v2`,
+from before the rebuild.
+
+No new machinery is needed; P1.5's export is implemented and verified. It has simply
+never been run against the finished corpus.
+
+- [ ] Export `copilot_v2` — 85,729 papers, 3,426,221 chunks, `paragraph-pack-v1` — and
+      validate the manifest checksums before indexing anything:
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli corpus export \
+  --run m2-index --out ${DATA_DIR}/exports/m2-<timestamp> --database-url ...copilot_v2
+uv run --env-file .env --project backend python -m copilot.cli corpus validate \
+  --manifest ${DATA_DIR}/exports/m2-<timestamp>/manifest.json
+```
+
+      Expect the export to withhold full text: `redistribution` is `unknown` for every
+      paper, so chunk text stays out of the snapshot by the rule in spec §4. **Confirm
+      what the snapshot actually contains before planning the chunk index on it** — if
+      the index needs chunk text the export cannot carry, the index builds from the
+      database against a release *id*, and the snapshot remains the identity record. That
+      is a design decision, so record it rather than discovering it during the build.
+
+**Open decision — build abstracts and chunks together, or abstracts first?**
+
+The task as written treats both collections as one unit. An alternative is to build
+`paper_abstracts_<release>` first (85,729 vectors, minutes on the RTX 3080), run E3 and
+E4 against it, and build `paper_chunks_<release>` (3,426,221 vectors, hours) afterwards.
+
+Arguments for abstracts first: LitSearch retrieval is a title-and-abstract task, so the
+G2 evidence in E3/E4 needs nothing else; a pipeline defect surfaces on 85k vectors rather
+than 3.4M; chunk vectors serve P4's evidence retrieval, which is three tasks away.
+Against: two passes over shared infrastructure, and the atomic-switch acceptance cases
+(crash between collection builds, rollback restoring both) are specifically about
+building *two* collections, so splitting them must not quietly drop those cases.
+
+- [ ] Decide and record it in the progress tracker before writing `search/index.py`.
+      Either order satisfies the task; an undocumented order does not.
+
 **Files:**
 
 - Create `backend/src/copilot/models/embeddings.py`, `backend/src/copilot/search/{dense,index}.py`, `configs/models.yaml`.
