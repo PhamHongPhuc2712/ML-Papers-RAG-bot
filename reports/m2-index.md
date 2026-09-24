@@ -77,7 +77,7 @@ pilot's encoded batches are a prefix of the full build's and come back as cache 
 | papers, pilot-10k | 10,240 | 99.8 /s | 98 s | 121.6 MB | 11.9 KB | 1 |
 | **papers, full** | **85,729** | 100.1 /s | 13m19s | **591.9 MB** | **6.9 KB** | 3 |
 | chunks, pilot-1k (40,960 = 1k papers × 40) | 40,960 | 64.2 /s | 17m50s | 374.8 MB | 9.1 KB | 0 |
-| chunks, pilot-10k (409,600) | building | | | | | |
+| chunks, pilot-10k (409,600 = 10k papers × 40) | 409,600 | 60.1 /s | 1h51m | 3,185.6 MB | 7.8 KB | 0 |
 
 Allocated disk is `du`'s blocks, not apparent size: Qdrant preallocates sparsely, and the
 1k paper collection is 847 MB apparent against 14 MB allocated. The marginal paper cost
@@ -87,13 +87,30 @@ sparse index and payload. Paper builds overlap uploads with encoding: the encode
 spent 71.5 s of 17m50s in upserts, and ~4 minutes sorting 3.4 M text rows twice; the
 statistics pass no longer sorts.
 
+The first 10k-scale chunk attempt exposed a worse cost in reading chunks back. A
+server-side cursor is planned for its first tenth by default, and PostgreSQL chose to walk
+the chunk primary key and fetch each row's text at random: ~450 rows/s, so **~2 hours per
+pass** over 3.4 M chunks. The stream now plans for reading every row
+(`cursor_tuple_fraction = 1.0`, `work_mem = 256MB`): 85 s to the first row, then ~20,000
+rows/s, **about 4 minutes per pass** (commit `3acfbb8`). That attempt was stopped before it
+encoded anything and restarted.
+
 Full paper build: 4.45 GB peak RSS (model included); Qdrant RSS 864 MB afterwards; host
 memory available 13.3 GB. BM25 statistics: 121,795 terms, average length 196.6 — the same
 vocabulary size P2.1's in-memory oracle reported for this corpus.
 
-**Chunk extrapolation, to be replaced by the 10k-scale pilot:** 3,426,221 chunks at
-64 /s is ~15 hours of encoding and at ~9 KB/point ~31 GB of disk. Vectors, the sparse
-index and payload are on disk with an int8 copy of the dense vectors in RAM (~3.5 GB).
+The chunk pilot-10k confirms the extrapolation from 1k before the full build was started.
+Its first 160 batches were the 1k pilot's, returned from the cache; the encoder waited
+50.6 s on uploads in 1h49m of encoding. The marginal cost between the two chunk pilots is
+**7.6 KB/point**. Qdrant's RSS afterwards was 1.22 GB; BM25 statistics hold 930,124 terms
+over 409,600 chunks (average length 265.9).
+
+**Projection for the full chunk collection (3,426,221 points):** ~26-30 GB of disk against
+315 GB free; ~4-5 GB resident in Qdrant — the int8 copy of the dense vectors (~3.4 GB) and
+the HNSW graph, with float32 originals, sparse index and payload on disk — against 13.4 GB
+available; and ~14 hours to encode the 3,016,621 chunks the pilots did not already cache.
+The build was started on these numbers, detached from any session, logging to
+`${DATA_DIR}/runs/m2-20260924T095724Z-chunks.{log,json}`.
 
 ## BM25 served from Qdrant equals the oracle
 
@@ -161,7 +178,15 @@ were wrong still passed. Every expected item is now checked.
 
 ## Still to do in P2.2
 
-1. Finish the chunk collection of `m2-20260924T095724Z` (after the 10k-scale pilot confirms
-   the extrapolation), then `search validate-index` and `corpus activate`.
+1. Finish the chunk collection of `m2-20260924T095724Z` (running), record its measurements
+   here, then `search validate-index --release m2-20260924T095724Z` and
+   `corpus activate --release m2-20260924T095724Z`.
 2. A real-corpus restore drill: Qdrant snapshot of both collections, recover, re-validate.
-3. Drop the `pilot-*` releases once their numbers are recorded here.
+3. ~~Drop the `pilot-*` releases once their numbers are recorded here.~~ Both dropped with
+   `search drop-index`.
+
+Known gap, not P2.2's to close: Qdrant writes collection snapshots to `/qdrant/snapshots`
+inside the container, and `compose.yaml` does not bind-mount it under `DATA_DIR`. A real
+snapshot would sit outside the deletable data root and vanish with the container. The
+restore acceptance case runs inside one container's lifetime, so it is unaffected; P5.3's
+local backup should mount `${DATA_DIR}/backups/qdrant` there.
