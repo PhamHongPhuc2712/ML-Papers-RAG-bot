@@ -248,6 +248,12 @@ def database_chunks(
     if limit is not None:
         statement += f"limit {int(limit)}\n"
     with engine.connect() as connection:
+        # A cursor is planned for its first tenth by default, which here means
+        # walking the primary key and reading each row's text at random. Every
+        # row is going to be read, so plan for all of them: one sequential scan
+        # and one sort, given room to sort.
+        connection.execute(text("set local cursor_tuple_fraction = 1.0"))
+        connection.execute(text("set local work_mem = '256MB'"))
         result = connection.execution_options(stream_results=True, yield_per=batch_rows).execute(
             text(statement)
         )
