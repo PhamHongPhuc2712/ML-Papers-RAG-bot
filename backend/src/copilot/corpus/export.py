@@ -326,7 +326,9 @@ where p.merged_into is null
 order by p.id
 """
 
-_EXPORTED_CHUNKS = f"""
+# The chunk set a snapshot names. The chunk index reads exactly this set back
+# from the database, which is what makes its digest comparable to this one.
+EXPORTED_CHUNKS = f"""
 from chunks c
 join ({_CHOSEN_VERSIONS}) pv on pv.id = c.paper_version_id
 join papers p on p.id = pv.paper_id and p.merged_into is null
@@ -346,7 +348,7 @@ select c.id::text as chunk_id,
        c.evidence_default,
        pv.redistribution,
        encode(sha256(convert_to(c.text, 'UTF8')), 'hex') as text_sha256
-{_EXPORTED_CHUNKS}
+{EXPORTED_CHUNKS}
 order by c.id
 """
 
@@ -365,7 +367,7 @@ select c.id::text as chunk_id,
        c.chunker_version,
        c.evidence_default,
        pv.redistribution
-{_EXPORTED_CHUNKS}
+{EXPORTED_CHUNKS}
 where pv.redistribution = :allowed
 order by c.paper_version_id, c.ordinal
 """

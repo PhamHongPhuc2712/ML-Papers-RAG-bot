@@ -101,3 +101,40 @@ uv run --project backend python -m copilot.cli worker run --worker-id pilot-1
 
 Re-running `corpus ingest` is idempotent: jobs are keyed by source item and
 revision, and completed work is never repeated.
+
+## Retrieval indexes
+
+Embedding and reranking weights run on PyTorch, which lives in an opt-in
+`models` dependency group so the offline CI set never installs or downloads a
+model. Install it once, then capture the pinned BGE-M3 files — the revision
+and every file's sha256 are in `configs/models.yaml` — into
+`${DATA_DIR}/models/embeddings/`. Loading re-verifies them every time;
+nothing is fetched while serving.
+
+```bash
+uv sync --project backend --frozen --group dev --group models
+uv run --env-file .env --project backend python -m copilot.cli search fetch-model
+```
+
+A release is one snapshot embedded by one model into two Qdrant collections.
+Build it from a validated snapshot (`corpus export`), one collection at a time
+if you like — abstracts first — and activate it only when both exist and
+validate. Building never activates; activation takes an explicit release id,
+re-checks counts, dimensions, the snapshot digests, the pinned BM25 statistics
+and exact-search canary rankings, and refuses with every reason it found.
+
+```bash
+SNAP=m2-20260924T095724Z
+uv run --env-file .env --project backend python -m copilot.cli search build-index --manifest $SNAP/manifest.json --collections papers
+uv run --env-file .env --project backend python -m copilot.cli search build-index --manifest $SNAP/manifest.json --collections chunks
+uv run --env-file .env --project backend python -m copilot.cli search validate-index --release $SNAP
+uv run --env-file .env --project backend python -m copilot.cli corpus activate --release $SNAP
+```
+
+Rolling back is activating the previous release id again: its collection pair
+is kept and re-validated. `search build-index --limit N --release pilot-N`
+builds a measurement index over the first N papers that can never activate,
+and `search drop-index --release ID` removes any release that is not serving.
+Encoded batches are cached under `${DATA_DIR}/indexes/cache/`, keyed by model
+identity and text checksum, so an interrupted build resumes without
+re-encoding.

@@ -15,19 +15,23 @@ IDF modifier**, so any disagreement between ``search`` and
 ``test_sparse_dot_product_reproduces_the_oracle`` is that contract.
 
 Scale note: this index is in-memory and sized for paper-level retrieval —
-85,729 papers of title and abstract. It is not sized for 3.4 M chunks; chunk
-retrieval is served by Qdrant in P2.2 and validated against this oracle on a
-sample rather than reimplemented here.
+85,729 papers of title and abstract. It is not sized for 3.4 M chunks. What a
+release needs at that scale is only the statistics — document frequencies,
+count and average length — so ``BM25Vocabulary`` is fitted by streaming, pinned
+to the release as a file, and encodes the same two halves with the same two
+functions the oracle uses.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 # Spec §7. Changing either creates a new release: the document weights bake
 # them in, so stored sparse vectors stop matching the oracle.
@@ -65,6 +69,26 @@ def tokenize(text: str) -> list[str]:
     """
 
     return _TERM.findall(unicodedata.normalize("NFKC", text).lower())
+
+
+def term_weight(frequency: int, length: int, average_length: float, k1: float, b: float) -> float:
+    """``tf*(k1+1)/(tf+k1*(1-b+b*dl/avgdl))`` — the stored document half."""
+
+    if not frequency:
+        return 0.0
+    # avgdl is 0 only when every document is empty, and then no term has a
+    # frequency, so this never divides by zero.
+    normalized = length / average_length if average_length else 0.0
+    saturation = k1 * (1 - b + b * normalized)
+    return frequency * (k1 + 1) / (frequency + saturation)
+
+
+def inverse_frequency(documents: int, frequency: int) -> float:
+    """``log(1+(N-df+0.5)/(df+0.5))`` — the unique query-term weight."""
+
+    if not frequency:
+        return 0.0
+    return math.log(1 + (documents - frequency + 0.5) / (frequency + 0.5))
 
 
 def paper_text(title: str, abstract: str | None) -> str:
@@ -148,25 +172,19 @@ class BM25:
         """``log(1+(N-df+0.5)/(df+0.5))`` — the unique query-term weight."""
 
         self._require_fitted()
-        df = self._document_frequency.get(term, 0)
-        if not df:
-            return 0.0
-        total = len(self._lengths)
-        return math.log(1 + (total - df + 0.5) / (df + 0.5))
+        return inverse_frequency(len(self._lengths), self._document_frequency.get(term, 0))
 
     def document_weight(self, doc_id: str, term: str) -> float:
         """``tf*(k1+1)/(tf+k1*(1-b+b*dl/avgdl))`` — the stored half."""
 
         self._require_fitted()
-        frequency = self._frequencies.get(doc_id, Counter()).get(term, 0)
-        if not frequency:
-            return 0.0
-        length = self._lengths.get(doc_id, 0)
-        # avgdl is 0 only when every document is empty, and then no term has a
-        # frequency, so this never divides by zero.
-        normalized = length / self._average_length if self._average_length else 0.0
-        saturation = self._k1 * (1 - self._b + self._b * normalized)
-        return frequency * (self._k1 + 1) / (frequency + saturation)
+        return term_weight(
+            self._frequencies.get(doc_id, Counter()).get(term, 0),
+            self._lengths.get(doc_id, 0),
+            self._average_length,
+            self._k1,
+            self._b,
+        )
 
     def encode_query(self, query: str) -> dict[str, float]:
         """Query terms to weights. Terms outside the vocabulary are omitted."""
@@ -208,3 +226,167 @@ class BM25:
     def _require_fitted(self) -> None:
         if not self._fitted:
             raise LexicalError("not_fitted")
+
+
+TOKENIZER_VERSION = "nfkc-lower-alnum-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class SparseVector:
+    """Term ids from the release vocabulary, and their already-final weights."""
+
+    indices: tuple[int, ...]
+    values: tuple[float, ...]
+
+
+class BM25Vocabulary:
+    """A release's BM25 statistics, fitted by streaming and pinned as a file.
+
+    ``encode_document`` produces the stored half and ``encode_query`` the query
+    half, with the oracle's own weight functions, so their dot product is the
+    oracle's score. Term ids are positions in the sorted vocabulary (spec §7).
+    """
+
+    def __init__(
+        self,
+        terms: Sequence[str],
+        document_frequency: Sequence[int],
+        *,
+        documents: int,
+        total_length: int,
+        k1: float = K1,
+        b: float = B,
+    ) -> None:
+        if list(terms) != sorted(set(terms)):
+            raise LexicalError("vocabulary_unsorted")
+        if len(terms) != len(document_frequency):
+            raise LexicalError("vocabulary_misaligned")
+        self._terms = tuple(terms)
+        self._frequency = tuple(int(value) for value in document_frequency)
+        self._ids = {term: index for index, term in enumerate(self._terms)}
+        self._documents = documents
+        self._total_length = total_length
+        self._k1 = k1
+        self._b = b
+
+    @classmethod
+    def fit(cls, texts: Iterable[str], *, k1: float = K1, b: float = B) -> BM25Vocabulary:
+        """One streaming pass: document frequencies, count and total length only."""
+
+        frequency: Counter[str] = Counter()
+        documents = 0
+        total = 0
+        for text in texts:
+            terms = tokenize(text)
+            frequency.update(set(terms))
+            documents += 1
+            total += len(terms)
+        vocabulary = sorted(frequency)
+        return cls(
+            vocabulary,
+            [frequency[term] for term in vocabulary],
+            documents=documents,
+            total_length=total,
+            k1=k1,
+            b=b,
+        )
+
+    @property
+    def average_length(self) -> float:
+        if not self._documents or not self._total_length:
+            return 0.0
+        return self._total_length / self._documents
+
+    @property
+    def statistics(self) -> CorpusStatistics:
+        return CorpusStatistics(
+            documents=self._documents,
+            vocabulary_size=len(self._terms),
+            average_length=self.average_length,
+            k1=self._k1,
+            b=self._b,
+        )
+
+    def encode_document(self, text: str) -> SparseVector:
+        """The stored half. A term outside the vocabulary means a foreign document."""
+
+        counts = Counter(tokenize(text))
+        length = sum(counts.values())
+        pairs = []
+        for term, frequency in counts.items():
+            index = self._ids.get(term)
+            if index is None:
+                raise LexicalError("unknown_term", term)
+            weight = term_weight(frequency, length, self.average_length, self._k1, self._b)
+            pairs.append((index, weight))
+        pairs.sort()
+        return SparseVector(tuple(i for i, _ in pairs), tuple(w for _, w in pairs))
+
+    def encode_query(self, text: str) -> SparseVector:
+        """The query half. Terms outside the vocabulary are omitted (spec §7)."""
+
+        pairs = sorted(
+            (self._ids[term], inverse_frequency(self._documents, self._frequency[self._ids[term]]))
+            for term in dict.fromkeys(tokenize(text))
+            if term in self._ids
+        )
+        return SparseVector(tuple(i for i, _ in pairs), tuple(w for _, w in pairs))
+
+    def save(self, path: str | Path) -> str:
+        """Write the statistics as Parquet and return the file's sha256."""
+
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        table = pa.table(
+            {"term": list(self._terms), "document_frequency": list(self._frequency)},
+            schema=pa.schema([("term", pa.string()), ("document_frequency", pa.int64())]),
+        ).replace_schema_metadata(
+            {
+                "documents": str(self._documents),
+                "total_length": str(self._total_length),
+                "k1": repr(self._k1),
+                "b": repr(self._b),
+                "tokenizer": TOKENIZER_VERSION,
+            }
+        )
+        staged = target.with_suffix(".partial")
+        pq.write_table(table, staged)
+        staged.replace(target)
+        return _file_sha256(target)
+
+    @classmethod
+    def load(cls, path: str | Path, *, sha256: str | None = None) -> BM25Vocabulary:
+        """Read pinned statistics, refusing an altered file or another tokenizer."""
+
+        import pyarrow.parquet as pq
+
+        source = Path(path)
+        if not source.is_file():
+            raise LexicalError("vocabulary_missing", str(source))
+        if sha256 is not None and _file_sha256(source) != sha256:
+            raise LexicalError("vocabulary_checksum_mismatch", str(source))
+        table = pq.read_table(source)
+        metadata = {
+            key.decode(): value.decode() for key, value in (table.schema.metadata or {}).items()
+        }
+        if metadata.get("tokenizer") != TOKENIZER_VERSION:
+            raise LexicalError("vocabulary_tokenizer_mismatch", str(metadata.get("tokenizer")))
+        return cls(
+            table.column("term").to_pylist(),
+            table.column("document_frequency").to_pylist(),
+            documents=int(metadata["documents"]),
+            total_length=int(metadata["total_length"]),
+            k1=float(metadata["k1"]),
+            b=float(metadata["b"]),
+        )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()

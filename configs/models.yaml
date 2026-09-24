@@ -1,0 +1,62 @@
+# Pinned retrieval models and index layout (spec §5-§7).
+#
+# A release records the embedding identity below — repo, revision and
+# preprocessing — and a query encoded under any other identity is refused. Files
+# are fetched once, offline, by `search fetch-model` into
+# ${DATA_DIR}/models/embeddings/<repo>/<revision>/ and verified by sha256 every
+# time a model loads; nothing is downloaded at request time.
+schema_version: 1
+
+embedding:
+  # BGE-M3's dense head: the last layer's [CLS] state, L2-normalized in float32.
+  # 1024 dimensions is the model card's documented size, not a tuned choice.
+  repo: BAAI/bge-m3
+  revision: 5617a9f61b028005a4858fdac845db406aefb181
+  dimensions: 1024
+  preprocessing: cls-l2-v1
+  files:
+    - file: config.json
+      sha256: 26159e7ad065073448460117eb24b7a4572f6f4e78eadff65dc0a11c052449fa
+    # The same file and checksum configs/parsing.yaml pins for chunking, so
+    # chunk windows and embedding inputs are counted in the same tokens.
+    - file: tokenizer.json
+      sha256: 21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08
+    - file: pytorch_model.bin
+      sha256: b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38
+  max_tokens:
+    # Spec §7: 1,024 input tokens for paper text, truncation rate recorded per
+    # build. Chunks are at most 1,200 tokens by the chunker's ceiling, plus
+    # <s> and </s>; 1,280 leaves no chunk cut.
+    papers: 1024
+    chunks: 1280
+  batch_size: 32
+  # Spec §7: CPU float32 is the correctness baseline; GPU reduced precision is
+  # used only after comparing against it (reports/m2-index.md).
+  precision:
+    cpu: float32
+    cuda: float16
+
+index:
+  # Points per upsert, and per embedding-cache entry.
+  batch_points: 256
+  # Recorded at build time and re-run with exact search before activation and
+  # after any restore. Queries are the first `terms` words of documents spread
+  # evenly through the collection.
+  canaries:
+    queries: 5
+    limit: 10
+    terms: 12
+  collections:
+    papers:
+      # 85,729 x 1024 float32 is 0.35 GB: held in RAM.
+      on_disk: false
+      hnsw: {m: 16, ef_construct: 128}
+    chunks:
+      # 3.4 M x 1024 float32 is 14 GB raw, more than this host can hold beside
+      # PostgreSQL: vectors, sparse index and payload live on disk, with an int8
+      # copy of the dense vectors in RAM for search and the float32 originals
+      # read back to rescore. The HNSW graph is built once, after the upload.
+      on_disk: true
+      quantization: int8
+      defer_indexing: true
+      hnsw: {m: 16, ef_construct: 128}

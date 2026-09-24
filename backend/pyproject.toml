@@ -33,6 +33,15 @@ dev = [
   "ruff==0.12.10",
   "types-pyyaml==6.0.12.20260906",
 ]
+# Opt-in: the pinned embedding and reranker weights run on these. The offline
+# CI set never installs them — it tests against the deterministic fixture model.
+models = [
+  "torch==2.14.0",
+  "transformers==5.17.0",
+]
+
+[tool.uv]
+default-groups = ["dev"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/copilot"]
@@ -65,4 +74,9 @@ warn_unused_configs = true
 # mirror paths, whose own signatures stay typed.
 [[tool.mypy.overrides]]
 module = ["pyarrow.*"]
+ignore_missing_imports = true
+
+# Installed only with the opt-in `models` group, so CI type-checks without them.
+[[tool.mypy.overrides]]
+module = ["torch.*", "transformers.*"]
 ignore_missing_imports = true

@@ -15,6 +15,7 @@ DEFAULT_FIXTURE_PATH = Path("data/fixtures/metadata.jsonl")
 DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
 DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
 DEFAULT_ARTIFACTS_PATH = Path("configs/artifacts.yaml")
+DEFAULT_MODELS_PATH = Path("configs/models.yaml")
 
 
 def default_data_dir() -> Path | None:
@@ -487,6 +488,375 @@ def run_worker(
         engine.dispose()
 
 
+def _service_settings() -> tuple[str, str]:
+    """The Qdrant URL and collection namespace this environment uses."""
+
+    from .config import Settings
+
+    settings = Settings()  # type: ignore[call-arg]
+    return settings.qdrant_url, settings.qdrant_collection_prefix
+
+
+def _directory_bytes(path: Path) -> int | None:
+    """Disk actually allocated, as du reports it.
+
+    Qdrant preallocates its WAL and mmap files sparsely: a 1,024-point
+    collection is 847 MB of apparent size and 14 MB of allocated blocks.
+    """
+
+    if not path.is_dir():
+        return None
+    return sum(item.stat().st_blocks * 512 for item in path.rglob("*") if item.is_file())
+
+
+def _host_headroom(data_dir: Path) -> dict[str, object]:
+    """Free disk under the data root and available memory, recorded beside a build (§12)."""
+
+    import shutil
+
+    available = None
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        for line in meminfo.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemAvailable:"):
+                available = int(line.split()[1]) * 1024
+    return {"disk_free_bytes": shutil.disk_usage(data_dir).free, "mem_available_bytes": available}
+
+
+def run_fetch_model(*, models: Path, data_dir: Path) -> dict[str, object]:
+    """Capture the pinned embedding files once, offline, and verify them."""
+
+    from .models.embeddings import fetch_model, load_embedding_spec
+
+    spec = load_embedding_spec(models)
+    directory = fetch_model(spec, data_dir)
+    return {"identity": spec.identity, "directory": str(directory), "verified": True}
+
+
+def run_build_index(
+    *,
+    manifest: Path,
+    models: Path,
+    data_dir: Path,
+    database_url: str,
+    qdrant_url: str | None,
+    prefix: str | None,
+    release: str | None,
+    collections: list[str],
+    device: str,
+    limit: int | None,
+    cache: bool,
+) -> dict[str, object]:
+    """Build one or both collections of a release. Never activates it."""
+
+    import sys
+    import time
+
+    from qdrant_client import QdrantClient
+
+    from .corpus.releases import load_release
+    from .models.embeddings import TransformerEmbedding, load_embedding_spec
+    from .search.index import build_index, load_index_config, wait_until_indexed
+
+    default_url, default_prefix = _service_settings()
+    url = qdrant_url or default_url
+    namespace = prefix if prefix is not None else default_prefix
+    path = _snapshot_path(manifest, data_dir, DEFAULT_ARTIFACTS_PATH)
+    spec = load_embedding_spec(models)
+    config = load_index_config(models)
+    model = TransformerEmbedding(spec, data_dir, device=device)
+    # Upserts of a few hundred 1024-d points can outlast the client's 5 s default.
+    client = QdrantClient(url=url, timeout=300)
+    engine = make_engine(database_url)
+    last = [0.0]
+
+    def report(state: dict[str, object]) -> None:
+        now = time.monotonic()
+        if now - last[0] >= 30 or state["points"] == state["total"]:
+            last[0] = now
+            print(json.dumps({"progress": state}, sort_keys=True), file=sys.stderr, flush=True)
+
+    try:
+        release_id = build_index(
+            path,
+            model,
+            engine=engine,
+            client=client,
+            prefix=namespace,
+            data_dir=data_dir,
+            config=config,
+            kinds=collections,
+            release_id=release,
+            limit=limit,
+            cache=cache,
+            progress=report,
+        )
+        record = load_release(engine, release_id)
+        built: dict[str, object] = {}
+        for kind in collections:
+            name = record.collection(kind)
+            status = wait_until_indexed(client, name)
+            details = dict(record.counts[kind])
+            details.pop("canaries", None)
+            info = client.get_collection(name)
+            details.update(
+                status=status,
+                indexed_vectors=info.indexed_vectors_count,
+                storage_bytes=_directory_bytes(data_dir / "qdrant" / "collections" / name),
+            )
+            built[kind] = details
+        return {
+            "release": release_id,
+            "model": model.identity,
+            "device": model.device,
+            "precision": model.precision,
+            "collections": built,
+            "host": _host_headroom(data_dir),
+        }
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def _release_validation(
+    release: str, *, models: Path, database_url: str, qdrant_url: str | None
+) -> list[str]:
+    from qdrant_client import QdrantClient
+
+    from .corpus.releases import load_release
+    from .models.embeddings import load_embedding_spec
+    from .search.index import release_problems
+
+    spec = load_embedding_spec(models)
+    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    engine = make_engine(database_url)
+    try:
+        return release_problems(
+            load_release(engine, release),
+            client=client,
+            model_identity=spec.identity,
+            dimensions=spec.dimensions,
+        )
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def run_validate_index(
+    *, release: str, models: Path, database_url: str, qdrant_url: str | None
+) -> dict[str, object]:
+    """Report whether a release would activate, and every reason it would not."""
+
+    problems = _release_validation(
+        release, models=models, database_url=database_url, qdrant_url=qdrant_url
+    )
+    return {"release": release, "valid": not problems, "problems": problems}
+
+
+def run_activate(
+    *, release: str, models: Path, database_url: str, qdrant_url: str | None
+) -> dict[str, object]:
+    """Switch the serving pointer to an explicitly named, fully validated release."""
+
+    from qdrant_client import QdrantClient
+
+    from .corpus.releases import activate_release, capture_release
+    from .models.embeddings import load_embedding_spec
+    from .search.index import index_validator
+
+    spec = load_embedding_spec(models)
+    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    engine = make_engine(database_url)
+    try:
+        previous = capture_release(engine)
+        activate_release(
+            engine,
+            release,
+            validator=index_validator(
+                client, model_identity=spec.identity, dimensions=spec.dimensions
+            ),
+        )
+        return {"active": release, "previous": previous.id if previous else None}
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def run_drop_index(
+    *, release: str, database_url: str, qdrant_url: str | None, data_dir: Path
+) -> dict[str, object]:
+    """Delete a release that is not serving: its row, collections and statistics."""
+
+    import shutil
+
+    from qdrant_client import QdrantClient
+
+    from .corpus.releases import drop_release
+
+    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    engine = make_engine(database_url)
+    try:
+        record = drop_release(engine, release)
+        deleted = []
+        for name in (record.paper_collection, record.chunk_collection):
+            if client.collection_exists(name):
+                client.delete_collection(name)
+                deleted.append(name)
+        statistics = data_dir / "indexes" / release
+        if statistics.is_dir():
+            shutil.rmtree(statistics)
+        return {"dropped": release, "collections": deleted}
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def run_compare_precision(
+    *, manifest: Path, models: Path, data_dir: Path, database_url: str, sample: int, seed: int
+) -> dict[str, object]:
+    """CPU float32 against GPU reduced precision on the same texts (spec §7)."""
+
+    import random
+    import time
+
+    import numpy as np
+    from sqlalchemy import text
+
+    from .models.embeddings import TransformerEmbedding, load_embedding_spec
+    from .search.index import snapshot_papers
+
+    spec = load_embedding_spec(models)
+    path = _snapshot_path(manifest, data_dir, DEFAULT_ARTIFACTS_PATH)
+    papers = [document.text for document in snapshot_papers(path)]
+    chosen_papers = random.Random(seed).sample(papers, sample)
+    engine = make_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            chunks = [
+                str(row[0])
+                for row in connection.execute(
+                    text(
+                        "select text from chunks tablesample bernoulli (0.05) repeatable (:seed)"
+                        " order by id limit :sample"
+                    ),
+                    {"seed": seed, "sample": sample},
+                )
+            ]
+    finally:
+        engine.dispose()
+
+    cpu = TransformerEmbedding(spec, data_dir, device="cpu")
+    gpu = TransformerEmbedding(spec, data_dir, device="cuda")
+    report: dict[str, object] = {
+        "identity": spec.identity,
+        "cpu": {"precision": cpu.precision},
+        "gpu": {"precision": gpu.precision},
+    }
+    for kind, texts in (("papers", chosen_papers), ("chunks", chunks)):
+        limit = spec.max_tokens[kind]
+        timings = {}
+        vectors = {}
+        for name, model in (("cpu", cpu), ("gpu", gpu)):
+            started = time.monotonic()
+            vectors[name] = model.encode_array(texts, max_tokens=limit).vectors
+            timings[name] = round(time.monotonic() - started, 2)
+        cosine = np.sum(vectors["cpu"] * vectors["gpu"], axis=1)
+        # Whether each text's ten nearest neighbours survive the precision change,
+        # which is what a ranking actually depends on.
+        neighbours = {}
+        for name, matrix in vectors.items():
+            similarity = matrix @ matrix.T
+            np.fill_diagonal(similarity, -np.inf)
+            neighbours[name] = np.argsort(-similarity, axis=1)[:, :10]
+        overlaps = [
+            len(set(a) & set(b)) / 10
+            for a, b in zip(neighbours["cpu"], neighbours["gpu"], strict=True)
+        ]
+        report[kind] = {
+            "texts": len(texts),
+            "seconds": timings,
+            "texts_per_second": {k: round(len(texts) / v, 1) for k, v in timings.items() if v},
+            "cosine_min": float(cosine.min()),
+            "cosine_mean": float(cosine.mean()),
+            "cosine_p01": float(np.quantile(cosine, 0.01)),
+            "neighbour_top10_overlap_mean": float(np.mean(overlaps)),
+            "neighbour_top10_overlap_min": float(np.min(overlaps)),
+        }
+    return report
+
+
+def run_compare_oracle(
+    *, release: str, database_url: str, qdrant_url: str | None, sample: int, seed: int, limit: int
+) -> dict[str, object]:
+    """Served BM25 against the exact in-memory oracle over the same paper texts (spec §7)."""
+
+    import random
+    import statistics
+    import time
+
+    from qdrant_client import QdrantClient
+
+    from .corpus.releases import load_release
+    from .search.index import CANARY_SLACK, PAPERS, same_ranking, snapshot_papers
+    from .search.lexical import BM25
+    from .search.sparse import SparseRetriever
+
+    engine = make_engine(database_url)
+    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    try:
+        record = load_release(engine, release)
+        build = record.counts[PAPERS]
+        documents = {
+            document.id: document.text
+            for document in snapshot_papers(
+                Path(str(record.counts["manifest"])), limit=build.get("limit")
+            )
+        }
+        oracle = BM25()
+        oracle.fit(documents)
+        titles = [text.split("\n", 1)[0] for text in documents.values()]
+        queries = random.Random(seed).sample(titles, min(sample, len(titles)))
+        retriever = SparseRetriever(engine, client)
+        identical = 0
+        overlaps: list[float] = []
+        worst = 0.0
+        latencies: list[float] = []
+        for query in queries:
+            expected = oracle.search(query, limit)
+            started = time.monotonic()
+            # Slack past the limit, so a tie that orders differently at the
+            # boundary is found rather than counted as a miss.
+            served = retriever.search(query, None, limit + CANARY_SLACK, release)
+            latencies.append(time.monotonic() - started)
+            if same_ranking([list(pair) for pair in expected], [list(pair) for pair in served]):
+                identical += 1
+            wanted = {doc_id for doc_id, _ in expected}
+            top = {doc_id for doc_id, _ in served[:limit]}
+            overlaps.append(len(wanted & top) / max(1, len(wanted)))
+            scores = dict(served)
+            for doc_id, score in expected:
+                if doc_id in scores and score:
+                    worst = max(worst, abs(scores[doc_id] - score) / score)
+        latencies.sort()
+        return {
+            "release": release,
+            "documents": len(documents),
+            "queries": len(queries),
+            "limit": limit,
+            "identical_rankings": identical,
+            "overlap_mean": statistics.fmean(overlaps),
+            "overlap_min": min(overlaps),
+            "max_relative_score_error": worst,
+            "latency_ms": {
+                "p50": round(1000 * latencies[len(latencies) // 2], 1),
+                "p95": round(1000 * latencies[int(len(latencies) * 0.95)], 1),
+            },
+        }
+    finally:
+        client.close()
+        engine.dispose()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="copilot")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -605,6 +975,79 @@ def _parser() -> argparse.ArgumentParser:
     rechunk.add_argument("--limit", type=int, default=None)
     rechunk.add_argument("--shards", type=int, default=1)
     rechunk.add_argument("--shard", type=int, default=0)
+
+    activate = corpus_commands.add_parser(
+        "activate", help="switch the serving pointer to a validated release"
+    )
+    activate.add_argument("--release", required=True, help="explicit release id; never inferred")
+    activate.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
+    activate.add_argument("--database-url", default=None)
+    activate.add_argument("--qdrant-url", default=None)
+
+    search = subparsers.add_parser("search")
+    search_commands = search.add_subparsers(dest="search_command", required=True)
+    fetch_model = search_commands.add_parser(
+        "fetch-model", help="capture the pinned embedding files offline and verify them"
+    )
+    fetch_model.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
+    fetch_model.add_argument("--data-dir", type=Path, default=None)
+
+    build = search_commands.add_parser(
+        "build-index", help="build a release's collections from a snapshot; never activates"
+    )
+    build.add_argument("--manifest", type=Path, required=True)
+    build.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
+    build.add_argument("--release", default=None, help="defaults to the snapshot's run id")
+    build.add_argument(
+        "--collections",
+        default="papers,chunks",
+        help="comma-separated: papers, chunks (built in the order given)",
+    )
+    build.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    build.add_argument(
+        "--limit", type=int, default=None, help="measurement build over the first N papers"
+    )
+    build.add_argument("--no-cache", action="store_true", help="re-encode every batch")
+    build.add_argument("--database-url", default=None)
+    build.add_argument("--qdrant-url", default=None)
+    build.add_argument("--prefix", default=None, help="collection namespace; defaults to env")
+    build.add_argument("--data-dir", type=Path, default=None)
+
+    check = search_commands.add_parser(
+        "validate-index", help="report whether a release would activate, and why not"
+    )
+    check.add_argument("--release", required=True)
+    check.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
+    check.add_argument("--database-url", default=None)
+    check.add_argument("--qdrant-url", default=None)
+
+    drop = search_commands.add_parser(
+        "drop-index", help="delete a release that is not serving, with its collections"
+    )
+    drop.add_argument("--release", required=True)
+    drop.add_argument("--database-url", default=None)
+    drop.add_argument("--qdrant-url", default=None)
+    drop.add_argument("--data-dir", type=Path, default=None)
+
+    precision = search_commands.add_parser(
+        "compare-precision", help="CPU float32 against GPU reduced precision on the same texts"
+    )
+    precision.add_argument("--manifest", type=Path, required=True)
+    precision.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
+    precision.add_argument("--sample", type=int, default=256)
+    precision.add_argument("--seed", type=int, default=42)
+    precision.add_argument("--database-url", default=None)
+    precision.add_argument("--data-dir", type=Path, default=None)
+
+    oracle = search_commands.add_parser(
+        "compare-oracle", help="served BM25 against the exact in-memory oracle"
+    )
+    oracle.add_argument("--release", required=True)
+    oracle.add_argument("--sample", type=int, default=500)
+    oracle.add_argument("--seed", type=int, default=42)
+    oracle.add_argument("--limit", type=int, default=100)
+    oracle.add_argument("--database-url", default=None)
+    oracle.add_argument("--qdrant-url", default=None)
 
     evaluation = subparsers.add_parser("eval")
     evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
@@ -729,6 +1172,61 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             shards=args.shards,
             shard=args.shard,
+        )
+    elif args.command == "corpus" and args.corpus_command == "activate":
+        result = run_activate(
+            release=args.release,
+            models=args.models,
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+        )
+    elif args.command == "search" and args.search_command == "fetch-model":
+        result = run_fetch_model(models=args.models, data_dir=_data_dir(args.data_dir, parser))
+    elif args.command == "search" and args.search_command == "build-index":
+        result = run_build_index(
+            manifest=args.manifest,
+            models=args.models,
+            data_dir=_data_dir(args.data_dir, parser),
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+            prefix=args.prefix,
+            release=args.release,
+            collections=[item.strip() for item in args.collections.split(",") if item.strip()],
+            device=args.device,
+            limit=args.limit,
+            cache=not args.no_cache,
+        )
+    elif args.command == "search" and args.search_command == "validate-index":
+        result = run_validate_index(
+            release=args.release,
+            models=args.models,
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+        )
+    elif args.command == "search" and args.search_command == "drop-index":
+        result = run_drop_index(
+            release=args.release,
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+            data_dir=_data_dir(args.data_dir, parser),
+        )
+    elif args.command == "search" and args.search_command == "compare-precision":
+        result = run_compare_precision(
+            manifest=args.manifest,
+            models=args.models,
+            data_dir=_data_dir(args.data_dir, parser),
+            database_url=_database_url(args.database_url),
+            sample=args.sample,
+            seed=args.seed,
+        )
+    elif args.command == "search" and args.search_command == "compare-oracle":
+        result = run_compare_oracle(
+            release=args.release,
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+            sample=args.sample,
+            seed=args.seed,
+            limit=args.limit,
         )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(

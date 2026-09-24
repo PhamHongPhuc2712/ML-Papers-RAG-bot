@@ -111,9 +111,10 @@ forward without a demonstrated need.
 - User identity comes only from a verified token — never a client-supplied `user_id`.
   Public corpus data and private uploads never share a Qdrant collection or storage
   namespace. **Hugging Face is an offline artifact destination** and is never queried
-  during a user request. Two offline callers contact it — `corpus mirror` for the corpus
-  and `evaluation/litsearch.py` for the benchmark — and both fetch at a pinned revision.
-  Nothing in the serving path may join them.
+  during a user request. Three offline callers contact it — `corpus mirror` for the
+  corpus, `evaluation/litsearch.py` for the benchmark and `search fetch-model` for the
+  embedding weights — and all fetch at a pinned revision. Nothing in the serving path
+  may join them.
 - Never report tests, benchmarks, corpus coverage or user observations that did not
   actually run. Planned examples are not measured results.
 
@@ -124,6 +125,7 @@ the only environment. Frontend (M3) does not exist yet.
 
 ```bash
 uv sync --project backend --frozen --group dev
+uv sync --project backend --frozen --group dev --group models   # + PyTorch, for real models
 uv run --project backend ruff check backend
 uv run --project backend mypy --config-file backend/pyproject.toml backend/src
 uv run --env-file .env.test --project backend pytest backend/tests -q          # full suite
@@ -151,6 +153,21 @@ uv run --env-file .env --project backend python -m copilot.cli corpus coverage
 uv run --env-file .env --project backend python -m copilot.cli corpus compare-chunkers --source <pdf dir>
 uv run --env-file .env --project backend python -m copilot.cli worker run --worker-id w1
 ```
+
+Retrieval indexes (P2.2), needing the `models` group and the core Qdrant service:
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli search fetch-model
+uv run --env-file .env --project backend python -m copilot.cli search build-index --manifest SNAP/manifest.json --collections papers
+uv run --env-file .env --project backend python -m copilot.cli search validate-index --release SNAP
+uv run --env-file .env --project backend python -m copilot.cli corpus activate --release SNAP
+uv run --env-file .env --project backend python -m copilot.cli search compare-precision --manifest SNAP/manifest.json
+```
+
+`.env`'s `DATABASE_URL` names `copilot_v2`, the live corpus. Building never activates;
+activation needs an explicit release id and re-validates the whole collection pair.
+PyTorch is in the opt-in `models` group so CI never installs or downloads a model —
+unit and integration tests use the deterministic two-dimensional `FixtureEmbedding`.
 
 `corpus run` is resumable: progress lives in `${DATA_DIR}/runs/<plan>-state.json`, keyed
 to the plan rather than the invocation, so a restart continues at the next venue-year.
