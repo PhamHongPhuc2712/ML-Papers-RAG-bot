@@ -88,3 +88,32 @@ def test_an_unknown_release_cannot_be_activated(migrated_database, test_settings
     _clear(migrated_database)
     with pytest.raises(ReleaseError, match="release_unknown"):
         activate_release(migrated_database, "nope", validator=lambda release: True)
+
+
+def test_the_serving_release_cannot_be_dropped(migrated_database, test_settings):
+    from copilot.corpus.releases import drop_release
+
+    assert_safe_test_database(test_settings)
+    _clear(migrated_database)
+    _stage(migrated_database, "r-live")
+    _stage(migrated_database, "r-spare")
+    activate_release(migrated_database, "r-live", validator=lambda release: True)
+    with pytest.raises(ReleaseError, match="release_active"):
+        drop_release(migrated_database, "r-live")
+    assert drop_release(migrated_database, "r-spare").id == "r-spare"
+    assert _active(migrated_database) == "r-live"
+
+
+def test_restaging_a_release_with_another_model_is_refused(migrated_database, test_settings):
+    assert_safe_test_database(test_settings)
+    _clear(migrated_database)
+    _stage(migrated_database)
+    with pytest.raises(ReleaseError, match="release_conflict"):
+        stage_release(
+            migrated_database,
+            "r-2026-09",
+            paper_collection="paper_abstracts_r-2026-09",
+            chunk_collection="paper_chunks_r-2026-09",
+            model_revision="another-model",
+            manifest_sha256="ab" * 32,
+        )
