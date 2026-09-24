@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 from pathlib import Path
 
 from .corpus.dedupe import IdentityConflictError, QuarantineError, resolve_paper
@@ -187,7 +188,11 @@ def run_export(
     engine = make_engine(database_url)
     try:
         manifest = export_snapshot(run_id, destination, engine=engine)
-        return {"out": str(destination), **{k: manifest[k] for k in ("counts", "rights")}}
+        return {
+            "out": str(destination),
+            "shards": len(manifest["shards"]),
+            **{k: manifest[k] for k in ("counts", "rights", "digests")},
+        }
     finally:
         engine.dispose()
 
@@ -612,7 +617,7 @@ def _parser() -> argparse.ArgumentParser:
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
     run.add_argument(
-        "--worker-id", default=f"{os.environ.get('COMPUTERNAME', 'worker')}-{os.getpid()}"
+        "--worker-id", default=f"{socket.gethostname() or 'worker'}-{os.getpid()}"
     )
     run.add_argument("--once", action="store_true", help="process at most one job")
     run.add_argument("--max-jobs", type=int, default=None)

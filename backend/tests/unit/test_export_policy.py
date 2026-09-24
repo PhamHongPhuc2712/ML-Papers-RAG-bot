@@ -12,6 +12,8 @@ from copilot.corpus.export import (
     ExportError,
     coverage_rows,
     public_export_rows,
+    record_digest,
+    shard_paths,
     validate_manifest,
 )
 
@@ -63,12 +65,14 @@ def test_coverage_percentage_needs_a_known_denominator():
     assert row["coverage_pct"] == 50.0
 
 
-def _manifest(tmp_path: Path, shard: bytes = b"payload") -> Path:
+def _manifest(
+    tmp_path: Path, shard: bytes = b"payload", *, schema_version: int = SCHEMA_VERSION
+) -> Path:
     import hashlib
 
     (tmp_path / "papers.parquet").write_bytes(shard)
     manifest = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "run_id": "r1",
         "created_at": "2026-09-16T00:00:00+00:00",
         "shards": [
@@ -112,3 +116,18 @@ def test_a_missing_shard_is_reported(tmp_path):
     (tmp_path / "papers.parquet").unlink()
     with pytest.raises(ExportError, match="shard_missing"):
         validate_manifest(path)
+
+
+def test_a_version_one_snapshot_still_validates_and_names_its_tables(tmp_path):
+    """The G1 snapshot predates shard roles; its file names are its tables."""
+
+    manifest = validate_manifest(_manifest(tmp_path, schema_version=1))
+    assert shard_paths(manifest, "papers") == ["papers.parquet"]
+    assert shard_paths(manifest, "chunks") == []
+
+
+def test_record_digest_depends_on_order_and_content():
+    rows = [("a", "1" * 64), ("b", "2" * 64)]
+    assert record_digest(rows) == record_digest(list(rows))
+    assert record_digest(rows) != record_digest(list(reversed(rows)))
+    assert record_digest(rows) != record_digest([("a", "1" * 64), ("b", "3" * 64)])
