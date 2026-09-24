@@ -601,6 +601,13 @@ def _parser() -> argparse.ArgumentParser:
     rechunk.add_argument("--shards", type=int, default=1)
     rechunk.add_argument("--shard", type=int, default=0)
 
+    evaluation = subparsers.add_parser("eval")
+    evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
+    validate_dataset_cmd = evaluation_commands.add_parser(
+        "validate-dataset", help="refuse a dataset that leaks between splits"
+    )
+    validate_dataset_cmd.add_argument("--path", type=Path, required=True)
+
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
@@ -630,6 +637,10 @@ def main(argv: list[str] | None = None) -> int:
                 staging_dir=_staging_dir(args.staging_dir, parser),
             )
         )
+    elif args.command == "eval" and args.eval_command == "validate-dataset":
+        from .evaluation.datasets import validate_dataset
+
+        result = dict(validate_dataset(args.path))
     elif args.command == "corpus" and args.corpus_command == "ingest":
         result = run_ingest(
             args.manifest,
