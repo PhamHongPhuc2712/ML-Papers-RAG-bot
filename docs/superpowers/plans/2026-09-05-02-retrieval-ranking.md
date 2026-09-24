@@ -100,7 +100,7 @@ from before the rebuild.
 No new machinery is needed; P1.5's export is implemented and verified. It has simply
 never been run against the finished corpus.
 
-- [ ] Export `copilot_v2` — 85,729 papers, 3,426,221 chunks, `paragraph-pack-v1` — and
+- [x] Export `copilot_v2` — 85,729 papers, 3,426,221 chunks, `paragraph-pack-v1` — and
       validate the manifest checksums before indexing anything:
 
 ```bash
@@ -130,8 +130,15 @@ Against: two passes over shared infrastructure, and the atomic-switch acceptance
 (crash between collection builds, rollback restoring both) are specifically about
 building *two* collections, so splitting them must not quietly drop those cases.
 
-- [ ] Decide and record it in the progress tracker before writing `search/index.py`.
+- [x] Decide and record it in the progress tracker before writing `search/index.py`.
       Either order satisfies the task; an undocumented order does not.
+
+**Done 2026-09-24.** The export first had to be made to stream: it loaded every chunk row,
+text included, before discarding all of them. Snapshot `m2-20260924T095724Z` holds 85,729
+papers and 3,426,221 chunk *identities* — id plus text sha256, no text — with per-table
+digests, and validates. Decided: one release, both collections, abstracts built first;
+chunk vectors built from the database and bound to the snapshot by digest. Both recorded
+in the progress tracker.
 
 **Files:**
 
