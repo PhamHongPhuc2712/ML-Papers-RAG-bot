@@ -1,10 +1,10 @@
 # M2 index evidence — vectors, release validation and switching
 
-Date: 2026-09-24
+Date: 2026-09-24 to 2026-09-27
 Task: P2.2, index paper and chunk vectors with atomic release switching
-Status: **in progress** — the paper collection of release `m2-20260924T095724Z` is
-built and verified; its chunk collection is building. The release is staged and
-**not active**: activation needs both collections, and refuses otherwise.
+Status: **done** — release `m2-20260924T095724Z` holds both collections (85,729 paper
+points, 3,426,221 chunk points), validated with no problems and **active** since
+2026-09-27 14:53 UTC; `/health/ready` returns 200 with its id.
 Host: WSL2 Linux, 12 cores / 23 GB RAM, RTX 3080 Laptop 16 GB (driver 610.47),
 `DATA_DIR` on ext4 with 320 GB free. `postgres:17.11-bookworm`, `qdrant/qdrant:v1.19.1`,
 qdrant-client 1.19.0, torch 2.14.0+cu130, transformers 5.17.0, tokenizers 0.23.2.
@@ -78,6 +78,7 @@ pilot's encoded batches are a prefix of the full build's and come back as cache 
 | **papers, full** | **85,729** | 100.1 /s | 13m19s | **591.9 MB** | **6.9 KB** | 3 |
 | chunks, pilot-1k (40,960 = 1k papers × 40) | 40,960 | 64.2 /s | 17m50s | 374.8 MB | 9.1 KB | 0 |
 | chunks, pilot-10k (409,600 = 10k papers × 40) | 409,600 | 60.1 /s | 1h51m | 3,185.6 MB | 7.8 KB | 0 |
+| **chunks, full** | **3,426,221** | 55.6 /s mean | 19h39m running | **26,052 MB** | **7.6 KB** | 0 |
 
 Allocated disk is `du`'s blocks, not apparent size: Qdrant preallocates sparsely, and the
 1k paper collection is 847 MB apparent against 14 MB allocated. The marginal paper cost
@@ -112,6 +113,28 @@ available; and ~14 hours to encode the 3,016,621 chunks the pilots did not alrea
 The build was started on these numbers, detached from any session, logging to
 `${DATA_DIR}/runs/m2-20260924T095724Z-chunks.{log,json}`.
 
+**The full chunk build, measured.** Started 2026-09-24 21:28 and finished 2026-09-27
+22:51; 73h22m of wall clock but 19h39m of running time, because the host was suspended in
+between and the build only advances while it is awake. Exit 0. The first 1,600 batches —
+both pilots' — came back from the cache (11,784 misses). Its digest `d4ee3262…4d25` equals
+the snapshot's; 0 of 3,426,221 chunks truncated at 1,280 tokens. BM25 statistics: 3,375,973
+terms, average length 265.8, sha256 `35c3bd70…ed60`. 26.05 GB allocated once Qdrant had
+compacted (28.05 GB at the end of the upload) — the projection's 26-30 GB. Build peak RSS
+4.44 GB; afterwards Qdrant used 4.9 GB and the host had 15.1 GB available.
+
+The projection's ~14 hours was wrong in one respect worth recording. Encoding held ~60/s
+until ~1.4 M points, after which **Qdrant, not the GPU, set the pace**: the rate fell to
+54/s at 1.6 M, 41/s at 2.0 M, 33/s at 2.6 M and ~25/s near 2.66 M, with upserts averaging
+7.7 s against ~4 s to encode a batch; the encoder waited 4.2 hours on uploads in total. The
+collection was created with indexing deferred, so every point stayed in Qdrant's appendable
+segments for the whole upload and each write grew slower; memory stayed inside the host
+(no restart, no OOM). A future build of this size should let the optimizer run during the
+upload — its first 1.4 M points were free of the slowdown — rather than defer all of it.
+
+The HNSW graph and int8 quantization were in place minutes after the upload finished: approximate
+dense search over the 3.4 M chunks answers in 51.6 ms p50 (96.8 ms max over 20 random
+queries) against 6.9 s for an exact scan.
+
 ## BM25 served from Qdrant equals the oracle
 
 ```text
@@ -125,12 +148,17 @@ through P2.1's exact in-memory BM25 over the same 85,729 texts. The residual sco
 float32 storage. The stored weights are final BM25 document weights and the collection has
 no IDF modifier, so this is BM25 itself, not a provider variant.
 
-## Dense smoke test (not an evaluation)
+## Smoke tests (not an evaluation)
 
 200 sampled titles as queries against the paper collection: the paper itself ranks first
 for 97.5% and in the top 10 for 99.5%. Latency p50 24.9 ms, p95 42.5 ms, query encoding on
-the GPU included. Retrieval quality is E3/E4's to measure; this only shows the index serves
-what it was built from.
+the GPU included.
+
+Against the chunk collection, 200 titles of papers with full text: one of the paper's own
+chunks is in the top 10 for 99% by BM25 (p50 9.0 ms, p95 72.3 ms) and 91% densely (p50
+90.2 ms, p95 678.6 ms, float32 originals re-read from disk to rescore). Loading the
+3.4 M-term BM25 statistics takes 8.4 s, once per process. Retrieval quality is E3/E4's to
+measure; this only shows each index serves what it was built from.
 
 ## Validation, switching and rollback evidence
 
@@ -176,17 +204,27 @@ were wrong still passed. Every expected item is now checked.
 - The fixture model is deterministic and two-dimensional, as the plan asks; tests never load
   weights.
 
-## Still to do in P2.2
+## Activation
 
-1. Finish the chunk collection of `m2-20260924T095724Z` (running), record its measurements
-   here, then `search validate-index --release m2-20260924T095724Z` and
-   `corpus activate --release m2-20260924T095724Z`.
-2. A real-corpus restore drill: Qdrant snapshot of both collections, recover, re-validate.
-3. ~~Drop the `pilot-*` releases once their numbers are recorded here.~~ Both dropped with
-   `search drop-index`.
+```text
+search validate-index --release m2-20260924T095724Z   -> valid: true, problems: [] (23 s)
+corpus activate --release m2-20260924T095724Z         -> active, previous: null
+GET /health/ready                                     -> 200 {"status":"ok","corpus_release_id":"m2-20260924T095724Z"}
+GET /v1/corpus/coverage                               -> 85,729 papers, 42 venue-years
+```
 
-Known gap, not P2.2's to close: Qdrant writes collection snapshots to `/qdrant/snapshots`
-inside the container, and `compose.yaml` does not bind-mount it under `DATA_DIR`. A real
-snapshot would sit outside the deletable data root and vanish with the container. The
-restore acceptance case runs inside one container's lifetime, so it is unaffected; P5.3's
-local backup should mount `${DATA_DIR}/backups/qdrant` there.
+Validation re-ran every check against the real collections, including the exact-search
+canaries of both. The pilots were dropped with `search drop-index` once their numbers were
+recorded here; the only release on this host is the active one.
+
+## Not done here, and why
+
+- **Rollback on real data.** There is no earlier release to roll back to — this is the
+  first. Rollback is evidenced by `test_rollback_restores_both_collections_together` against
+  the test services with the production chunk layout.
+- **A real-corpus restore drill.** Qdrant writes collection snapshots to `/qdrant/snapshots`
+  inside the container, and `compose.yaml` does not bind-mount it under `DATA_DIR`: a
+  26 GB snapshot would sit outside the deletable data root and vanish with the container.
+  The restore acceptance case runs inside one container's lifetime and passes; P5.3's local
+  backup should mount `${DATA_DIR}/backups/qdrant` there first, then drill on this
+  release.

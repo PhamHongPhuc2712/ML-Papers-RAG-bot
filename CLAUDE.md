@@ -8,7 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 isolated persistence harness, canonical paper identity with provenance, parser and
 chunker, durable job queue with source adapters, and immutable corpus snapshots with a
 coverage endpoint. `docs/superpowers/progress.md` is the live task and gate board — read
-it before assuming anything about status. Next milestone is M2, starting with P2.1.
+it before assuming anything about status. M2 is under way: P2.1 (metrics, labels, exact
+BM25) and P2.2 (indexes and release switching) are done, and release
+`m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
+Next is P2.3.
 
 Beyond the plan tasks, the corpus pipeline gained a venue-by-venue runner (`corpus
 mirror` / `corpus run`) that mirrors one venue-year, ingests it, parses with N workers,
