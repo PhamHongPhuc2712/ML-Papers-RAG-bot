@@ -16,6 +16,8 @@ DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
 DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
 DEFAULT_ARTIFACTS_PATH = Path("configs/artifacts.yaml")
 DEFAULT_MODELS_PATH = Path("configs/models.yaml")
+DEFAULT_SEARCH_PATH = Path("configs/search.yaml")
+DEFAULT_DATASET_PATH = Path("data/fixtures/retrieval")
 
 
 def default_data_dir() -> Path | None:
@@ -524,13 +526,20 @@ def _host_headroom(data_dir: Path) -> dict[str, object]:
 
 
 def run_fetch_model(*, models: Path, data_dir: Path) -> dict[str, object]:
-    """Capture the pinned embedding files once, offline, and verify them."""
+    """Capture the pinned embedder and reranker once, offline, and verify them."""
 
     from .models.embeddings import fetch_model, load_embedding_spec
+    from .search.rerank import load_reranker_spec
 
-    spec = load_embedding_spec(models)
-    directory = fetch_model(spec, data_dir)
-    return {"identity": spec.identity, "directory": str(directory), "verified": True}
+    embedding = load_embedding_spec(models)
+    reranker = load_reranker_spec(models)
+    return {
+        "embedding": {"identity": embedding.identity,
+                      "directory": str(fetch_model(embedding, data_dir))},
+        "reranker": {"model": f"{reranker.repo}@{reranker.revision}",
+                     "directory": str(fetch_model(reranker, data_dir))},
+        "verified": True,
+    }
 
 
 def run_build_index(
@@ -857,6 +866,275 @@ def run_compare_oracle(
         engine.dispose()
 
 
+def run_compare_reranker_precision(
+    *,
+    release: str,
+    models: Path,
+    data_dir: Path,
+    database_url: str,
+    qdrant_url: str | None,
+    sample: int,
+    seed: int,
+    depth: int,
+) -> dict[str, object]:
+    """The reranker on CPU float32 against GPU reduced precision (spec §7).
+
+    Candidates are what it will really see: the BM25 top ``depth`` for sampled
+    paper titles. What matters is whether the order survives, so the report
+    is per-query top-10 overlap and rank agreement, beside the raw score gap.
+    """
+
+    import random
+    import statistics
+    import time
+
+    import numpy as np
+    from qdrant_client import QdrantClient
+
+    from .corpus.releases import load_release
+    from .search.index import snapshot_papers
+    from .search.rerank import CrossEncoderReranker, load_reranker_spec
+    from .search.service import PaperStore
+    from .search.sparse import SparseRetriever
+
+    spec = load_reranker_spec(models)
+    engine = make_engine(database_url)
+    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    try:
+        record = load_release(engine, release)
+        titles = [
+            document.text.split("\n", 1)[0]
+            for document in snapshot_papers(Path(str(record.counts["manifest"])))
+        ]
+        queries = random.Random(seed).sample(titles, sample)
+        sparse = SparseRetriever(engine, client)
+        store = PaperStore(engine)
+        pairs = []
+        for query in queries:
+            ids = [paper_id for paper_id, _ in sparse.search(query, None, depth, release)]
+            rows = store.load(ids)
+            pairs.append((query, [rows[paper_id].text for paper_id in ids if paper_id in rows]))
+        results: dict[str, list[list[float]]] = {}
+        timings: dict[str, float] = {}
+        precisions: dict[str, str] = {}
+        for device in ("cpu", "cuda"):
+            reranker = CrossEncoderReranker(spec, data_dir, device=device)
+            precisions[device] = reranker.precision
+            reranker.score("warm up", ["warm up"])
+            started = time.monotonic()
+            results[device] = [reranker.score(query, texts) for query, texts in pairs]
+            timings[device] = time.monotonic() - started
+            del reranker
+    finally:
+        client.close()
+        engine.dispose()
+
+    overlaps: list[float] = []
+    agreements: list[float] = []
+    gaps: list[float] = []
+    for cpu_scores, gpu_scores in zip(results["cpu"], results["cuda"], strict=True):
+        cpu = np.asarray(cpu_scores)
+        gpu = np.asarray(gpu_scores)
+        gaps.append(float(np.max(np.abs(cpu - gpu))))
+        top_cpu = set(np.argsort(-cpu)[:10].tolist())
+        top_gpu = set(np.argsort(-gpu)[:10].tolist())
+        overlaps.append(len(top_cpu & top_gpu) / 10)
+        # Share of candidate pairs both precisions put in the same order.
+        order = np.sign(cpu[:, None] - cpu[None, :]) == np.sign(gpu[:, None] - gpu[None, :])
+        agreements.append(float(order[np.triu_indices(len(cpu), 1)].mean()))
+    pair_count = sum(len(texts) for _, texts in pairs)
+    return {
+        "model": f"{spec.repo}@{spec.revision}",
+        "pair_max_tokens": spec.pair_max_tokens,
+        "precision": precisions,
+        "queries": len(pairs),
+        "pairs": pair_count,
+        "pairs_per_second": {k: round(pair_count / v, 1) for k, v in timings.items()},
+        "top10_overlap_mean": statistics.fmean(overlaps),
+        "top10_overlap_min": min(overlaps),
+        "pairwise_order_agreement_mean": statistics.fmean(agreements),
+        "pairwise_order_agreement_min": min(agreements),
+        "max_abs_logit_gap": max(gaps),
+    }
+
+
+def _litsearch_queries(data_dir: Path, split: str, dataset: Path) -> list[str]:
+    """In-domain LitSearch query text for one split, read from DATA_DIR only.
+
+    The repository copy carries ids and splits but no query text: LitSearch
+    declares no license, so the text stays local and never lands in a report.
+    """
+
+    from .evaluation.datasets import hydrate, read_dataset
+
+    source = data_dir / "benchmarks" / "litsearch-dataset" / "queries.jsonl"
+    texts = {
+        str(row["query_id"]): str(row["query"])
+        for row in (json.loads(line) for line in source.read_text(encoding="utf-8").splitlines())
+        if row.get("query")
+    }
+    frozen = hydrate(read_dataset(dataset), texts)
+    in_split = {record.query_id for record in frozen.splits if record.split == split}
+    return [
+        record.query
+        for record in frozen.queries
+        if record.query_id in in_split and record.in_domain
+    ]
+
+
+def run_search_pilot(
+    *,
+    models: Path,
+    search_config: Path,
+    data_dir: Path,
+    database_url: str,
+    qdrant_url: str | None,
+    mode: str,
+    queries: list[str],
+    split: str,
+    dataset: Path,
+    limit_queries: int | None,
+    traces: str | None,
+) -> dict[str, object]:
+    """Run the real service over a query set and report every stage's timing.
+
+    Handwritten ``--query`` strings come back with their top results, to be
+    quoted as trace examples. LitSearch queries report aggregates only, and
+    their traces, if kept, are written under DATA_DIR, never the repository.
+    """
+
+    import statistics
+    import time
+    from collections import Counter
+
+    from qdrant_client import QdrantClient
+
+    from .contracts import PaperFilters, SearchRequest
+    from .models.embeddings import TransformerEmbedding, load_embedding_spec
+    from .search.dense import DenseRetriever
+    from .search.rerank import CrossEncoderReranker, load_reranker_spec
+    from .search.service import (
+        SearchService,
+        SearchUnavailable,
+        ThreadedStageRunner,
+        load_search_config,
+    )
+    from .search.sparse import SparseRetriever
+
+    handwritten = bool(queries)
+    texts = queries or _litsearch_queries(data_dir, split, dataset)
+    if limit_queries is not None:
+        texts = texts[:limit_queries]
+    embedding = load_embedding_spec(models)
+    engine = make_engine(database_url)
+    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=60)
+    model = TransformerEmbedding(embedding, data_dir)
+    reranker = CrossEncoderReranker(load_reranker_spec(models), data_dir)
+    runner = ThreadedStageRunner()
+    service = SearchService(
+        engine=engine,
+        lexical=SparseRetriever(engine, client),
+        dense=DenseRetriever(engine, client, model, max_tokens=embedding.max_tokens["papers"]),
+        reranker=reranker,
+        config=load_search_config(search_config),
+        runner=runner,
+    )
+
+    def request(query: str) -> SearchRequest:
+        return SearchRequest.model_validate(
+            {"query": query, "mode": mode, "filters": PaperFilters(), "limit": 20}
+        )
+
+    try:
+        # Cold start is reported apart (spec §12): first-call CUDA work and the
+        # BM25 statistics load belong to the process, not to any one query.
+        started = time.monotonic()
+        service.search_with_trace(request("retrieval augmented generation"))
+        cold = time.monotonic() - started
+
+        stage_seconds: dict[str, list[float]] = {}
+        totals: list[float] = []
+        warnings: Counter[str] = Counter()
+        failures: Counter[str] = Counter()
+        degraded = 0
+        examples = []
+        written = []
+        for query in texts:
+            tick = time.monotonic()
+            try:
+                response, trace = service.search_with_trace(request(query))
+            except SearchUnavailable as error:
+                # A failed query stays in the denominator, as a failure.
+                failures[error.code] += 1
+                totals.append(time.monotonic() - tick)
+                continue
+            totals.append(time.monotonic() - tick)
+            warnings.update(trace.warnings)
+            degraded += int(trace.degraded)
+            for stage, detail in trace.stages.items():
+                if "seconds" in detail:
+                    stage_seconds.setdefault(stage, []).append(float(detail["seconds"]))
+            written.append({"query": query, "trace": trace.__dict__})
+            if handwritten:
+                examples.append(
+                    {
+                        "query": query,
+                        "degraded": response.degraded,
+                        "warnings": response.warnings,
+                        "top": [
+                            {
+                                "rank": item.rank,
+                                "title": response.papers[str(item.paper_id)].title,
+                                "venue": response.papers[str(item.paper_id)].venue,
+                                "year": response.papers[str(item.paper_id)].year,
+                                "scores": {k: round(v, 4) for k, v in item.scores.items()},
+                            }
+                            for item in response.items[:5]
+                        ],
+                        "stage_ms": {
+                            stage: round(1000 * float(detail["seconds"]), 1)
+                            for stage, detail in trace.stages.items()
+                            if "seconds" in detail
+                        },
+                    }
+                )
+    finally:
+        runner.close()
+        client.close()
+        engine.dispose()
+
+    def summary(values: list[float]) -> dict[str, float]:
+        ordered = sorted(values)
+        return {
+            "p50_ms": round(1000 * statistics.median(ordered), 1),
+            "p95_ms": round(1000 * ordered[min(len(ordered) - 1, int(0.95 * len(ordered)))], 1),
+            "max_ms": round(1000 * ordered[-1], 1),
+        }
+
+    traces_path = None
+    if traces:
+        traces_path = data_dir / "runs" / f"{traces}.jsonl"
+        traces_path.parent.mkdir(parents=True, exist_ok=True)
+        with traces_path.open("w", encoding="utf-8") as handle:
+            for row in written:
+                handle.write(json.dumps(row, default=str) + "\n")
+    return {
+        "mode": mode,
+        "source": "handwritten" if handwritten else f"litsearch:{split}:in_domain",
+        "queries": len(texts),
+        "models": {"embedding": model.identity, "reranker": reranker.identity,
+                   "precision": {"embedding": model.precision, "reranker": reranker.precision}},
+        "cold_start_ms": round(1000 * cold, 1),
+        "total": summary(totals) if totals else None,
+        "stages": {stage: summary(values) for stage, values in stage_seconds.items()},
+        "degraded_requests": degraded,
+        "warnings": dict(warnings),
+        "failures": dict(failures),
+        "traces": str(traces_path) if traces_path else None,
+        "examples": examples,
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="copilot")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -987,7 +1265,7 @@ def _parser() -> argparse.ArgumentParser:
     search = subparsers.add_parser("search")
     search_commands = search.add_subparsers(dest="search_command", required=True)
     fetch_model = search_commands.add_parser(
-        "fetch-model", help="capture the pinned embedding files offline and verify them"
+        "fetch-model", help="capture the pinned embedder and reranker offline and verify them"
     )
     fetch_model.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
     fetch_model.add_argument("--data-dir", type=Path, default=None)
@@ -1032,12 +1310,37 @@ def _parser() -> argparse.ArgumentParser:
     precision = search_commands.add_parser(
         "compare-precision", help="CPU float32 against GPU reduced precision on the same texts"
     )
-    precision.add_argument("--manifest", type=Path, required=True)
+    precision.add_argument("--model", choices=["embedding", "reranker"], default="embedding")
+    precision.add_argument("--manifest", type=Path, default=None, help="embedding: texts from")
+    precision.add_argument("--release", default=None, help="reranker: BM25 candidates from")
     precision.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
-    precision.add_argument("--sample", type=int, default=256)
+    precision.add_argument(
+        "--sample", type=int, default=None, help="texts (embedding, 256) or queries (reranker, 10)"
+    )
+    precision.add_argument("--depth", type=int, default=50, help="reranker candidates per query")
     precision.add_argument("--seed", type=int, default=42)
     precision.add_argument("--database-url", default=None)
+    precision.add_argument("--qdrant-url", default=None)
     precision.add_argument("--data-dir", type=Path, default=None)
+
+    pilot = search_commands.add_parser(
+        "pilot", help="run the search service over a query set with stage timing"
+    )
+    pilot.add_argument(
+        "--mode", default="hybrid_rerank", choices=["bm25", "dense", "hybrid", "hybrid_rerank"]
+    )
+    pilot.add_argument(
+        "--query", action="append", default=[], help="handwritten query; repeatable"
+    )
+    pilot.add_argument("--split", default="development", choices=["development", "validation"])
+    pilot.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
+    pilot.add_argument("--limit-queries", type=int, default=None)
+    pilot.add_argument("--traces", default=None, help="write traces to DATA_DIR/runs/NAME.jsonl")
+    pilot.add_argument("--models", type=Path, default=DEFAULT_MODELS_PATH)
+    pilot.add_argument("--search-config", type=Path, default=DEFAULT_SEARCH_PATH)
+    pilot.add_argument("--database-url", default=None)
+    pilot.add_argument("--qdrant-url", default=None)
+    pilot.add_argument("--data-dir", type=Path, default=None)
 
     oracle = search_commands.add_parser(
         "compare-oracle", help="served BM25 against the exact in-memory oracle"
@@ -1211,13 +1514,43 @@ def main(argv: list[str] | None = None) -> int:
             data_dir=_data_dir(args.data_dir, parser),
         )
     elif args.command == "search" and args.search_command == "compare-precision":
-        result = run_compare_precision(
-            manifest=args.manifest,
+        if args.model == "reranker":
+            if not args.release:
+                parser.error("--model reranker needs --release")
+            result = run_compare_reranker_precision(
+                release=args.release,
+                models=args.models,
+                data_dir=_data_dir(args.data_dir, parser),
+                database_url=_database_url(args.database_url),
+                qdrant_url=args.qdrant_url,
+                sample=args.sample or 10,
+                seed=args.seed,
+                depth=args.depth,
+            )
+        else:
+            if not args.manifest:
+                parser.error("--model embedding needs --manifest")
+            result = run_compare_precision(
+                manifest=args.manifest,
+                models=args.models,
+                data_dir=_data_dir(args.data_dir, parser),
+                database_url=_database_url(args.database_url),
+                sample=args.sample or 256,
+                seed=args.seed,
+            )
+    elif args.command == "search" and args.search_command == "pilot":
+        result = run_search_pilot(
             models=args.models,
+            search_config=args.search_config,
             data_dir=_data_dir(args.data_dir, parser),
             database_url=_database_url(args.database_url),
-            sample=args.sample,
-            seed=args.seed,
+            qdrant_url=args.qdrant_url,
+            mode=args.mode,
+            queries=args.query,
+            split=args.split,
+            dataset=args.dataset,
+            limit_queries=args.limit_queries,
+            traces=args.traces,
         )
     elif args.command == "search" and args.search_command == "compare-oracle":
         result = run_compare_oracle(

@@ -36,6 +36,30 @@ embedding:
     cpu: float32
     cuda: float16
 
+reranker:
+  # Cross-encoder for hybrid_rerank (spec §7): scores (query, paper text) pairs,
+  # truncating only the paper side so the query survives whole. Its logits are
+  # ranking signals, not probabilities. Fetched by `search fetch-model` into
+  # ${DATA_DIR}/models/rerankers/<repo>/<revision>/ and verified on every load.
+  repo: BAAI/bge-reranker-v2-m3
+  revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+  files:
+    - file: config.json
+      sha256: 13dcd6c31d9fec9d1d8e158702072f62d7fa7d312a64b9fe057bec9a08cfe41a
+    # Not the embedder's tokenizer.json: same vocabulary family, different file.
+    - file: tokenizer.json
+      sha256: 69564b696052886ed0ac63fa393e928384e0f8caada38c1f4864a9bfbf379c15
+    - file: model.safetensors
+      sha256: d9e3e081faff1eefb84019509b2f5558fd74c1a05a2c7db22f74174fcedb5286
+  # Spec §7's default pair budget; 512 is the comparison P2.5 runs.
+  pair_max_tokens: 1024
+  batch_size: 16
+  # CPU float32 is the reference; GPU float16 only after comparing against it
+  # (reports/m2-ranking.md).
+  precision:
+    cpu: float32
+    cuda: float16
+
 index:
   # Points per upsert, and per embedding-cache entry.
   batch_points: 256

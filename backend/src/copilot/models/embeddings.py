@@ -114,14 +114,35 @@ def _require(mapping: Mapping[str, Any], key: str, kind: type) -> Any:
     return value
 
 
-def load_embedding_spec(path: str | Path) -> EmbeddingSpec:
-    """Read and validate the pinned embedding model; an unpinned one is refused."""
+class PinnedModel(Protocol):
+    """Anything fetched by commit and verified file by file: embedder or reranker."""
+
+    @property
+    def repo(self) -> str: ...
+
+    @property
+    def revision(self) -> str: ...
+
+    @property
+    def files(self) -> tuple[PinnedFile, ...]: ...
+
+    def model_dir(self, data_dir: str | Path) -> Path: ...
+
+
+def model_section(path: str | Path, name: str) -> Mapping[str, Any]:
+    """One model's section of ``configs/models.yaml``."""
 
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(raw, Mapping) or not isinstance(raw.get("embedding"), Mapping):
-        raise EmbeddingError("models_config_invalid", "embedding")
-    embedding = raw["embedding"]
-    files = embedding.get("files")
+    if not isinstance(raw, Mapping) or not isinstance(raw.get(name), Mapping):
+        raise EmbeddingError("models_config_invalid", name)
+    section: Mapping[str, Any] = raw[name]
+    return section
+
+
+def pinned_files(section: Mapping[str, Any]) -> tuple[PinnedFile, ...]:
+    """Every file a model needs, each with the sha256 it must have."""
+
+    files = section.get("files")
     if not isinstance(files, list) or not files:
         raise EmbeddingError("models_config_invalid", "files")
     pinned: list[PinnedFile] = []
@@ -129,18 +150,30 @@ def load_embedding_spec(path: str | Path) -> EmbeddingSpec:
         if not isinstance(entry, Mapping) or not entry.get("file") or not entry.get("sha256"):
             raise EmbeddingError("models_config_invalid", "files")
         pinned.append(PinnedFile(str(entry["file"]), str(entry["sha256"])))
-    revision = _require(embedding, "revision", str)
+    return tuple(pinned)
+
+
+def pinned_revision(section: Mapping[str, Any]) -> str:
+    """The model's commit; a branch name is refused because "main" moves."""
+
+    revision = _require(section, "revision", str)
     if len(revision) != 40:
-        # A branch name is not a pin: "main" moves, a commit does not.
         raise EmbeddingError("models_config_invalid", "revision")
+    return str(revision)
+
+
+def load_embedding_spec(path: str | Path) -> EmbeddingSpec:
+    """Read and validate the pinned embedding model; an unpinned one is refused."""
+
+    embedding = model_section(path, "embedding")
     max_tokens = _require(embedding, "max_tokens", Mapping)
     precision = _require(embedding, "precision", Mapping)
     return EmbeddingSpec(
         repo=_require(embedding, "repo", str),
-        revision=revision,
+        revision=pinned_revision(embedding),
         dimensions=_require(embedding, "dimensions", int),
         preprocessing=_require(embedding, "preprocessing", str),
-        files=tuple(pinned),
+        files=pinned_files(embedding),
         max_tokens={str(k): int(v) for k, v in max_tokens.items()},
         batch_size=_require(embedding, "batch_size", int),
         precision={str(k): str(v) for k, v in precision.items()},
@@ -155,7 +188,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_model_files(spec: EmbeddingSpec, data_dir: str | Path) -> Path:
+def verify_model_files(spec: PinnedModel, data_dir: str | Path) -> Path:
     """Check every pinned file is present and unaltered; return the model directory."""
 
     directory = spec.model_dir(data_dir)
@@ -169,7 +202,7 @@ def verify_model_files(spec: EmbeddingSpec, data_dir: str | Path) -> Path:
     return directory
 
 
-def fetch_model(spec: EmbeddingSpec, data_dir: str | Path) -> Path:
+def fetch_model(spec: PinnedModel, data_dir: str | Path) -> Path:
     """Offline capture of the pinned files at their revision, then verification.
 
     Like ``corpus mirror``, this runs from the CLI and never in the serving

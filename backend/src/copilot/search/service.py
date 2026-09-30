@@ -1,0 +1,484 @@
+"""The search service: one release, two candidate branches, fusion, bounded reranking.
+
+A request reads the active release once and hands that release to every stage,
+so the lexical and dense branches can never answer from different collection
+pairs. The branches run concurrently with identical filters; hybrid modes fuse
+them by RRF, and ``hybrid_rerank`` reorders at most 50 fused candidates with the
+cross-encoder. Every stage has a deadline, and missing one degrades the answer
+explicitly rather than failing it (spec §7):
+
+* a reranker that times out, errors or returns unusable scores leaves the RRF
+  order, with a warning;
+* one failed branch leaves the other branch's order, with a warning;
+* both failing is a typed, retryable error — never an empty page that looks
+  like "no results".
+
+Stage timings, per-stage candidates and scores, and the model revisions go into
+a ``SearchTrace`` kept beside the response for offline analysis; the scores are
+ranking signals and the response never presents them as probabilities.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
+from dataclasses import dataclass, field
+from functools import partial
+from pathlib import Path
+from typing import Any, Protocol
+from uuid import UUID, uuid4
+
+import yaml
+from sqlalchemy import Engine, text
+
+from ..contracts import (
+    PaperFilters,
+    PaperSummary,
+    RankedPaper,
+    Reranker,
+    SearchRequest,
+    SearchResponse,
+)
+from ..corpus.releases import ReleaseRecord, capture_release
+from .fusion import RRF_K, rrf
+from .lexical import paper_text
+from .rerank import rerank_order, validate_scores
+
+TIMEOUT = "timeout"
+
+
+class SearchUnavailable(RuntimeError):
+    """No answer can be given; ``retryable`` says whether trying again may help."""
+
+    def __init__(self, code: str, detail: str = "", *, retryable: bool = True) -> None:
+        self.code = code
+        self.retryable = retryable
+        super().__init__(f"{code}:{detail}" if detail else code)
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    candidates_per_branch: int = 100
+    rrf_k: int = RRF_K
+    rerank_depth: int = 50
+    branch_seconds: float = 1.0
+    rerank_seconds: float = 1.5
+    total_seconds: float = 3.0
+    rerank_retries: int = 1
+
+
+def load_search_config(path: str | Path) -> SearchConfig:
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    deadlines = raw.get("deadlines_seconds") or {}
+    return SearchConfig(
+        candidates_per_branch=int((raw.get("candidates") or {}).get("per_branch", 100)),
+        rrf_k=int((raw.get("fusion") or {}).get("rrf_k", RRF_K)),
+        rerank_depth=int((raw.get("rerank") or {}).get("depth", 50)),
+        branch_seconds=float(deadlines.get("branch", 1.0)),
+        rerank_seconds=float(deadlines.get("rerank", 1.5)),
+        total_seconds=float(deadlines.get("total", 3.0)),
+        rerank_retries=int(raw.get("rerank_retries", 1)),
+    )
+
+
+class CandidateRetriever(Protocol):
+    """Both branches: a release id in, (paper id, branch score) pairs out."""
+
+    def search(
+        self, query: str, filters: PaperFilters | None, limit: int, release_id: str
+    ) -> list[tuple[str, float]]: ...
+
+
+@dataclass
+class Outcome:
+    """What one stage produced within its budget: a value, or why not."""
+
+    value: Any = None
+    error: str | None = None
+    seconds: float = 0.0
+
+
+Stage = tuple[Callable[[], Any], float]
+
+
+class StageRunner(Protocol):
+    """Runs stages concurrently, each against its own deadline."""
+
+    def run(self, stages: Mapping[str, Stage]) -> dict[str, Outcome]: ...
+
+
+class ThreadedStageRunner:
+    """Stages on per-kind thread lanes; a stage past its deadline is reported, not awaited.
+
+    Python cannot cancel a running thread, so a stage that overruns keeps
+    running in the background and its result is discarded. Each stage kind has
+    its own lane, so overrunning model calls hold only their own lane's threads,
+    never the ones the lexical branch needs. A model lane has one worker, so
+    abandoned calls wait their turn rather than piling onto the device, and a
+    stage still queued when its deadline passes is cancelled without running:
+    its answer could no longer be used.
+    """
+
+    LANES: Mapping[str, int] = {"lexical": 4, "dense": 1, "rerank": 1}
+
+    def __init__(self, lanes: Mapping[str, int] | None = None) -> None:
+        self._sizes = dict(self.LANES if lanes is None else lanes)
+        self._lanes: dict[str, ThreadPoolExecutor] = {}
+        self._lock = threading.Lock()
+
+    def _lane(self, name: str) -> ThreadPoolExecutor:
+        with self._lock:
+            lane = self._lanes.get(name)
+            if lane is None:
+                lane = ThreadPoolExecutor(
+                    max_workers=self._sizes.get(name, 1), thread_name_prefix=f"search-{name}"
+                )
+                self._lanes[name] = lane
+            return lane
+
+    def run(self, stages: Mapping[str, Stage]) -> dict[str, Outcome]:
+        started = time.monotonic()
+        futures = {name: self._lane(name).submit(fn) for name, (fn, _) in stages.items()}
+        outcomes: dict[str, Outcome] = {}
+        for name, future in futures.items():
+            budget = stages[name][1]
+            remaining = max(0.0, budget - (time.monotonic() - started))
+            try:
+                value = future.result(timeout=remaining)
+            except FutureTimeout:
+                # Succeeds only while the stage is still queued behind its lane.
+                future.cancel()
+                outcomes[name] = Outcome(error=TIMEOUT, seconds=budget)
+                continue
+            except Exception as error:  # noqa: BLE001 - every stage failure is typed below
+                outcomes[name] = Outcome(
+                    error=getattr(error, "code", type(error).__name__),
+                    seconds=time.monotonic() - started,
+                )
+                continue
+            outcomes[name] = Outcome(value=value, seconds=time.monotonic() - started)
+        return outcomes
+
+    def close(self) -> None:
+        with self._lock:
+            for lane in self._lanes.values():
+                lane.shutdown(wait=False, cancel_futures=True)
+            self._lanes.clear()
+
+
+@dataclass(frozen=True)
+class PaperRow:
+    paper_id: str
+    title: str
+    abstract: str | None
+    authors: tuple[str, ...]
+    venue: str
+    year: int
+    pdf_url: str | None
+    fulltext: bool
+
+    @property
+    def text(self) -> str:
+        """The canonical paper text the reranker reads (spec §7)."""
+
+        return paper_text(self.title, self.abstract)
+
+    def summary(self) -> PaperSummary:
+        return PaperSummary(
+            title=self.title,
+            authors=list(self.authors),
+            venue=self.venue,
+            year=self.year,
+            abstract=self.abstract,
+            pdf_url=self.pdf_url,
+            fulltext_indexed=self.fulltext,
+        )
+
+
+_PAPER_ROWS = """
+select p.id::text as paper_id,
+       p.title,
+       p.abstract,
+       coalesce(p.publication_year, 0) as year,
+       coalesce(v.name, '') as venue,
+       p.pdf_url,
+       exists (
+           select 1 from paper_versions pv
+           where pv.paper_id = p.id and pv.parse_status = 'parsed'
+       ) as fulltext,
+       coalesce((
+           select array_agg(a.name order by pa.position)
+           from paper_authors pa join authors a on a.id = pa.author_id
+           where pa.paper_id = p.id
+       ), '{}') as authors
+from papers p
+left join venues v on v.id = p.venue_id
+where p.id = any(cast(:ids as uuid[]))
+"""
+
+
+class PaperStore:
+    """Canonical paper metadata, hydrated separately from ranking (plan P2.3)."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def load(self, paper_ids: Sequence[str]) -> dict[str, PaperRow]:
+        if not paper_ids:
+            return {}
+        with self._engine.connect() as connection:
+            rows = connection.execute(text(_PAPER_ROWS), {"ids": list(paper_ids)}).mappings()
+            return {
+                str(row["paper_id"]): PaperRow(
+                    paper_id=str(row["paper_id"]),
+                    title=str(row["title"]),
+                    abstract=row["abstract"],
+                    authors=tuple(str(name) for name in row["authors"]),
+                    venue=str(row["venue"]),
+                    year=int(row["year"]),
+                    pdf_url=row["pdf_url"],
+                    fulltext=bool(row["fulltext"]),
+                )
+                for row in rows
+            }
+
+
+@dataclass
+class SearchTrace:
+    """Everything a stage decided, for offline analysis; never shown as probabilities."""
+
+    request_id: str
+    release_id: str
+    mode: str
+    models: dict[str, str]
+    stages: dict[str, dict[str, Any]] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    seconds: float = 0.0
+
+    @property
+    def degraded(self) -> bool:
+        return bool(self.warnings)
+
+
+_BRANCH_SCORE = {"lexical": "bm25", "dense": "dense"}
+_MODE_BRANCHES = {
+    "bm25": ("lexical",),
+    "dense": ("dense",),
+    "hybrid": ("lexical", "dense"),
+    "hybrid_rerank": ("lexical", "dense"),
+}
+
+
+def _first_occurrence(hits: Sequence[tuple[str, float]]) -> list[tuple[str, float]]:
+    """A branch that repeats an ID keeps it once, at its best (first) rank and score."""
+
+    seen: dict[str, float] = {}
+    for paper_id, score in hits:
+        seen.setdefault(str(paper_id), float(score))
+    return list(seen.items())
+
+
+def _warning(stage: str, error: str) -> str:
+    if error == TIMEOUT:
+        return f"{stage}_timeout"
+    if error in {"score_count_mismatch", "nonfinite_score"}:
+        return f"{stage}_invalid_scores"
+    return f"{stage}_unavailable"
+
+
+class SearchService:
+    """``search(request) -> SearchResponse``, with a trace of how it got there."""
+
+    def __init__(
+        self,
+        *,
+        engine: Engine,
+        lexical: CandidateRetriever,
+        dense: CandidateRetriever,
+        reranker: Reranker | None,
+        config: SearchConfig,
+        runner: StageRunner | None = None,
+        papers: PaperStore | None = None,
+        capture: Callable[[], ReleaseRecord | None] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._branches: dict[str, CandidateRetriever] = {"lexical": lexical, "dense": dense}
+        self._reranker = reranker
+        self._config = config
+        self._runner = runner or ThreadedStageRunner()
+        self._papers = papers or PaperStore(engine)
+        self._capture = capture or (lambda: capture_release(engine))
+        self._clock = clock
+
+    def search(self, request: SearchRequest) -> SearchResponse:
+        return self.search_with_trace(request)[0]
+
+    def search_with_trace(self, request: SearchRequest) -> tuple[SearchResponse, SearchTrace]:
+        started = self._clock()
+        request_id = uuid4()
+        # Read once: every stage of this request uses this release's pair.
+        release = self._capture()
+        if release is None:
+            raise SearchUnavailable("corpus_not_ready")
+        trace = SearchTrace(
+            request_id=str(request_id),
+            release_id=release.id,
+            mode=request.mode,
+            models={
+                "embedding": release.model_revision,
+                "reranker": str(getattr(self._reranker, "identity", "none")),
+            },
+        )
+        config = self._config
+
+        def remaining() -> float:
+            return config.total_seconds - (self._clock() - started)
+
+        branches = _MODE_BRANCHES[request.mode]
+        budget = max(0.0, min(config.branch_seconds, remaining()))
+        stages: dict[str, Stage] = {}
+        for name in branches:
+            search = partial(
+                self._branches[name].search,
+                request.query,
+                request.filters,
+                config.candidates_per_branch,
+                release.id,
+            )
+            stages[name] = (search, budget)
+        outcomes = self._runner.run(stages)
+
+        lists: dict[str, list[tuple[str, float]]] = {}
+        for name in branches:
+            outcome = outcomes[name]
+            if outcome.error is None:
+                hits = _first_occurrence(outcome.value)
+                lists[name] = hits
+                trace.stages[name] = {"seconds": round(outcome.seconds, 4), "candidates": hits}
+            else:
+                trace.stages[name] = {"seconds": round(outcome.seconds, 4), "error": outcome.error}
+                trace.warnings.append(_warning(name, outcome.error))
+        if not lists:
+            trace.seconds = self._clock() - started
+            raise SearchUnavailable("candidates_unavailable", ",".join(trace.warnings))
+
+        scores: dict[str, dict[str, float]] = {}
+        for name, hits in lists.items():
+            for paper_id, score in hits:
+                scores.setdefault(paper_id, {})[_BRANCH_SCORE[name]] = float(score)
+
+        if len(lists) == 1:
+            # One branch — by mode or because the other failed: its own order stands.
+            ((name, hits),) = lists.items()
+            ordered = [(paper_id, float(score)) for paper_id, score in hits]
+        else:
+            ordered = rrf([[pid for pid, _ in lists[name]] for name in branches], config.rrf_k)
+            for paper_id, fused in ordered:
+                scores[paper_id]["rrf"] = fused
+            trace.stages["fusion"] = {"k": config.rrf_k, "candidates": ordered}
+
+        rows: dict[str, PaperRow] = {}
+        if request.mode == "hybrid_rerank":
+            ordered = self._rerank(request.query, ordered, scores, trace, remaining, rows)
+
+        page = ordered[: request.limit]
+        self._hydrate([paper_id for paper_id, _ in page], rows, trace)
+        missing = [paper_id for paper_id, _ in page if paper_id not in rows]
+        if missing:
+            # Indexed but no longer in the database: served without inventing metadata.
+            trace.warnings.append("metadata_missing")
+            page = [(paper_id, score) for paper_id, score in page if paper_id in rows]
+        trace.stages["hydrate"]["missing"] = missing
+        trace.seconds = self._clock() - started
+
+        response = SearchResponse(
+            request_id=request_id,
+            corpus_release_id=release.id,
+            items=[
+                RankedPaper(
+                    paper_id=UUID(paper_id),
+                    score=score,
+                    scores=scores.get(paper_id, {}),
+                    rank=rank,
+                )
+                for rank, (paper_id, score) in enumerate(page, start=1)
+            ],
+            papers={paper_id: rows[paper_id].summary() for paper_id, _ in page},
+            next_cursor=None,
+            degraded=trace.degraded,
+            warnings=list(trace.warnings),
+        )
+        return response, trace
+
+    def _hydrate(
+        self, paper_ids: Sequence[str], rows: dict[str, PaperRow], trace: SearchTrace
+    ) -> None:
+        """Load the metadata not yet loaded; every load counts toward one hydrate stage."""
+
+        tick = self._clock()
+        rows.update(self._papers.load([paper_id for paper_id in paper_ids if paper_id not in rows]))
+        stage = trace.stages.setdefault("hydrate", {"seconds": 0.0})
+        stage["seconds"] = round(stage["seconds"] + self._clock() - tick, 4)
+
+    def _rerank(
+        self,
+        query: str,
+        fused: list[tuple[str, float]],
+        scores: dict[str, dict[str, float]],
+        trace: SearchTrace,
+        remaining: Callable[[], float],
+        rows: dict[str, PaperRow],
+    ) -> list[tuple[str, float]]:
+        """Reorder at most ``depth`` fused candidates; on any failure keep the RRF order.
+
+        Only the reranked head is returned: appending the unreranked tail would
+        rank reranker logits against RRF scores, which measure different things.
+        """
+
+        head = fused[: self._config.rerank_depth]
+        reranker = self._reranker
+        if not head:
+            return head
+        if reranker is None:
+            trace.warnings.append("rerank_unavailable")
+            return head
+        self._hydrate([paper_id for paper_id, _ in head], rows, trace)
+        # Indexed but gone from the database: no text to judge and no metadata to
+        # serve, so it leaves the candidates here, and says so, either way.
+        if any(paper_id not in rows for paper_id, _ in head):
+            trace.warnings.append("metadata_missing")
+            head = [pair for pair in head if pair[0] in rows]
+        candidates = [paper_id for paper_id, _ in head]
+        texts = [rows[paper_id].text for paper_id in candidates]
+
+        def score() -> list[float]:
+            return validate_scores(reranker.score(query, texts), len(texts))
+
+        attempts = 1 + max(0, self._config.rerank_retries)
+        errors: list[str] = []
+        for _ in range(attempts):
+            budget = min(self._config.rerank_seconds, remaining())
+            if budget <= 0:
+                errors.append(TIMEOUT)
+                break
+            outcome = self._runner.run({"rerank": (score, budget)})["rerank"]
+            if outcome.error is None:
+                ordered = rerank_order(candidates, outcome.value)
+                for paper_id, value in ordered:
+                    scores[paper_id]["rerank"] = value
+                trace.stages["rerank"] = {
+                    "seconds": round(outcome.seconds, 4),
+                    "attempts": len(errors) + 1,
+                    "candidates": ordered,
+                }
+                return ordered
+            errors.append(outcome.error)
+            # A timeout used its whole budget; only a model error is worth a retry.
+            if outcome.error == TIMEOUT:
+                break
+        trace.stages["rerank"] = {"errors": errors}
+        trace.warnings.append(_warning("rerank", errors[-1]))
+        return head

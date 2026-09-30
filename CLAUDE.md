@@ -9,9 +9,15 @@ isolated persistence harness, canonical paper identity with provenance, parser a
 chunker, durable job queue with source adapters, and immutable corpus snapshots with a
 coverage endpoint. `docs/superpowers/progress.md` is the live task and gate board — read
 it before assuming anything about status. M2 is under way: P2.1 (metrics, labels, exact
-BM25) and P2.2 (indexes and release switching) are done, and release
-`m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
-Next is P2.3.
+BM25), P2.2 (indexes and release switching) and P2.3 (fusion, bounded reranking,
+deadlines) are done, and release `m2-20260924T095724Z` is **active** in Qdrant — 85,729
+paper and 3,426,221 chunk points. Next is P2.4, the search API.
+
+The GPU is shared with a Windows-side workload WSL cannot see (`nvidia-smi` shows its
+memory and utilization but lists the process as `[Not Found]`). While it holds most of the
+16 GB, `hybrid_rerank` degrades on every request — explicitly, within its deadline — and
+any latency measured then is contended. Sample `nvidia-smi` beside a timing run; never
+stop that workload.
 
 Beyond the plan tasks, the corpus pipeline gained a venue-by-venue runner (`corpus
 mirror` / `corpus run`) that mirrors one venue-year, ingests it, parses with N workers,
@@ -116,8 +122,8 @@ forward without a demonstrated need.
   namespace. **Hugging Face is an offline artifact destination** and is never queried
   during a user request. Three offline callers contact it — `corpus mirror` for the
   corpus, `evaluation/litsearch.py` for the benchmark and `search fetch-model` for the
-  embedding weights — and all fetch at a pinned revision. Nothing in the serving path
-  may join them.
+  embedding and reranker weights — and all fetch at a pinned revision. Nothing in the
+  serving path may join them.
 - Never report tests, benchmarks, corpus coverage or user observations that did not
   actually run. Planned examples are not measured results.
 
@@ -165,6 +171,17 @@ uv run --env-file .env --project backend python -m copilot.cli search build-inde
 uv run --env-file .env --project backend python -m copilot.cli search validate-index --release SNAP
 uv run --env-file .env --project backend python -m copilot.cli corpus activate --release SNAP
 uv run --env-file .env --project backend python -m copilot.cli search compare-precision --manifest SNAP/manifest.json
+```
+
+Search service (P2.3): BM25 and dense candidates for one captured release, RRF in our
+code, cross-encoder rerank of at most 50, every stage under a deadline with explicit,
+typed fallbacks. Ranking parameters live in `configs/search.yaml`; the reranker is pinned
+in `configs/models.yaml` beside the embedder.
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli search pilot --query "contrastive learning for sentence embeddings"
+uv run --env-file .env --project backend python -m copilot.cli search pilot --split development --traces NAME
+uv run --env-file .env --project backend python -m copilot.cli search compare-precision --model reranker --release SNAP
 ```
 
 `.env`'s `DATABASE_URL` names `copilot_v2`, the live corpus. Building never activates;

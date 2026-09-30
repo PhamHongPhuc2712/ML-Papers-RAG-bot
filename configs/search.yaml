@@ -1,0 +1,28 @@
+# Ranking parameters for the search service (spec §7). Model revisions are pinned
+# in configs/models.yaml; this file holds only how candidates are gathered,
+# fused, reranked and bounded in time. Every value is part of a run's identity.
+schema_version: 1
+
+candidates:
+  # Per branch, BM25 and dense, with identical filters.
+  per_branch: 100
+
+fusion:
+  # RRF constant: sum(1/(k + rank)) over one-based ranks, computed in our code.
+  rrf_k: 60
+
+rerank:
+  # At most this many fused candidates are reranked, and hybrid_rerank returns
+  # only from them: reranker logits are never compared with RRF scores.
+  depth: 50
+
+deadlines_seconds:
+  # Candidate branches run concurrently, each within its own budget.
+  branch: 1.0
+  rerank: 1.5
+  # The whole request, after which the service falls back or fails, typed.
+  total: 3.0
+
+# A model error — not a timeout — is retried at most this often, and only while
+# the total deadline still has room for it.
+rerank_retries: 1
