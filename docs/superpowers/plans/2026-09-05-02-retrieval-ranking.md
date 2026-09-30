@@ -189,9 +189,23 @@ Pin BGE-M3 model commit and tokenizer in models.yaml; implement a deterministic 
 
 **Depends on:** P2.2
 
+**Where the reranker is pinned (added 2026-09-30).** The task says "pinned
+`BAAI/bge-reranker-v2-m3`" without saying where. It is pinned beside the embedding model:
+a `reranker` entry in `configs/models.yaml` naming the commit and every file's sha256,
+fetched offline by `search fetch-model` into `${DATA_DIR}/models/rerankers/` and verified
+on every load — the same path P2.2 built for BGE-M3, so Hugging Face stays out of the
+serving path. `configs/search.yaml` holds only ranking parameters: candidates per branch,
+the RRF constant, the rerank depth, the pair token budget and the deadlines. The pinned
+revision is `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e`. Spec §7's CPU-float32-first rule
+applies to the reranker as it did to the embedder: compare before using GPU float16.
+
 **Files:**
 
 - Create `backend/src/copilot/search/{fusion,rerank,service}.py`, `configs/search.yaml`.
+- Modify `configs/models.yaml` (the reranker pin), `backend/src/copilot/models/embeddings.py`
+  (pinned-file verification and fetching generalized from the embedder to any pinned
+  model) and `backend/src/copilot/cli.py` (`search fetch-model` fetches both models; a
+  pilot run with stage timing; the reranker precision comparison).
 - Create `backend/tests/unit/test_fusion.py`, `backend/tests/integration/test_search_service.py`.
 
 **Interfaces:** `rrf(rankings: list[list[str]], k: int=60) -> list[tuple[str,float]]`; `Reranker.score` as spec §6; `SearchService.search(request: SearchRequest) -> SearchResponse`. The service hydrates canonical paper metadata separately and captures one active release for all branches.

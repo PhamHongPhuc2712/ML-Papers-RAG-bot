@@ -84,8 +84,9 @@ the terms, LitSearch data is local-use-only: it never enters a corpus export, an
 ## Entry checkpoint
 
 Entry: G1 evidence exists; the `paragraph-pack-v1` rebuild has finished and its coverage
-report is written. E3 additionally needs P2.2 (vector indexing with release switching);
-E4 needs P2.3 (fusion and reranking). E1, E2 and E5 can start immediately.
+report is written. E3 needs P2.2 (vector indexing with release switching)
+and P2.3 (fusion and reranking), because two of its four baselines are hybrid RRF and
+hybrid + rerank; E4 needs both as well. E1, E2 and E5 can start immediately.
 
 E6 needs something that generates answers — P4.2 produces them and P4.1 attaches the
 citations. **This is our own generator, not reference answers.** Reference-free judging
@@ -235,14 +236,23 @@ computes recall against all 5; `ndcg_at_k` deduplicates repeated IDs; an empty r
 
 ## E3: Run the baselines on LitSearch's own corpus
 
-**Depends on:** E2, P2.2.
+**Depends on:** E2, P2.2, P2.3. (Corrected 2026-09-30: this listed only E2 and P2.2, but
+the hybrid and hybrid + rerank baselines below cannot run before P2.3 exists. Running all
+four together also keeps them on one snapshot and one run manifest, as G2 requires.)
 
 This is the number that is comparable to published work: same corpus, same queries, our
 retrieval stack. It measures the *stack*, not our corpus.
 
 **Files:**
 
-- Create `backend/src/copilot/evaluation/runner.py`, `backend/src/copilot/cli/eval.py`.
+- Create `backend/src/copilot/evaluation/runner.py`; add the `eval retrieval` command to
+  `backend/src/copilot/cli.py`. (Corrected 2026-09-30: this named `cli/eval.py`, but the
+  CLI is the single module `cli.py`, and a `cli/` package beside it would shadow it.)
+- Create a converter that writes LitSearch's `corpus_clean` into the snapshot format
+  `corpus export` produces (schema 2: a `papers` table with `text_sha256`, a `chunks`
+  table — empty here — and per-table digests), so `search build-index` indexes it
+  unchanged. The index build reads only that format; nothing else in this plan said how
+  LitSearch's documents would get into it.
 - Create `backend/tests/integration/test_eval_runner.py`, `reports/e3-litsearch-baselines.md`.
 
 **Interfaces:** `run_retrieval_eval(config: EvalConfig) -> EvalRun`; CLI
@@ -250,7 +260,9 @@ retrieval stack. It measures the *stack*, not our corpus.
 
 - [ ] Index `corpus_clean` as its own release (`litsearch-v1`) with its own Qdrant collection
       pair, using the existing release machinery. It is a separate corpus and must never share
-      a collection with the paper corpus.
+      a collection with the paper corpus. Build only its paper collection and never activate
+      it: evaluation reads a release by id, so it does not need the serving pointer, and
+      activation would require a chunk collection this corpus does not have.
 - [ ] Index **title + abstract only** for the headline number — that is the shape the corpus is
       packaged in. If a full-text configuration is also run, it is reported as a separate,
       labeled row and never merged into the headline.
