@@ -68,6 +68,8 @@ class SearchConfig:
     rerank_seconds: float = 1.5
     total_seconds: float = 3.0
     rerank_retries: int = 1
+    cache_depth: int = 200
+    cache_ttl_seconds: int = 600
 
 
 def load_search_config(path: str | Path) -> SearchConfig:
@@ -81,6 +83,8 @@ def load_search_config(path: str | Path) -> SearchConfig:
         rerank_seconds=float(deadlines.get("rerank", 1.5)),
         total_seconds=float(deadlines.get("total", 3.0)),
         rerank_retries=int(raw.get("rerank_retries", 1)),
+        cache_depth=int((raw.get("cache") or {}).get("depth", 200)),
+        cache_ttl_seconds=int((raw.get("cache") or {}).get("ttl_seconds", 600)),
     )
 
 
@@ -263,6 +267,31 @@ class SearchTrace:
         return bool(self.warnings)
 
 
+@dataclass(frozen=True)
+class Ordering:
+    """One request's whole ranking over one release: what a cursor pages through.
+
+    ``items`` is at most the configured cache depth (200), and for
+    ``hybrid_rerank`` only the reranked head. ``scores`` holds every stage score
+    each item earned; ``warnings`` says how the ordering was degraded, if at all.
+    """
+
+    release_id: str
+    items: tuple[tuple[str, float], ...]
+    scores: Mapping[str, Mapping[str, float]]
+    warnings: tuple[str, ...]
+
+
+@dataclass
+class Ranking:
+    """A fresh ordering, the trace of how it was made and the metadata it already read."""
+
+    request_id: UUID
+    ordering: Ordering
+    trace: SearchTrace
+    rows: dict[str, PaperRow]
+
+
 _BRANCH_SCORE = {"lexical": "bm25", "dense": "dense"}
 _MODE_BRANCHES = {
     "bm25": ("lexical",),
@@ -313,14 +342,95 @@ class SearchService:
         self._capture = capture or (lambda: capture_release(engine))
         self._clock = clock
 
+    @property
+    def config(self) -> SearchConfig:
+        return self._config
+
+    def identity(self, mode: str) -> dict[str, Any]:
+        """Everything besides the release and its embedder that decides an ordering.
+
+        A cached ordering is reusable only under the same identity, so a changed
+        reranker, pair budget or fusion constant can never serve a stale ranking.
+        """
+
+        config = self._config
+        branches = _MODE_BRANCHES[mode]
+        identity: dict[str, Any] = {
+            "branches": list(branches),
+            "candidates": config.candidates_per_branch,
+            "depth": config.cache_depth,
+        }
+        if len(branches) > 1:
+            identity["rrf_k"] = config.rrf_k
+        if mode == "hybrid_rerank":
+            identity["reranker"] = str(getattr(self._reranker, "identity", "none"))
+            identity["rerank_depth"] = config.rerank_depth
+        return identity
+
+    def warm(self, release: ReleaseRecord) -> dict[str, str]:
+        """Pay first-call costs before serving: statistics, CUDA kernels, index pages.
+
+        Run once at startup, outside every deadline. Without it the first
+        request after a restart spends its dense budget loading kernels and is
+        served degraded. A stage that fails here is reported, not raised: the
+        request path degrades on its own, typed.
+        """
+
+        report: dict[str, str] = {}
+        for name, branch in self._branches.items():
+            try:
+                branch.search("warm up", None, 1, release.id)
+                report[name] = "ok"
+            except Exception as error:  # noqa: BLE001 - reported, and handled per request
+                report[name] = str(getattr(error, "code", type(error).__name__))
+        if self._reranker is not None:
+            try:
+                validate_scores(self._reranker.score("warm up", ["warm up"]), 1)
+                report["rerank"] = "ok"
+            except Exception as error:  # noqa: BLE001 - reported, and handled per request
+                report["rerank"] = str(getattr(error, "code", type(error).__name__))
+        return report
+
+    def close(self) -> None:
+        close = getattr(self._runner, "close", None)
+        if callable(close):
+            close()
+
     def search(self, request: SearchRequest) -> SearchResponse:
         return self.search_with_trace(request)[0]
 
     def search_with_trace(self, request: SearchRequest) -> tuple[SearchResponse, SearchTrace]:
         started = self._clock()
-        request_id = uuid4()
+        ranking = self.rank(request)
+        response = self.page(
+            ranking.ordering,
+            offset=0,
+            limit=request.limit,
+            request_id=ranking.request_id,
+            rows=ranking.rows,
+            trace=ranking.trace,
+        )
+        ranking.trace.seconds = self._clock() - started
+        return response, ranking.trace
+
+    def rank(
+        self,
+        request: SearchRequest,
+        *,
+        release: ReleaseRecord | None = None,
+        request_id: UUID | None = None,
+    ) -> Ranking:
+        """The whole ordering for a request, before any page is cut from it.
+
+        A caller that already captured the release passes it in, so the cache key
+        it computed and the ranking it stores name the same release.
+        """
+
+        started = self._clock()
+        request_id = request_id or uuid4()
         # Read once: every stage of this request uses this release's pair.
-        release = self._capture()
+        if release is None:
+            release = self._capture()
         if release is None:
             raise SearchUnavailable("corpus_not_ready")
         trace = SearchTrace(
@@ -383,35 +493,71 @@ class SearchService:
         rows: dict[str, PaperRow] = {}
         if request.mode == "hybrid_rerank":
             ordered = self._rerank(request.query, ordered, scores, trace, remaining, rows)
-
-        page = ordered[: request.limit]
-        self._hydrate([paper_id for paper_id, _ in page], rows, trace)
-        missing = [paper_id for paper_id, _ in page if paper_id not in rows]
-        if missing:
-            # Indexed but no longer in the database: served without inventing metadata.
-            trace.warnings.append("metadata_missing")
-            page = [(paper_id, score) for paper_id, score in page if paper_id in rows]
-        trace.stages["hydrate"]["missing"] = missing
+        ordered = ordered[: config.cache_depth]
         trace.seconds = self._clock() - started
+        ordering = Ordering(
+            release_id=release.id,
+            items=tuple(ordered),
+            scores={paper_id: scores.get(paper_id, {}) for paper_id, _ in ordered},
+            warnings=tuple(trace.warnings),
+        )
+        return Ranking(request_id=request_id, ordering=ordering, trace=trace, rows=rows)
 
-        response = SearchResponse(
+    def page(
+        self,
+        ordering: Ordering,
+        *,
+        offset: int,
+        limit: int,
+        request_id: UUID,
+        rows: dict[str, PaperRow] | None = None,
+        trace: SearchTrace | None = None,
+    ) -> SearchResponse:
+        """One page of an ordering, with the canonical metadata of what it shows.
+
+        Ranks are positions in the whole ordering, so page two continues where
+        page one stopped. A paper indexed but gone from the database is left out,
+        never served with invented metadata, and the response says so.
+        """
+
+        window = list(ordering.items[offset : offset + limit])
+        loaded = rows if rows is not None else {}
+        tick = self._clock()
+        loaded.update(
+            self._papers.load([paper_id for paper_id, _ in window if paper_id not in loaded])
+        )
+        missing = [paper_id for paper_id, _ in window if paper_id not in loaded]
+        warnings = list(ordering.warnings)
+        if missing and "metadata_missing" not in warnings:
+            warnings.append("metadata_missing")
+        if trace is not None:
+            stage = trace.stages.setdefault("hydrate", {"seconds": 0.0})
+            stage["seconds"] = round(stage["seconds"] + self._clock() - tick, 4)
+            stage["missing"] = missing
+            if missing and "metadata_missing" not in trace.warnings:
+                trace.warnings.append("metadata_missing")
+        served = [
+            (offset + index + 1, paper_id, score)
+            for index, (paper_id, score) in enumerate(window)
+            if paper_id in loaded
+        ]
+        return SearchResponse(
             request_id=request_id,
-            corpus_release_id=release.id,
+            corpus_release_id=ordering.release_id,
             items=[
                 RankedPaper(
                     paper_id=UUID(paper_id),
                     score=score,
-                    scores=scores.get(paper_id, {}),
+                    scores=dict(ordering.scores.get(paper_id, {})),
                     rank=rank,
                 )
-                for rank, (paper_id, score) in enumerate(page, start=1)
+                for rank, paper_id, score in served
             ],
-            papers={paper_id: rows[paper_id].summary() for paper_id, _ in page},
+            papers={paper_id: loaded[paper_id].summary() for _, paper_id, _ in served},
             next_cursor=None,
-            degraded=trace.degraded,
-            warnings=list(trace.warnings),
+            degraded=bool(warnings),
+            warnings=warnings,
         )
-        return response, trace
 
     def _hydrate(
         self, paper_ids: Sequence[str], rows: dict[str, PaperRow], trace: SearchTrace

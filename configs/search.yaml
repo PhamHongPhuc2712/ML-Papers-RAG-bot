@@ -16,6 +16,13 @@ rerank:
   # only from them: reranker logits are never compared with RRF scores.
   depth: 50
 
+cache:
+  # Spec §7: an ordering's top 200 (hybrid_rerank: its reranked head) is kept this
+  # long for signed cursors to page through, keyed by query, filters, release and
+  # ranker revisions. A cursor older than this is refused as expired.
+  depth: 200
+  ttl_seconds: 600
+
 deadlines_seconds:
   # Candidate branches run concurrently, each within its own budget.
   branch: 1.0

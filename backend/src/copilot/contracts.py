@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ContractModel(BaseModel):
@@ -30,13 +30,31 @@ class PaperFilters(ContractModel):
     def strip_venues(cls, value: list[str]) -> list[str]:
         return [venue.strip() for venue in value if venue.strip()]
 
+    @model_validator(mode="after")
+    def ordered_years(self) -> PaperFilters:
+        if (
+            self.year_from is not None
+            and self.year_to is not None
+            and self.year_from > self.year_to
+        ):
+            raise ValueError("invalid_year_interval")
+        return self
+
 
 class SearchRequest(ContractModel):
-    query: str = Field(min_length=1)
+    # Spec §10: 1-2,000 characters and 1-50 results, checked before anything is served.
+    query: str = Field(min_length=1, max_length=2000)
     mode: Literal["bm25", "dense", "hybrid", "hybrid_rerank"]
     filters: PaperFilters
-    limit: int = Field(default=20, ge=1, le=100)
+    limit: int = Field(default=20, ge=1, le=50)
     cursor: str | None = None
+
+    @field_validator("query")
+    @classmethod
+    def require_terms(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("query_blank")
+        return value
 
 
 class RankedPaper(ContractModel):

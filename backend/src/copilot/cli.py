@@ -1135,6 +1135,21 @@ def run_search_pilot(
     }
 
 
+def run_export_schema(out: Path) -> dict[str, object]:
+    """The OpenAPI schema as reviewed JSON: sorted keys, so a diff shows real changes."""
+
+    from .app import openapi_schema
+
+    schema = openapi_schema()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {
+        "out": str(out),
+        "version": schema["info"]["version"],
+        "paths": sorted(schema["paths"]),
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="copilot")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1352,6 +1367,13 @@ def _parser() -> argparse.ArgumentParser:
     oracle.add_argument("--database-url", default=None)
     oracle.add_argument("--qdrant-url", default=None)
 
+    api = subparsers.add_parser("api")
+    api_commands = api.add_subparsers(dest="api_command", required=True)
+    export_schema = api_commands.add_parser(
+        "export-schema", help="write the public OpenAPI schema, sorted for review"
+    )
+    export_schema.add_argument("--out", type=Path, required=True)
+
     evaluation = subparsers.add_parser("eval")
     evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
     validate_dataset_cmd = evaluation_commands.add_parser(
@@ -1561,6 +1583,8 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             limit=args.limit,
         )
+    elif args.command == "api" and args.api_command == "export-schema":
+        result = run_export_schema(args.out)
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
             database_url=_database_url(args.database_url),

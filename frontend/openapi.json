@@ -1,0 +1,744 @@
+{
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "request_id"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "PaperDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance_type": {
+            "title": "Acceptance Type",
+            "type": "string"
+          },
+          "identifiers": {
+            "items": {
+              "$ref": "#/components/schemas/PaperIdentifier"
+            },
+            "title": "Identifiers",
+            "type": "array"
+          },
+          "paper": {
+            "$ref": "#/components/schemas/PaperSummary"
+          },
+          "paper_id": {
+            "format": "uuid",
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "parse_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Status"
+          },
+          "redirected_from": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirected From"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PaperSource"
+          }
+        },
+        "required": [
+          "request_id",
+          "paper_id",
+          "paper",
+          "acceptance_type",
+          "identifiers",
+          "source",
+          "parse_status"
+        ],
+        "title": "PaperDetail",
+        "type": "object"
+      },
+      "PaperFilters": {
+        "additionalProperties": false,
+        "properties": {
+          "fulltext_only": {
+            "default": false,
+            "title": "Fulltext Only",
+            "type": "boolean"
+          },
+          "venues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Venues",
+            "type": "array"
+          },
+          "year_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year From"
+          },
+          "year_to": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year To"
+          }
+        },
+        "title": "PaperFilters",
+        "type": "object"
+      },
+      "PaperIdentifier": {
+        "additionalProperties": false,
+        "properties": {
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "value"
+        ],
+        "title": "PaperIdentifier",
+        "type": "object"
+      },
+      "PaperSource": {
+        "additionalProperties": false,
+        "description": "Where the paper can be read; ``available`` is false when no link is known.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "landing_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landing Url"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          }
+        },
+        "required": [
+          "pdf_url",
+          "landing_url",
+          "available"
+        ],
+        "title": "PaperSource",
+        "type": "object"
+      },
+      "PaperSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abstract"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
+          },
+          "fulltext_indexed": {
+            "title": "Fulltext Indexed",
+            "type": "boolean"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "venue": {
+            "title": "Venue",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "title",
+          "authors",
+          "venue",
+          "year",
+          "fulltext_indexed"
+        ],
+        "title": "PaperSummary",
+        "type": "object"
+      },
+      "RankedPaper": {
+        "additionalProperties": false,
+        "properties": {
+          "paper_id": {
+            "format": "uuid",
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "rank": {
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "scores": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Scores",
+            "type": "object"
+          }
+        },
+        "required": [
+          "paper_id",
+          "score",
+          "scores",
+          "rank"
+        ],
+        "title": "RankedPaper",
+        "type": "object"
+      },
+      "SearchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/PaperFilters"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "bm25",
+              "dense",
+              "hybrid",
+              "hybrid_rerank"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "query": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "mode",
+          "filters"
+        ],
+        "title": "SearchRequest",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "corpus_release_id": {
+            "title": "Corpus Release Id",
+            "type": "string"
+          },
+          "degraded": {
+            "title": "Degraded",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RankedPaper"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "papers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PaperSummary"
+            },
+            "title": "Papers",
+            "type": "object"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "request_id",
+          "corpus_release_id",
+          "items",
+          "papers",
+          "degraded",
+          "warnings"
+        ],
+        "title": "SearchResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "ML Research Copilot",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Live Health Live Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live"
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready"
+      }
+    },
+    "/v1/corpus/coverage": {
+      "get": {
+        "operationId": "coverage_v1_corpus_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Coverage V1 Corpus Coverage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Coverage",
+        "tags": [
+          "corpus"
+        ]
+      }
+    },
+    "/v1/papers/{paper_id}": {
+      "get": {
+        "operationId": "paper_v1_papers__paper_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Paper Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Paper",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/v1/papers/{paper_id}/related": {
+      "get": {
+        "operationId": "related_v1_papers__paper_id__related_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paper_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Paper Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "year_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "venues",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Venues"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fulltext_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fulltext Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Related",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/v1/search": {
+      "post": {
+        "operationId": "search_v1_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Search",
+        "tags": [
+          "search"
+        ]
+      }
+    }
+  }
+}

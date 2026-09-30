@@ -9,15 +9,16 @@ isolated persistence harness, canonical paper identity with provenance, parser a
 chunker, durable job queue with source adapters, and immutable corpus snapshots with a
 coverage endpoint. `docs/superpowers/progress.md` is the live task and gate board — read
 it before assuming anything about status. M2 is under way: P2.1 (metrics, labels, exact
-BM25), P2.2 (indexes and release switching) and P2.3 (fusion, bounded reranking,
-deadlines) are done, and release `m2-20260924T095724Z` is **active** in Qdrant — 85,729
-paper and 3,426,221 chunk points. Next is P2.4, the search API.
+BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded reranking,
+deadlines) and P2.4 (the search API) are done, and release `m2-20260924T095724Z` is
+**active** in Qdrant — 85,729 paper and 3,426,221 chunk points. `copilot_v2` is migrated
+to `0004_search_orderings`. Next is P2.5, the ablations.
 
-The GPU is shared with a Windows-side workload WSL cannot see (`nvidia-smi` shows its
-memory and utilization but lists the process as `[Not Found]`). While it holds most of the
-16 GB, `hybrid_rerank` degrades on every request — explicitly, within its deadline — and
-any latency measured then is contended. Sample `nvidia-smi` beside a timing run; never
-stop that workload.
+The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
+`[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU
+smoke scripts during P2.4). Under that load `hybrid_rerank` degrades — explicitly, within
+its deadline — and any latency measured then is contended. Sample `nvidia-smi` beside a
+timing run; never stop another workload.
 
 Beyond the plan tasks, the corpus pipeline gained a venue-by-venue runner (`corpus
 mirror` / `corpus run`) that mirrors one venue-year, ingests it, parses with N workers,
@@ -182,6 +183,19 @@ in `configs/models.yaml` beside the embedder.
 uv run --env-file .env --project backend python -m copilot.cli search pilot --query "contrastive learning for sentence embeddings"
 uv run --env-file .env --project backend python -m copilot.cli search pilot --split development --traces NAME
 uv run --env-file .env --project backend python -m copilot.cli search compare-precision --model reranker --release SNAP
+```
+
+Search API (P2.4): `POST /v1/search`, `GET /v1/papers/{id}`, `GET /v1/papers/{id}/related`.
+Orderings are cached in PostgreSQL (`search_orderings`, ten minutes) and paged by
+HMAC-signed cursors; a degraded ordering is never reused for a new search. The API serves
+only a release whose collections sit in its own `QDRANT_COLLECTION_PREFIX`. Startup loads
+both models and warms every stage once. `frontend/openapi.json` is the published contract
+— re-export it after any API change, or `test_search_api.py` fails.
+
+```bash
+uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head
+uv run --env-file .env --project backend uvicorn --factory copilot.app:create_default_app --port 8000
+uv run --project backend python -m copilot.cli api export-schema --out frontend/openapi.json
 ```
 
 `.env`'s `DATABASE_URL` names `copilot_v2`, the live corpus. Building never activates;

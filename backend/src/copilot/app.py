@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Mapping
+import tempfile
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -17,6 +19,9 @@ from .config import Settings
 from .corpus.api import router as corpus_router
 from .db.models import CorpusRelease
 from .db.session import get_active_release, make_engine
+from .search.api import SearchApi, install_error_handlers
+from .search.api import router as search_router
+from .search.service import SearchService
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +101,25 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
     if engine is None:
         engine = make_engine(settings)
 
+    clock = app_overrides.get("clock")
+    search_api = SearchApi(
+        settings=settings,
+        engine=engine,
+        client=cast(QdrantClient | None, app_overrides.get("qdrant_client")),
+        service=cast(SearchService | None, app_overrides.get("search_service")),
+        models_path=str(app_overrides.get("models_config") or "configs/models.yaml"),
+        search_path=str(app_overrides.get("search_config") or "configs/search.yaml"),
+        clock=cast(Callable[[], int], clock) if callable(clock) else None,
+    )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Real models load here, once, before the first request is accepted.
+        search_api.start()
         try:
             yield
         finally:
+            search_api.close()
             if owns_engine:
                 engine.dispose()
 
@@ -111,6 +130,9 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
     )
     artifacts = app_overrides.get("artifacts_config") or "configs/artifacts.yaml"
     app.include_router(corpus_router(engine, str(artifacts)))
+    app.include_router(search_router())
+    install_error_handlers(app)
+    app.state.search_api = search_api
     app.state.settings = settings
     app.state.overrides = app_overrides
     app.state.db_engine = engine
@@ -152,6 +174,19 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
         return {"status": "ok", "corpus_release_id": active_release.id}
 
     return app
+
+
+def openapi_schema() -> dict[str, Any]:
+    """The public HTTP contract, generated without a database, model or secret.
+
+    ``openapi()`` never runs the lifespan, so nothing connects or loads; the
+    settings exist only because the app is built from them.
+    """
+
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, data_dir=Path(tempfile.gettempdir()).resolve() / "copilot-schema"
+    )
+    return create_app(settings).openapi()
 
 
 def create_default_app() -> FastAPI:

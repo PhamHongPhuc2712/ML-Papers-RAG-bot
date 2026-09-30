@@ -485,3 +485,32 @@ class SourceCheckpoint(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class SearchOrdering(Base):
+    """A search's ordering, kept briefly so signed cursors can page through it (spec §7).
+
+    Only hashes of the query are stored. Rows expire after the configured
+    lifetime and go with their release when it is dropped.
+    """
+
+    __tablename__ = "search_orderings"
+    __table_args__ = (
+        CheckConstraint("expires_at > created_at", name="ck_search_orderings_expiry"),
+        Index("ix_search_orderings_key_expiry", "cache_key", "expires_at"),
+        Index("ix_search_orderings_expiry", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
+    cache_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    corpus_release_id: Mapped[str] = mapped_column(
+        String(255),
+        ForeignKey("corpus_releases.id", ondelete="CASCADE", name="fk_search_orderings_release"),
+        nullable=False,
+    )
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
