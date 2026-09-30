@@ -1,0 +1,243 @@
+"""The Markdown report of a retrieval experiment, rendered from its recorded runs.
+
+Every number comes from ``<out>/<split>/metrics.json``; nothing is typed in by
+hand. Interpretation belongs in ``<out>/analysis.md``, which is included
+verbatim, so re-rendering after a new run never overwrites it.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+from .datasets import SPLITS
+
+_QUALITY = ("recall@10", "recall@50", "ndcg@10", "mrr@10")
+
+
+def _number(value: Any, digits: int = 3) -> str:
+    return "—" if value is None else f"{float(value):.{digits}f}"
+
+
+def _interval(entry: Mapping[str, Any]) -> str:
+    return f"{_number(entry['mean'])} [{_number(entry['low'])}, {_number(entry['high'])}]"
+
+
+def _signed(value: float) -> str:
+    return f"{value:+.3f}"
+
+
+def _runs(out: Path) -> dict[str, dict[str, Any]]:
+    runs = {}
+    for split in SPLITS:
+        path = out / split / "metrics.json"
+        if path.is_file():
+            runs[split] = json.loads(path.read_text(encoding="utf-8"))
+    return runs
+
+
+def _run_table(runs: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    splits = list(runs)
+    lines = ["| | " + " | ".join(splits) + " |", "|---|" + "---|" * len(splits)]
+
+    def row(label: str, render: Any) -> None:
+        cells = " | ".join(render(runs[split]["manifest"]) for split in splits)
+        lines.append(f"| {label} | {cells} |")
+
+    row("Run", lambda m: f"`{m['run_id']}`")
+    row(
+        "Code",
+        lambda m: f"`{str(m['code']['git_sha'])[:10]}`"
+        + (f" + uncommitted `{str(m['code']['diff_sha256'])[:10]}`" if m["code"]["dirty"] else ""),
+    )
+    row("Corpus release", lambda m: f"`{m['corpus']['release_id']}`")
+    row("Dataset", lambda m: f"`{m['dataset']['digest'][:12]}`, {m['dataset']['slice']}")
+    row(
+        "Queries",
+        lambda m: str(m["dataset"]["queries"])
+        + (f" (limited to {m['dataset']['limited_to']})" if m["dataset"].get("limited_to") else ""),
+    )
+    row("Hardware", lambda m: f"{m['hardware']['gpu']}; torch {m['hardware']['torch']}")
+
+    def gpu(m: Mapping[str, Any]) -> str:
+        sampled = m["timing"]["gpu"]
+        if not sampled.get("available"):
+            return "not sampled"
+        return (
+            f"util p50 {sampled['utilization_percent']['p50']:.0f}% / max "
+            f"{sampled['utilization_percent']['max']}%; memory "
+            f"{sampled['memory_mib']['min']}–{sampled['memory_mib']['max']} MiB; "
+            f"{len(sampled['compute_processes_seen'])} GPU processes seen"
+        )
+
+    row("GPU during the run", gpu)
+    row("Locked test", lambda m: "yes" if m.get("locked_test") else "no")
+    return lines
+
+
+def _split_section(split: str, run: Mapping[str, Any]) -> list[str]:
+    manifest = run["manifest"]
+    variants = run["variants"]
+    lines = [f"## {split.capitalize()} — {manifest['dataset']['queries']} queries", ""]
+    lines += [
+        "Mean over queries with a 95% bootstrap interval over query families. Failed queries "
+        "score zero and stay in every denominator.",
+        "",
+        "| Variant | Recall@10 | Recall@50 | nDCG@10 | MRR@10 | Judged@10 | Candidate recall "
+        "| Failures | Degraded |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for name, entry in variants.items():
+        summary = entry["summary"]
+        cells = [_interval(summary[metric]) for metric in _QUALITY if metric in summary]
+        judged = summary.get("judged@10", {}).get("mean")
+        lines.append(
+            f"| `{name}` | "
+            + " | ".join(cells)
+            + f" | {_number(judged)} | {_number(summary.get('candidate_recall'))} | "
+            + f"{summary['failures']['count']} | {summary['degraded']['count']} |"
+        )
+    lines += [
+        "",
+        "Latency of `rank()` in milliseconds; stage columns are p95.",
+        "",
+        "| Variant | p50 | p95 | max | lexical | dense | rerank | warm-up s |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for name, entry in variants.items():
+        summary = entry["summary"]
+        latency, stages = summary["latency"], summary["stages"]
+        warm = manifest["variants"][name].get("warmup_seconds")
+        lines.append(
+            f"| `{name}` | {latency['p50_ms']} | {latency['p95_ms']} | {latency['max_ms']} | "
+            + " | ".join(
+                str(stages.get(stage, {}).get("p95_ms", "—"))
+                for stage in ("lexical", "dense", "rerank")
+            )
+            + f" | {warm} |"
+        )
+    sets = sorted({s for entry in variants.values() for s in entry["summary"]["by_query_set"]})
+    if len(sets) > 1:
+        lines += ["", "nDCG@10 by query set:", ""]
+        lines += ["| Variant | " + " | ".join(f"{s} (n)" for s in sets) + " |"]
+        lines += ["|---|" + "---|" * len(sets)]
+        for name, entry in variants.items():
+            by_set = entry["summary"]["by_query_set"]
+            lines.append(
+                f"| `{name}` | "
+                + " | ".join(
+                    f"{_number(by_set[s]['ndcg@10'])} ({by_set[s]['queries']})"
+                    if s in by_set
+                    else "—"
+                    for s in sets
+                )
+                + " |"
+            )
+    comparisons = run.get("comparisons") or {}
+    if comparisons:
+        lines += [
+            "",
+            "Paired differences, candidate minus baseline, 95% interval over the same family "
+            "resamples:",
+            "",
+            "| Candidate vs baseline | Metric | Baseline | Candidate | Difference [interval] "
+            "| Wins / losses / ties |",
+            "|---|---|---|---|---|---|",
+        ]
+        for comparison in comparisons.values():
+            for metric in ("ndcg@10", "recall@50", "mrr@10"):
+                item = comparison["metrics"].get(metric)
+                if item is None:
+                    continue
+                lines.append(
+                    f"| `{comparison['candidate']}` vs `{comparison['baseline']}` | {metric} | "
+                    f"{_number(item['baseline'])} | {_number(item['candidate'])} | "
+                    f"{_signed(item['difference'])} "
+                    f"[{_signed(item['low'])}, {_signed(item['high'])}] | "
+                    f"{item['wins']} / {item['losses']} / {item['ties']} |"
+                )
+    decision = run.get("decision")
+    if decision:
+        lines += _decision(decision)
+    return lines
+
+
+def _decision(decision: Mapping[str, Any]) -> list[str]:
+    rules = decision["rules"]
+    lines = [
+        "",
+        "### Decision",
+        "",
+        f"Pre-registered rules (`decision` in the config): primary metric `{decision['primary']}`; "
+        f"a costlier mode is promoted only if its paired interval lies above zero and its p95 is "
+        f"within {rules.get('latency_p95_seconds', 3.0)} s; a cheaper ablation is adopted only if "
+        f"its interval rules out losing more than {rules.get('max_drop', 0.03)}.",
+        "",
+        "| Step | Difference [interval] | p95 s | Gain supported | Fits budget | Promoted |",
+        "|---|---|---|---|---|---|",
+    ]
+    for step in decision["steps"]:
+        item = step["comparison"]
+        lines.append(
+            f"| `{step['from']}` → `{step['to']}` | {_signed(item['difference'])} "
+            f"[{_signed(item['low'])}, {_signed(item['high'])}] | {step['p95_seconds']:.2f} | "
+            f"{'yes' if step['gain_supported'] else 'no'} | "
+            f"{'yes' if step['fits_budget'] else 'no'} | "
+            f"{'**yes**' if step['promoted'] else 'no'} |"
+        )
+    if decision["ablations"]:
+        lines += [
+            "",
+            "| Ablation | Change | Difference [interval] | Non-inferior | Applies to the choice "
+            "| Adopted |",
+            "|---|---|---|---|---|---|",
+        ]
+        for item in decision["ablations"]:
+            comparison = item["comparison"]
+            lines.append(
+                f"| `{item['variant']}` vs `{item['baseline']}` | {item['changes']} | "
+                f"{_signed(comparison['difference'])} [{_signed(comparison['low'])}, "
+                f"{_signed(comparison['high'])}] | {'yes' if item['noninferior'] else 'no'} | "
+                f"{'yes' if item['applies'] else 'no'} | "
+                f"{'**yes**' if item['adopt'] and item['applies'] else 'no'} |"
+            )
+    chosen = decision["chosen"]
+    adopted = ", ".join(f"`{name}`" for name in chosen["adopted_ablations"]) or "none"
+    lines += [
+        "",
+        f"**Chosen on validation: `{chosen['variant']}` (mode `{chosen['mode']}`); ablations "
+        f"adopted: {adopted}.**",
+    ]
+    return lines
+
+
+def render_report(out: Path) -> Path:
+    """Write ``<out>/report.md`` from every recorded split, plus ``analysis.md`` if present."""
+
+    runs = _runs(out)
+    if not runs:
+        raise FileNotFoundError(f"no recorded runs under {out}")
+    first = next(iter(runs.values()))["manifest"]
+    lines = [
+        f"# Retrieval experiment — {first['experiment']['name']}",
+        "",
+        f"Rendered by `eval report` from `{out}/<split>/metrics.json`; edit `analysis.md`, not "
+        "this file. Per-query rows are in `<split>/per_query.parquet`, manifests in "
+        "`<split>/manifest.json`.",
+        "",
+        *_run_table(runs),
+        "",
+        f"Timing: {first['timing']['methodology']}",
+        "",
+        f"Cost: {first['cost']['metered_usd']:.2f} USD metered — {first['cost']['note']}.",
+    ]
+    for split, run in runs.items():
+        lines += ["", *_split_section(split, run)]
+    analysis = out / "analysis.md"
+    if analysis.is_file():
+        lines += ["", analysis.read_text(encoding="utf-8").rstrip()]
+    path = out / "report.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path

@@ -1,0 +1,12 @@
+{"family_id": "f01", "query": "predicting molecule properties with graph message passing", "query_id": "smoke-01", "query_set": "synthetic_known_item", "split": "development"}
+{"family_id": "f01", "query": "molecular property prediction on atom graphs", "query_id": "smoke-02", "query_set": "synthetic_known_item", "split": "development"}
+{"family_id": "f02", "query": "combining BM25 and dense retrieval", "query_id": "smoke-03", "query_set": "synthetic_related_work", "split": "development"}
+{"family_id": "f03", "query": "reranking candidates with a cross encoder", "query_id": "smoke-04", "query_set": "synthetic_related_work", "split": "development"}
+{"family_id": "f04", "query": "grounding generation in retrieved passages to avoid hallucination", "query_id": "smoke-05", "query_set": "synthetic_known_item", "split": "validation"}
+{"family_id": "f05", "query": "fast image generation with diffusion", "query_id": "smoke-06", "query_set": "synthetic_related_work", "split": "validation"}
+{"family_id": "f06", "query": "editing images from text prompts", "query_id": "smoke-07", "query_set": "synthetic_known_item", "split": "validation"}
+{"family_id": "f07", "query": "cheap fine tuning of large language models", "query_id": "smoke-08", "query_set": "synthetic_known_item", "split": "test"}
+{"family_id": "f07", "query": "low rank adaptation of language models", "query_id": "smoke-09", "query_set": "synthetic_known_item", "split": "test"}
+{"family_id": "f08", "query": "offline reinforcement learning without extrapolation error", "query_id": "smoke-10", "query_set": "synthetic_related_work", "split": "test"}
+{"family_id": "f09", "query": "learning speech features without labels", "query_id": "smoke-11", "query_set": "synthetic_related_work", "split": "test"}
+{"family_id": "f10", "query": "protein folding with attention", "query_id": "smoke-12", "query_set": "synthetic_known_item", "split": "development"}

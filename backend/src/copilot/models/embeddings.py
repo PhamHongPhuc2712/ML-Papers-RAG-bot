@@ -94,12 +94,23 @@ class EmbeddingSpec:
     max_tokens: Mapping[str, int]
     batch_size: int
     precision: Mapping[str, str]
+    # Prepended to queries only, never to documents, for models whose card asks
+    # for a retrieval instruction (BGE v1.5). Empty for BGE-M3.
+    query_prefix: str = ""
 
     @property
     def identity(self) -> str:
-        """Model revision plus preprocessing: what query and document must share."""
+        """Model revision plus preprocessing: what query and document must share.
 
-        return f"{self.repo}@{self.revision}#{self.preprocessing}"
+        A query prefix is part of it: a query encoded with an instruction is a
+        different input from one without, so the two must never be mistaken.
+        """
+
+        identity = f"{self.repo}@{self.revision}#{self.preprocessing}"
+        if self.query_prefix:
+            digest = hashlib.sha256(self.query_prefix.encode()).hexdigest()[:8]
+            identity += f"+query:{digest}"
+        return identity
 
     def model_dir(self, data_dir: str | Path) -> Path:
         """Pinned weights live beside the tokenizers under the one data root."""
@@ -177,6 +188,7 @@ def load_embedding_spec(path: str | Path) -> EmbeddingSpec:
         max_tokens={str(k): int(v) for k, v in max_tokens.items()},
         batch_size=_require(embedding, "batch_size", int),
         precision={str(k): str(v) for k, v in precision.items()},
+        query_prefix=str(embedding.get("query_prefix") or ""),
     )
 
 
@@ -241,6 +253,7 @@ class FixtureEmbedding:
     """
 
     dimensions = 2
+    query_prefix = ""
 
     def __init__(self, identity: str = "fixture/hashed-2d@v1#l2") -> None:
         self.identity = identity
@@ -298,12 +311,16 @@ class TransformerEmbedding:
         self.spec = spec
         self.identity = spec.identity
         self.dimensions = spec.dimensions
+        self.query_prefix = spec.query_prefix
         self._torch = torch
         self._tokenizer = Tokenizer.from_file(str(directory / "tokenizer.json"))
         self._tokenizer.no_padding()
-        self._pad_id = self._tokenizer.token_to_id("<pad>")
-        if self._pad_id is None:
-            raise EmbeddingError("tokenizer_invalid", "no <pad> token")
+        # XLM-R vocabularies (BGE-M3) pad with <pad>, BERT ones (BGE-small) with [PAD].
+        pads = [self._tokenizer.token_to_id(token) for token in ("<pad>", "[PAD]")]
+        pad = next((token for token in pads if token is not None), None)
+        if pad is None:
+            raise EmbeddingError("tokenizer_invalid", "no padding token")
+        self._pad_id = pad
         model = AutoModel.from_pretrained(
             str(directory), dtype=dtype[self.precision], add_pooling_layer=False
         )

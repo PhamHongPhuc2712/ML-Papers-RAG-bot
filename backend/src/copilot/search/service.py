@@ -28,7 +28,7 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 import yaml
@@ -250,6 +250,12 @@ class PaperStore:
             }
 
 
+class PaperSource(Protocol):
+    """Canonical metadata by paper id: PostgreSQL in service, a fixture in the smoke set."""
+
+    def load(self, paper_ids: Sequence[str]) -> dict[str, PaperRow]: ...
+
+
 @dataclass
 class SearchTrace:
     """Everything a stage decided, for offline analysis; never shown as probabilities."""
@@ -324,22 +330,25 @@ class SearchService:
     def __init__(
         self,
         *,
-        engine: Engine,
+        engine: Engine | None,
         lexical: CandidateRetriever,
         dense: CandidateRetriever,
         reranker: Reranker | None,
         config: SearchConfig,
         runner: StageRunner | None = None,
-        papers: PaperStore | None = None,
+        papers: PaperSource | None = None,
         capture: Callable[[], ReleaseRecord | None] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if engine is None and (papers is None or capture is None):
+            # Without a database, metadata and the release must both come from the caller.
+            raise ValueError("engine_required")
         self._branches: dict[str, CandidateRetriever] = {"lexical": lexical, "dense": dense}
         self._reranker = reranker
         self._config = config
         self._runner = runner or ThreadedStageRunner()
-        self._papers = papers or PaperStore(engine)
-        self._capture = capture or (lambda: capture_release(engine))
+        self._papers: PaperSource = papers or PaperStore(cast(Engine, engine))
+        self._capture = capture or (lambda: capture_release(cast(Engine, engine)))
         self._clock = clock
 
     @property

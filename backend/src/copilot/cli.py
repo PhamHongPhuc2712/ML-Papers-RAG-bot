@@ -7,6 +7,7 @@ import json
 import os
 import socket
 from pathlib import Path
+from typing import Any
 
 from .corpus.dedupe import IdentityConflictError, QuarantineError, resolve_paper
 from .db.session import make_engine, migrate_database, session_factory
@@ -17,6 +18,8 @@ DEFAULT_PARSING_PATH = Path("configs/parsing.yaml")
 DEFAULT_ARTIFACTS_PATH = Path("configs/artifacts.yaml")
 DEFAULT_MODELS_PATH = Path("configs/models.yaml")
 DEFAULT_SEARCH_PATH = Path("configs/search.yaml")
+DEFAULT_EXPERIMENT_PATH = Path("configs/experiments/retrieval.yaml")
+DEFAULT_SMOKE_PATH = Path("data/fixtures/retrieval-smoke")
 DEFAULT_DATASET_PATH = Path("data/fixtures/retrieval")
 
 
@@ -1135,6 +1138,27 @@ def run_search_pilot(
     }
 
 
+def run_eval_smoke(fixture: Path, *, update: bool) -> dict[str, Any]:
+    """The synthetic smoke set against its frozen outputs; ``update`` re-freezes them."""
+
+    from .evaluation.retrieval import check_smoke, run_smoke
+
+    first = run_smoke(fixture)
+    second = run_smoke(fixture)
+    expected_path = fixture / "expected.json"
+    if update:
+        expected_path.write_text(json.dumps(first, indent=2, sort_keys=True) + "\n")
+    expected = json.loads(expected_path.read_text(encoding="utf-8"))
+    check = check_smoke(first, expected)
+    reproducible = first == second
+    return {
+        **check,
+        "passed": check["passed"] and reproducible,
+        "reproducible": reproducible,
+        "metrics": {name: entry["metrics"] for name, entry in first.items()},
+    }
+
+
 def run_export_schema(out: Path) -> dict[str, object]:
     """The OpenAPI schema as reviewed JSON: sorted keys, so a diff shows real changes."""
 
@@ -1380,6 +1404,37 @@ def _parser() -> argparse.ArgumentParser:
         "validate-dataset", help="refuse a dataset that leaks between splits"
     )
     validate_dataset_cmd.add_argument("--path", type=Path, required=True)
+    retrieval = evaluation_commands.add_parser(
+        "retrieval", help="run an experiment's variants over one frozen split"
+    )
+    retrieval.add_argument("--config", type=Path, default=DEFAULT_EXPERIMENT_PATH)
+    retrieval.add_argument("--split", required=True, choices=["development", "validation", "test"])
+    retrieval.add_argument("--out", type=Path, required=True)
+    retrieval.add_argument(
+        "--locked-test",
+        action="store_true",
+        help="the test split, once, for a release decision; never for tuning",
+    )
+    retrieval.add_argument(
+        "--limit-queries", type=int, default=None, help="a partial run, recorded as such"
+    )
+    retrieval.add_argument("--database-url", default=None)
+    retrieval.add_argument("--qdrant-url", default=None)
+    retrieval.add_argument("--data-dir", type=Path, default=None)
+    smoke = evaluation_commands.add_parser(
+        "smoke", help="the four baselines on the synthetic fixture, against frozen outputs"
+    )
+    smoke.add_argument("--fixture", type=Path, default=DEFAULT_SMOKE_PATH)
+    smoke.add_argument(
+        "--update", action="store_true", help="re-freeze the outputs after an intended change"
+    )
+    compare = evaluation_commands.add_parser(
+        "compare", help="regression report: a candidate run against a baseline run"
+    )
+    compare.add_argument("--baseline", type=Path, required=True, help="a run's metrics.json")
+    compare.add_argument("--candidate", type=Path, required=True, help="a run's metrics.json")
+    report = evaluation_commands.add_parser("report", help="re-render an experiment's report.md")
+    report.add_argument("--out", type=Path, required=True)
 
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
@@ -1410,6 +1465,52 @@ def main(argv: list[str] | None = None) -> int:
                 staging_dir=_staging_dir(args.staging_dir, parser),
             )
         )
+    elif args.command == "eval" and args.eval_command == "retrieval":
+        from .evaluation.report import render_report
+        from .evaluation.retrieval import run_retrieval
+
+        metrics = run_retrieval(
+            args.config,
+            args.split,
+            args.out,
+            data_dir=_data_dir(args.data_dir, parser),
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url or _service_settings()[0],
+            locked_test=args.locked_test,
+            limit_queries=args.limit_queries,
+        )
+        result = {
+            "run_id": metrics["manifest"]["run_id"],
+            "report": str(render_report(args.out)),
+            "variants": {
+                name: {
+                    key: round(entry["summary"][key]["mean"], 4)
+                    for key in ("recall@10", "recall@50", "ndcg@10", "mrr@10")
+                }
+                | {"p95_ms": entry["summary"]["latency"]["p95_ms"]}
+                for name, entry in metrics["variants"].items()
+            },
+            "decision": (metrics.get("decision") or {}).get("chosen"),
+        }
+    elif args.command == "eval" and args.eval_command == "smoke":
+        result = run_eval_smoke(args.fixture, update=args.update)
+        if not result["passed"]:
+            print(json.dumps(result, sort_keys=True, default=str))
+            return 1
+    elif args.command == "eval" and args.eval_command == "compare":
+        from .evaluation.regression import compare_runs
+
+        result = compare_runs(
+            json.loads(args.baseline.read_text(encoding="utf-8")),
+            json.loads(args.candidate.read_text(encoding="utf-8")),
+        )
+        if result["regressed"]:
+            print(json.dumps(result, sort_keys=True, default=str))
+            return 1
+    elif args.command == "eval" and args.eval_command == "report":
+        from .evaluation.report import render_report
+
+        result = {"report": str(render_report(args.out))}
     elif args.command == "eval" and args.eval_command == "validate-dataset":
         from .evaluation.datasets import validate_dataset
 

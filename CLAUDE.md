@@ -10,9 +10,11 @@ chunker, durable job queue with source adapters, and immutable corpus snapshots 
 coverage endpoint. `docs/superpowers/progress.md` is the live task and gate board — read
 it before assuming anything about status. M2 is under way: P2.1 (metrics, labels, exact
 BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded reranking,
-deadlines) and P2.4 (the search API) are done, and release `m2-20260924T095724Z` is
-**active** in Qdrant — 85,729 paper and 3,426,221 chunk points. `copilot_v2` is migrated
-to `0004_search_orderings`. Next is P2.5, the ablations.
+deadlines), P2.4 (the search API) and P2.5 (retrieval ablations) are done, and release
+`m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
+`copilot_v2` is migrated to `0004_search_orderings`. P2.5's pre-registered rule retained
+BM25 as the first search configuration (`reports/retrieval/pilot/`); G2 still needs E3
+and the locked test split, which has **not** been run. Next is E3.
 
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
 `[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU
@@ -191,6 +193,19 @@ HMAC-signed cursors; a degraded ordering is never reused for a new search. The A
 only a release whose collections sit in its own `QDRANT_COLLECTION_PREFIX`. Startup loads
 both models and warms every stage once. `frontend/openapi.json` is the published contract
 — re-export it after any API change, or `test_search_api.py` fails.
+
+Retrieval experiments (P2.5): `configs/experiments/retrieval.yaml` lists the variants and
+the decision rule, fixed before results are seen. Development tunes, validation chooses,
+and test runs only with `--locked-test` — once, for a release decision.
+`reports/retrieval/README.md` explains the outputs. BGE-small lives in its own release,
+`m2-20260924T095724Z-bge-small`, paper collection only and never activated.
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --split validation --out reports/retrieval/pilot
+uv run --project backend python -m copilot.cli eval report --out reports/retrieval/pilot
+uv run --project backend python -m copilot.cli eval compare --baseline A/validation/metrics.json --candidate B/validation/metrics.json
+uv run --project backend python -m copilot.cli eval smoke        # offline, frozen outputs; --update to re-freeze
+```
 
 ```bash
 uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head

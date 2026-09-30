@@ -1,0 +1,118 @@
+{
+  "bm25": {
+    "failures": 0,
+    "intervals": {
+      "mrr@10": [
+        1.0,
+        1.0
+      ],
+      "ndcg@10": [
+        0.930276,
+        0.986239
+      ],
+      "recall@10": [
+        0.759259,
+        0.972917
+      ],
+      "recall@50": [
+        0.759259,
+        0.972917
+      ]
+    },
+    "metrics": {
+      "mrr@10": 1.0,
+      "ndcg@10": 0.962054,
+      "recall@10": 0.87963,
+      "recall@50": 0.87963
+    },
+    "queries": 11,
+    "rankings_sha256": "83de1a6bbd9632ac5f66ba99058a8c660800fa8457b1b3656a0d3b2257ec872a"
+  },
+  "dense": {
+    "failures": 0,
+    "intervals": {
+      "mrr@10": [
+        0.231922,
+        0.508047
+      ],
+      "ndcg@10": [
+        0.187783,
+        0.446749
+      ],
+      "recall@10": [
+        0.5,
+        0.796296
+      ],
+      "recall@50": [
+        1.0,
+        1.0
+      ]
+    },
+    "metrics": {
+      "mrr@10": 0.369489,
+      "ndcg@10": 0.317653,
+      "recall@10": 0.638889,
+      "recall@50": 1.0
+    },
+    "queries": 11,
+    "rankings_sha256": "afae686a524ec2ca6efb837ff00b336227ed90b2874325b2622ba111fef8f61e"
+  },
+  "hybrid": {
+    "failures": 0,
+    "intervals": {
+      "mrr@10": [
+        0.546296,
+        0.935185
+      ],
+      "ndcg@10": [
+        0.58711,
+        0.873145
+      ],
+      "recall@10": [
+        0.888889,
+        1.0
+      ],
+      "recall@50": [
+        1.0,
+        1.0
+      ]
+    },
+    "metrics": {
+      "mrr@10": 0.75,
+      "ndcg@10": 0.730715,
+      "recall@10": 0.962963,
+      "recall@50": 1.0
+    },
+    "queries": 11,
+    "rankings_sha256": "a961e8c267a2313e4cff362b49d16f75f955e09fd5af6dc7c2c65ffe3e3f5bb3"
+  },
+  "hybrid_rerank": {
+    "failures": 0,
+    "intervals": {
+      "mrr@10": [
+        1.0,
+        1.0
+      ],
+      "ndcg@10": [
+        0.943451,
+        0.985051
+      ],
+      "recall@10": [
+        0.888889,
+        1.0
+      ],
+      "recall@50": [
+        1.0,
+        1.0
+      ]
+    },
+    "metrics": {
+      "mrr@10": 1.0,
+      "ndcg@10": 0.967669,
+      "recall@10": 0.962963,
+      "recall@50": 1.0
+    },
+    "queries": 11,
+    "rankings_sha256": "08ee23e5bd4ee74af8f32e0050fec65a23e765e386928e8866b95b24878d72b4"
+  }
+}

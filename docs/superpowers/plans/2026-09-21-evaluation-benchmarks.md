@@ -243,6 +243,15 @@ four together also keeps them on one snapshot and one run manifest, as G2 requir
 This is the number that is comparable to published work: same corpus, same queries, our
 retrieval stack. It measures the *stack*, not our corpus.
 
+**Harness already built (added 2026-09-30).** P2.5 of the retrieval plan created the
+retrieval harness this task describes: `evaluation/retrieval.py` with manifests, per-query
+Parquet, paired family bootstrap, failures kept in denominators and the locked test split,
+behind `eval retrieval --config <experiment.yaml> --split <split> --out <dir>`. E3 is an
+experiment config over the `litsearch-v1` release with `slice: all`, not a second runner:
+creating `runner.py` and a second `eval retrieval` would duplicate it. What E3 adds to the
+harness is scoring against LitSearch `corpusid` labels — our dataset's qrels carry our
+paper ids only where E1 matched them — and the `specificity` slice.
+
 **Files:**
 
 - Create `backend/src/copilot/evaluation/runner.py`; add the `eval retrieval` command to
@@ -289,6 +298,12 @@ deliberately broken baseline surfaces as a counted failure, not as a zero.
 **Depends on:** E3, P2.3.
 
 **Files:** modify `runner.py`; create `reports/e4-indomain-retrieval.md`.
+
+**Overlap with P2.5 (added 2026-09-30).** P2.5 already ran the four baselines over our
+corpus at abstract level on the in-domain slice (`reports/retrieval/pilot/`), on the
+harness in `evaluation/retrieval.py` rather than a `runner.py`. E4's own work is what that
+run does not cover: chunk-level retrieval, the 30 hand-authored graded queries, and the
+comparison with E3's LitSearch-corpus numbers.
 
 - [ ] Restrict to queries whose gold papers are in our corpus, per E1's strong-ID matching.
       Report the slice size and the excluded count on every table.

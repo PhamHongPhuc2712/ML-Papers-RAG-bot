@@ -12,6 +12,7 @@ so the query survives whole (spec §7: "preserve query tokens").
 
 from __future__ import annotations
 
+import copy
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -148,6 +149,25 @@ class CrossEncoderReranker:
         )
         model.eval()
         self._model = model.to(device)
+
+    def with_pair_budget(self, pair_max_tokens: int) -> CrossEncoderReranker:
+        """The same loaded weights under another pair budget: its own tokenizer and identity.
+
+        Used to compare budgets (spec §7: 512 against 1,024) without loading the
+        model twice. The two share the model, so they must not score concurrently.
+        """
+
+        from tokenizers import Tokenizer
+
+        if pair_max_tokens < 1:
+            raise EmbeddingError("reranker_config_invalid", "pair_max_tokens")
+        other = copy.copy(self)
+        other.pair_max_tokens = pair_max_tokens
+        other.identity = self.identity.rsplit("#pair", 1)[0] + f"#pair{pair_max_tokens}"
+        other._tokenizer = Tokenizer.from_str(self._tokenizer.to_str())
+        other._tokenizer.no_padding()
+        other._tokenizer.enable_truncation(max_length=pair_max_tokens, strategy="only_second")
+        return other
 
     def score(self, query: str, texts: list[str]) -> list[float]:
         if not texts:

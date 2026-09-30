@@ -1,0 +1,90 @@
+# P2.5's embedding ablation: configs/models.yaml with only the embedding section
+# replaced. The reranker and index layout are unchanged, so a comparison against
+# BGE-M3 changes one thing. Built as its own release from the same snapshot:
+#   search build-index --models configs/experiments/models-bge-small.yaml \
+#     --release m2-20260924T095724Z-bge-small --collections papers
+# Pinned retrieval models and index layout (spec §5-§7).
+#
+# A release records the embedding identity below — repo, revision and
+# preprocessing — and a query encoded under any other identity is refused. Files
+# are fetched once, offline, by `search fetch-model` into
+# ${DATA_DIR}/models/embeddings/<repo>/<revision>/ and verified by sha256 every
+# time a model loads; nothing is downloaded at request time.
+schema_version: 1
+
+embedding:
+  # BAAI/bge-small-en-v1.5 (MIT), the smaller cost and latency baseline P2.5
+  # compares against BGE-M3. Its own dimensions and its own release: it is never
+  # swapped into BGE-M3's vectors. [CLS] of the last layer, L2-normalized, as its
+  # model card specifies; 512 positions, so 512 input tokens at most.
+  repo: BAAI/bge-small-en-v1.5
+  revision: 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+  dimensions: 384
+  preprocessing: cls-l2-v1
+  # The model card's instruction for short queries against passages; queries
+  # only, never documents. It enters the model identity (…+query:<sha256[:8]>).
+  query_prefix: "Represent this sentence for searching relevant passages: "
+  files:
+    - file: config.json
+      sha256: 094f8e891b932f2000c92cfc663bac4c62069f5d8af5b5278c4306aef3084750
+    - file: tokenizer.json
+      sha256: d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66
+    - file: model.safetensors
+      sha256: 3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad
+  max_tokens:
+    papers: 512
+    chunks: 512
+  batch_size: 64
+  # CPU float32 is the reference; GPU float16 only after comparing against it.
+  precision:
+    cpu: float32
+    cuda: float16
+
+reranker:
+  # Cross-encoder for hybrid_rerank (spec §7): scores (query, paper text) pairs,
+  # truncating only the paper side so the query survives whole. Its logits are
+  # ranking signals, not probabilities. Fetched by `search fetch-model` into
+  # ${DATA_DIR}/models/rerankers/<repo>/<revision>/ and verified on every load.
+  repo: BAAI/bge-reranker-v2-m3
+  revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+  files:
+    - file: config.json
+      sha256: 13dcd6c31d9fec9d1d8e158702072f62d7fa7d312a64b9fe057bec9a08cfe41a
+    # Not the embedder's tokenizer.json: same vocabulary family, different file.
+    - file: tokenizer.json
+      sha256: 69564b696052886ed0ac63fa393e928384e0f8caada38c1f4864a9bfbf379c15
+    - file: model.safetensors
+      sha256: d9e3e081faff1eefb84019509b2f5558fd74c1a05a2c7db22f74174fcedb5286
+  # Spec §7's default pair budget; 512 is the comparison P2.5 runs.
+  pair_max_tokens: 1024
+  batch_size: 16
+  # CPU float32 is the reference; GPU float16 only after comparing against it
+  # (reports/m2-ranking.md).
+  precision:
+    cpu: float32
+    cuda: float16
+
+index:
+  # Points per upsert, and per embedding-cache entry.
+  batch_points: 256
+  # Recorded at build time and re-run with exact search before activation and
+  # after any restore. Queries are the first `terms` words of documents spread
+  # evenly through the collection.
+  canaries:
+    queries: 5
+    limit: 10
+    terms: 12
+  collections:
+    papers:
+      # 85,729 x 1024 float32 is 0.35 GB: held in RAM.
+      on_disk: false
+      hnsw: {m: 16, ef_construct: 128}
+    chunks:
+      # 3.4 M x 1024 float32 is 14 GB raw, more than this host can hold beside
+      # PostgreSQL: vectors, sparse index and payload live on disk, with an int8
+      # copy of the dense vectors in RAM for search and the float32 originals
+      # read back to rescore. The HNSW graph is built once, after the upload.
+      on_disk: true
+      quantization: int8
+      defer_indexing: true
+      hnsw: {m: 16, ef_construct: 128}

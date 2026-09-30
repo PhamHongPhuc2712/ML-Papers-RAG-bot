@@ -1,0 +1,1228 @@
+"""Retrieval experiments over a frozen split: run, score, bootstrap, record (P2.5).
+
+An experiment config names a frozen dataset, a corpus release and a list of
+variants — the four baselines plus single-factor ablations, each against the
+variant it changes. Every variant runs the same queries through the real
+search service, so they share one candidate pool and one set of deadlines.
+
+Three rules hold throughout:
+
+* A query that fails stays in every denominator: it scores zero and its time
+  counts toward latency. A failure is never a missing row.
+* Differences are paired and bootstrapped over query families, 1,000
+  resamples at seed 42 (spec §11), so two variants are compared on the same
+  resampled queries.
+* The test split is locked. It runs only with ``locked_test`` for a release
+  decision, and ``decide`` refuses anything but the validation split.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import platform
+import subprocess
+import threading
+import time
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import yaml
+from pydantic import ValidationError
+
+from ..contracts import PaperFilters, SearchRequest
+from ..corpus.releases import ReleaseRecord
+from ..search.service import (
+    Outcome,
+    PaperRow,
+    SearchConfig,
+    SearchService,
+    SearchUnavailable,
+    Stage,
+)
+from .datasets import SPLITS, Dataset, hydrate, read_dataset
+from .metrics import evaluate
+from .regression import validate_manifest
+
+MODES = ("bm25", "dense", "hybrid", "hybrid_rerank")
+WARMUP_QUERIES = 10
+SLICES = ("in_domain", "all")
+TIMING_METHODOLOGY = (
+    "Queries run one at a time through SearchService.rank with the production deadlines "
+    "of configs/search.yaml; seconds are wall-clock around rank(), which includes both "
+    "candidate branches, fusion, the reranked head's metadata read and the reranker, and "
+    "excludes HTTP and page hydration. Before its first timed query each variant is warmed "
+    "with the service's own warm-up and then 10 queries from another split (never the test "
+    "split), whose results are discarded: GPU kernels warm per input shape, and without this "
+    "the first variant to use a model would pay for every later one. p50/p95 interpolate "
+    "linearly over every query of the split, failed ones included. GPU utilization and "
+    "memory are sampled every second for the whole run, and other processes on the GPU are "
+    "listed."
+)
+
+
+class ExperimentError(ValueError):
+    """An experiment that cannot run, or a use of a split the rules forbid."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        self.code = code
+        super().__init__(f"{code}:{detail}" if detail else code)
+
+
+# --- Configuration ------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Variant:
+    name: str
+    mode: str
+    baseline: str | None = None
+    changes: str | None = None
+    models: str | None = None
+    release: str | None = None
+    pair_max_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class Experiment:
+    path: Path
+    sha256: str
+    name: str
+    dataset: Path
+    query_text: str
+    slice: str
+    release: str
+    search: Path
+    models: Path
+    recall_at: tuple[int, ...]
+    ndcg_at: tuple[int, ...]
+    mrr_at: tuple[int, ...]
+    depth: int
+    resamples: int
+    seed: int
+    confidence: float
+    variants: tuple[Variant, ...]
+    decision: Mapping[str, Any]
+
+    def variant(self, name: str) -> Variant:
+        for variant in self.variants:
+            if variant.name == name:
+                return variant
+        raise ExperimentError("unknown_variant", name)
+
+    def models_for(self, variant: Variant) -> Path:
+        return Path(variant.models) if variant.models else self.models
+
+    def release_for(self, variant: Variant) -> str:
+        return variant.release or self.release
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_experiment(path: str | Path) -> Experiment:
+    """Read and check an experiment config; an inconsistent one is refused before running."""
+
+    config = Path(path)
+    raw = yaml.safe_load(config.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ExperimentError("experiment_invalid", "root")
+    try:
+        dataset, metrics, bootstrap = raw["dataset"], raw["metrics"], raw["bootstrap"]
+        variants = tuple(
+            Variant(
+                name=str(item["name"]),
+                mode=str(item["mode"]),
+                baseline=item.get("baseline"),
+                changes=item.get("changes"),
+                models=item.get("models"),
+                release=item.get("release"),
+                pair_max_tokens=item.get("pair_max_tokens"),
+            )
+            for item in raw["variants"]
+        )
+        experiment = Experiment(
+            path=config,
+            sha256=_file_sha256(config),
+            name=str(raw["name"]),
+            dataset=Path(dataset["path"]),
+            query_text=str(dataset["query_text"]),
+            slice=str(dataset.get("slice", "in_domain")),
+            release=str(raw["corpus"]["release"]),
+            search=Path(raw["search"]),
+            models=Path(raw["models"]),
+            recall_at=tuple(int(k) for k in metrics["recall_at"]),
+            ndcg_at=tuple(int(k) for k in metrics["ndcg_at"]),
+            mrr_at=tuple(int(k) for k in metrics["mrr_at"]),
+            depth=int(metrics["depth"]),
+            resamples=int(bootstrap["resamples"]),
+            seed=int(bootstrap["seed"]),
+            confidence=float(bootstrap.get("confidence", 0.95)),
+            variants=variants,
+            decision=dict(raw.get("decision") or {}),
+        )
+    except (KeyError, TypeError) as error:
+        raise ExperimentError("experiment_invalid", str(error)) from error
+    names = [variant.name for variant in variants]
+    if not names or len(names) != len(set(names)):
+        raise ExperimentError("experiment_invalid", "variant names must be unique")
+    for variant in variants:
+        if variant.mode not in MODES:
+            raise ExperimentError("experiment_invalid", f"{variant.name}.mode")
+        if variant.baseline is not None and variant.baseline not in names:
+            raise ExperimentError("experiment_invalid", f"{variant.name}.baseline")
+    if experiment.slice not in SLICES:
+        raise ExperimentError("experiment_invalid", "dataset.slice")
+    if max(experiment.recall_at + experiment.ndcg_at + experiment.mrr_at) > experiment.depth:
+        raise ExperimentError("experiment_invalid", "a cutoff exceeds metrics.depth")
+    return experiment
+
+
+# --- Queries ------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EvalQuery:
+    query_id: str
+    family_id: str
+    split: str
+    query_set: str
+    text: str
+    grades: Mapping[str, int]
+
+    @property
+    def relevant(self) -> frozenset[str]:
+        return frozenset(item for item, grade in self.grades.items() if grade > 0)
+
+
+def dataset_digest(directory: Path) -> str:
+    """One digest over the frozen ids, labels and splits: a changed label is a new dataset."""
+
+    digest = hashlib.sha256()
+    for name in ("queries.jsonl", "qrels.jsonl", "splits.jsonl"):
+        digest.update(name.encode() + b"\n")
+        digest.update((directory / name).read_bytes())
+    return digest.hexdigest()
+
+
+def select_queries(dataset: Dataset, split: str, slice_: str) -> list[EvalQuery]:
+    """A split's queries with their labels in our corpus, in query-id order."""
+
+    if split not in SPLITS:
+        raise ExperimentError("unknown_split", split)
+    assigned = {record.query_id: record for record in dataset.splits}
+    grades: dict[str, dict[str, int]] = {}
+    for qrel in dataset.qrels:
+        if qrel.paper_id is not None:
+            grades.setdefault(qrel.query_id, {})[qrel.paper_id] = qrel.grade
+    chosen = []
+    for query in sorted(dataset.queries, key=lambda record: record.query_id):
+        placement = assigned.get(query.query_id)
+        if placement is None or placement.split != split:
+            continue
+        if slice_ == "in_domain" and not query.in_domain:
+            continue
+        labels = grades.get(query.query_id, {})
+        if not any(grade > 0 for grade in labels.values()):
+            # Nothing it asks for is in this corpus: recall would be undefined.
+            continue
+        chosen.append(
+            EvalQuery(
+                query_id=query.query_id,
+                family_id=placement.family_id,
+                split=split,
+                query_set=query.query_set,
+                text=query.query,
+                grades=labels,
+            )
+        )
+    return chosen
+
+
+def load_queries(experiment: Experiment, split: str, data_dir: Path) -> list[EvalQuery]:
+    """Frozen labels from the repository, query text from DATA_DIR (it has no license)."""
+
+    source = data_dir / experiment.query_text
+    texts = {
+        str(row["query_id"]): str(row["query"])
+        for row in (json.loads(line) for line in source.read_text(encoding="utf-8").splitlines())
+        if row.get("query")
+    }
+    return select_queries(hydrate(read_dataset(experiment.dataset), texts), split, experiment.slice)
+
+
+# --- Scoring ------------------------------------------------------------------------------
+
+
+def metric_names(experiment: Experiment) -> list[str]:
+    names = [f"recall@{k}" for k in experiment.recall_at]
+    names += [f"ndcg@{k}" for k in experiment.ndcg_at]
+    names += [f"mrr@{k}" for k in experiment.mrr_at]
+    return names
+
+
+def cutoffs(experiment: Experiment) -> list[int]:
+    return sorted(set(experiment.recall_at + experiment.ndcg_at + experiment.mrr_at))
+
+
+def score(
+    ranked: Sequence[str], grades: Mapping[str, int], experiment: Experiment
+) -> dict[str, Any]:
+    """Every configured metric for one query, each cutoff with its judged coverage."""
+
+    scores: dict[str, Any] = {}
+    for k in cutoffs(experiment):
+        result = evaluate(ranked=ranked, grades=grades, k=k)
+        if k in experiment.recall_at:
+            scores[f"recall@{k}"] = result.recall_at_k
+        if k in experiment.ndcg_at:
+            scores[f"ndcg@{k}"] = result.ndcg_at_k
+        if k in experiment.mrr_at:
+            scores[f"mrr@{k}"] = result.mrr_at_k
+        scores[f"judged@{k}"] = result.judged_coverage
+    return scores
+
+
+@dataclass
+class QueryResult:
+    variant: str
+    query_id: str
+    family_id: str
+    query_set: str
+    ranked: list[str]
+    relevant: list[str]
+    metrics: dict[str, Any]
+    candidate_recall: float | None
+    rerank_pool_recall: float | None
+    seconds: float
+    stages: dict[str, float] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    failure: str | None = None
+
+    def row(self) -> dict[str, Any]:
+        return {
+            "variant": self.variant,
+            "query_id": self.query_id,
+            "family_id": self.family_id,
+            "query_set": self.query_set,
+            "ranked": self.ranked,
+            "relevant": self.relevant,
+            **{key: value for key, value in sorted(self.metrics.items())},
+            "candidate_recall": self.candidate_recall,
+            "rerank_pool_recall": self.rerank_pool_recall,
+            "seconds": self.seconds,
+            "stages": json.dumps(self.stages, sort_keys=True),
+            "warnings": self.warnings,
+            "failure": self.failure,
+        }
+
+
+def _recall(pool: Iterable[str], relevant: frozenset[str]) -> float | None:
+    if not relevant:
+        return None
+    return len(relevant.intersection(pool)) / len(relevant)
+
+
+def _failed(
+    variant: Variant, query: EvalQuery, experiment: Experiment, seconds: float, code: str
+) -> QueryResult:
+    zeros: dict[str, Any] = {name: 0.0 for name in metric_names(experiment)}
+    zeros.update({f"judged@{k}": None for k in cutoffs(experiment)})
+    return QueryResult(
+        variant=variant.name,
+        query_id=query.query_id,
+        family_id=query.family_id,
+        query_set=query.query_set,
+        ranked=[],
+        relevant=sorted(query.relevant),
+        metrics=zeros,
+        candidate_recall=0.0,
+        rerank_pool_recall=0.0 if variant.mode == "hybrid_rerank" else None,
+        seconds=seconds,
+        failure=code,
+    )
+
+
+def run_query(
+    service: SearchService,
+    variant: Variant,
+    query: EvalQuery,
+    release: ReleaseRecord,
+    experiment: Experiment,
+    clock: Callable[[], float] = time.monotonic,
+) -> QueryResult:
+    """One query through the service; a failure is a scored zero, never an absence."""
+
+    started = clock()
+    try:
+        request = SearchRequest.model_validate(
+            {
+                "query": query.text,
+                "mode": variant.mode,
+                "filters": PaperFilters(),
+                "limit": min(experiment.depth, 50),
+            }
+        )
+    except ValidationError:
+        return _failed(variant, query, experiment, clock() - started, "invalid_query")
+    try:
+        ranking = service.rank(request, release=release)
+    except SearchUnavailable as error:
+        return _failed(variant, query, experiment, clock() - started, error.code)
+    seconds = clock() - started
+    ranked = [paper_id for paper_id, _ in ranking.ordering.items[: experiment.depth]]
+    stages = ranking.trace.stages
+    pool = {
+        paper_id
+        for branch in ("lexical", "dense")
+        for paper_id, _ in stages.get(branch, {}).get("candidates", [])
+    }
+    rerank = stages.get("rerank", {}).get("candidates")
+    return QueryResult(
+        variant=variant.name,
+        query_id=query.query_id,
+        family_id=query.family_id,
+        query_set=query.query_set,
+        ranked=ranked,
+        relevant=sorted(query.relevant),
+        metrics=score(ranked, query.grades, experiment),
+        candidate_recall=_recall(pool, query.relevant),
+        rerank_pool_recall=(
+            _recall((paper_id for paper_id, _ in rerank), query.relevant)
+            if rerank is not None
+            else None
+        ),
+        seconds=seconds,
+        stages={
+            name: float(detail["seconds"])
+            for name, detail in stages.items()
+            if isinstance(detail, Mapping) and "seconds" in detail
+        },
+        warnings=list(ranking.ordering.warnings),
+    )
+
+
+# --- Aggregation --------------------------------------------------------------------------
+
+
+def _by_family(
+    results: Sequence[QueryResult], value: Callable[[QueryResult], float]
+) -> tuple[list[str], np.ndarray]:
+    """Mean per family, families in sorted order: the unit every resample draws."""
+
+    groups: dict[str, list[float]] = {}
+    for result in results:
+        groups.setdefault(result.family_id, []).append(value(result))
+    families = sorted(groups)
+    return families, np.array([np.mean(groups[family]) for family in families], dtype=np.float64)
+
+
+def _metric(name: str) -> Callable[[QueryResult], float]:
+    def value(result: QueryResult) -> float:
+        return float(result.metrics[name])
+
+    return value
+
+
+def _resample(count: int, resamples: int, seed: int) -> np.ndarray:
+    # Same seed, same count, same draws: every metric and every variant pair of one
+    # split is resampled over the identical family indices.
+    return np.random.default_rng(seed).integers(0, count, size=(resamples, count))
+
+
+def bootstrap_interval(
+    values: np.ndarray, *, resamples: int, seed: int, confidence: float
+) -> tuple[float, float]:
+    """Percentile interval of the mean over family resamples."""
+
+    if len(values) == 0:
+        return (float("nan"), float("nan"))
+    means = values[_resample(len(values), resamples, seed)].mean(axis=1)
+    tail = (1 - confidence) / 2 * 100
+    low, high = np.percentile(means, [tail, 100 - tail])
+    return (float(low), float(high))
+
+
+def _percentiles(values: Sequence[float]) -> dict[str, float | None]:
+    if not values:
+        return {"p50_ms": None, "p95_ms": None, "max_ms": None}
+    p50, p95 = np.percentile(np.array(values) * 1000, [50, 95])
+    return {
+        "p50_ms": round(float(p50), 1),
+        "p95_ms": round(float(p95), 1),
+        "max_ms": round(max(values) * 1000, 1),
+    }
+
+
+def summarize(results: Sequence[QueryResult], experiment: Experiment) -> dict[str, Any]:
+    """Means with intervals, coverage, failures, degradation and latency for one variant."""
+
+    summary: dict[str, Any] = {"queries": len(results)}
+    for name in metric_names(experiment):
+        _, values = _by_family(results, _metric(name))
+        low, high = bootstrap_interval(
+            values,
+            resamples=experiment.resamples,
+            seed=experiment.seed,
+            confidence=experiment.confidence,
+        )
+        summary[name] = {
+            "mean": float(values.mean()) if len(values) else 0.0,
+            "low": low,
+            "high": high,
+        }
+    for k in cutoffs(experiment):
+        judged = [result.metrics[f"judged@{k}"] for result in results]
+        known = [value for value in judged if value is not None]
+        summary[f"judged@{k}"] = {
+            "mean": float(np.mean(known)) if known else None,
+            "unknown": len(judged) - len(known),
+        }
+    for name in ("candidate_recall", "rerank_pool_recall"):
+        observed = [
+            getattr(result, name) for result in results if getattr(result, name) is not None
+        ]
+        summary[name] = float(np.mean(observed)) if observed else None
+    summary["failures"] = {
+        "count": sum(1 for result in results if result.failure),
+        "codes": dict(Counter(result.failure for result in results if result.failure)),
+    }
+    summary["degraded"] = {
+        "count": sum(1 for result in results if result.warnings),
+        "warnings": dict(Counter(w for result in results for w in result.warnings)),
+    }
+    summary["latency"] = _percentiles([result.seconds for result in results])
+    stage_names = sorted({name for result in results for name in result.stages})
+    summary["stages"] = {
+        name: _percentiles([result.stages[name] for result in results if name in result.stages])
+        for name in stage_names
+    }
+    by_set: dict[str, Any] = {}
+    for query_set in sorted({result.query_set for result in results}):
+        subset = [result for result in results if result.query_set == query_set]
+        by_set[query_set] = {"queries": len(subset)} | {
+            name: float(np.mean([float(r.metrics[name]) for r in subset]))
+            for name in metric_names(experiment)
+        }
+    summary["by_query_set"] = by_set
+    return summary
+
+
+def paired(
+    baseline: Sequence[QueryResult],
+    candidate: Sequence[QueryResult],
+    metric: str,
+    experiment: Experiment,
+) -> dict[str, Any]:
+    """Candidate minus baseline, per family, with its bootstrap interval."""
+
+    families_a, a = _by_family(baseline, lambda result: float(result.metrics[metric]))
+    families_b, b = _by_family(candidate, lambda result: float(result.metrics[metric]))
+    if families_a != families_b:
+        raise ExperimentError("unpaired_results", metric)
+    difference = b - a
+    low, high = bootstrap_interval(
+        difference,
+        resamples=experiment.resamples,
+        seed=experiment.seed,
+        confidence=experiment.confidence,
+    )
+    return {
+        "metric": metric,
+        "baseline": float(a.mean()),
+        "candidate": float(b.mean()),
+        "difference": float(difference.mean()),
+        "low": low,
+        "high": high,
+        "wins": int((difference > 0).sum()),
+        "losses": int((difference < 0).sum()),
+        "ties": int((difference == 0).sum()),
+    }
+
+
+def comparisons(
+    results: Mapping[str, Sequence[QueryResult]], experiment: Experiment
+) -> dict[str, Any]:
+    """Each ablation against its baseline, and each mode against the one before it."""
+
+    pairs: list[tuple[str, str]] = []
+    order = [name for name in experiment.decision.get("order", []) if name in results]
+    pairs += list(zip(order, order[1:], strict=False))
+    pairs += [
+        (variant.baseline, variant.name)
+        for variant in experiment.variants
+        if variant.baseline and variant.name in results and variant.baseline in results
+    ]
+    output: dict[str, Any] = {}
+    for base, name in pairs:
+        output[f"{name}_vs_{base}"] = {
+            "baseline": base,
+            "candidate": name,
+            "metrics": {
+                metric: paired(results[base], results[name], metric, experiment)
+                for metric in metric_names(experiment)
+            },
+        }
+    return output
+
+
+# --- The decision -------------------------------------------------------------------------
+
+
+def decide(
+    split: str,
+    results: Mapping[str, Sequence[QueryResult]],
+    summaries: Mapping[str, Mapping[str, Any]],
+    experiment: Experiment,
+) -> dict[str, Any]:
+    """Apply the config's pre-registered rules. Only the validation split may choose.
+
+    Modes climb in cost order: a costlier mode replaces the current choice only
+    if its primary-metric gain has a paired interval wholly above zero and its
+    p95 fits the budget. A cheaper ablation replaces its baseline only if its
+    interval rules out losing more than ``max_drop``. Otherwise the simpler
+    configuration is retained — no improvement is required for progress.
+    """
+
+    if split != "validation":
+        raise ExperimentError(
+            "held_out_split" if split == "test" else "not_the_choice_split", split
+        )
+    rules = experiment.decision
+    primary = str(rules.get("primary", "ndcg@10"))
+    budget = float(rules.get("latency_p95_seconds", 3.0))
+    max_drop = float(rules.get("max_drop", 0.03))
+    order = [name for name in rules.get("order", []) if name in results]
+    if not order:
+        raise ExperimentError("experiment_invalid", "decision.order")
+
+    def p95(name: str) -> float:
+        value = summaries[name]["latency"]["p95_ms"]
+        return float("inf") if value is None else float(value) / 1000
+
+    current = order[0]
+    steps = []
+    for name in order[1:]:
+        comparison = paired(results[current], results[name], primary, experiment)
+        better = comparison["low"] > 0
+        fits = p95(name) <= budget
+        steps.append(
+            {
+                "from": current,
+                "to": name,
+                "comparison": comparison,
+                "p95_seconds": p95(name),
+                "gain_supported": better,
+                "fits_budget": fits,
+                "promoted": better and fits,
+            }
+        )
+        if better and fits:
+            current = name
+    ablations = []
+    for variant in experiment.variants:
+        if not variant.baseline or variant.name not in results or variant.baseline not in results:
+            continue
+        comparison = paired(results[variant.baseline], results[variant.name], primary, experiment)
+        noninferior = comparison["low"] > -max_drop
+        ablations.append(
+            {
+                "variant": variant.name,
+                "baseline": variant.baseline,
+                "changes": variant.changes,
+                "comparison": comparison,
+                "p95_seconds": p95(variant.name),
+                "noninferior": noninferior,
+                "adopt": noninferior and p95(variant.name) <= budget,
+                "applies": experiment.variant(variant.baseline).mode
+                == experiment.variant(current).mode,
+            }
+        )
+    chosen = experiment.variant(current)
+    adopted = [item for item in ablations if item["applies"] and item["adopt"]]
+    return {
+        "split": split,
+        "primary": primary,
+        "rules": dict(rules),
+        "steps": steps,
+        "ablations": ablations,
+        "chosen": {
+            "variant": current,
+            "mode": chosen.mode,
+            "adopted_ablations": [item["variant"] for item in adopted],
+        },
+    }
+
+
+# --- Manifest -----------------------------------------------------------------------------
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout
+
+
+def code_state() -> dict[str, Any]:
+    """HEAD plus a digest of any uncommitted change, so a dirty run is still identified."""
+
+    try:
+        sha = _git("rev-parse", "HEAD").strip()
+        diff = _git("diff", "HEAD")
+        untracked = _git("ls-files", "--others", "--exclude-standard")
+    except (OSError, subprocess.CalledProcessError):
+        return {"git_sha": None, "dirty": None}
+    dirty = bool(diff.strip() or untracked.strip())
+    return {
+        "git_sha": sha,
+        "dirty": dirty,
+        "diff_sha256": hashlib.sha256((diff + untracked).encode()).hexdigest() if dirty else None,
+    }
+
+
+def hardware() -> dict[str, Any]:
+    cpu = platform.processor() or ""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    info: dict[str, Any] = {"cpu": cpu or platform.machine(), "cores": os.cpu_count()}
+    try:
+        info["ram_gb"] = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9, 1)
+    except (ValueError, OSError, AttributeError):
+        info["ram_gb"] = None
+    try:
+        import torch
+
+        info["torch"] = torch.__version__
+        info["gpu"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none"
+        info["cuda"] = torch.version.cuda
+    except ImportError:
+        info.update({"torch": "not installed", "gpu": "none", "cuda": None})
+    return info
+
+
+class GpuSampler:
+    """``nvidia-smi`` once a second for the run's duration, and who else was on the GPU."""
+
+    def __init__(self) -> None:
+        self._process: subprocess.Popen[str] | None = None
+        self._samples: list[tuple[int, int]] = []
+        self._thread: threading.Thread | None = None
+        self._others: set[str] = set()
+
+    def _foreign(self) -> None:
+        try:
+            listing = subprocess.run(
+                ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return
+        self._others.update(
+            pid.strip()
+            for pid in listing.splitlines()
+            if pid.strip() and pid.strip() != str(os.getpid())
+        )
+
+    def __enter__(self) -> GpuSampler:
+        self._foreign()
+        try:
+            self._process = subprocess.Popen(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=utilization.gpu,memory.used",
+                    "--format=csv,noheader,nounits",
+                    "-l",
+                    "1",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except OSError:
+            return self
+
+        def read() -> None:
+            assert self._process is not None and self._process.stdout is not None
+            for line in self._process.stdout:
+                parts = [part.strip() for part in line.split(",")]
+                if len(parts) == 2 and all(part.isdigit() for part in parts):
+                    self._samples.append((int(parts[0]), int(parts[1])))
+
+        self._thread = threading.Thread(target=read, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._foreign()
+        if self._process is not None:
+            self._process.terminate()
+            self._process.wait(timeout=10)
+        if self._thread is not None:
+            self._thread.join(timeout=10)
+
+    def summary(self) -> dict[str, Any]:
+        if not self._samples:
+            return {"available": False}
+        utilization = [sample[0] for sample in self._samples]
+        memory = [sample[1] for sample in self._samples]
+        return {
+            "available": True,
+            "samples": len(self._samples),
+            "utilization_percent": {
+                "p50": float(np.percentile(utilization, 50)),
+                "max": max(utilization),
+            },
+            "memory_mib": {"min": min(memory), "max": max(memory)},
+            # Our own worker processes are counted too; the report reads this beside
+            # the memory floor, which shows what was resident before the run.
+            "compute_processes_seen": sorted(self._others),
+        }
+
+
+# --- The real run -------------------------------------------------------------------------
+
+
+def _release_facts(record: ReleaseRecord, client: Any) -> dict[str, Any]:
+    build = record.counts.get("papers") if isinstance(record.counts, Mapping) else None
+    vocabulary = build.get("vocabulary", {}) if isinstance(build, Mapping) else {}
+    facts: dict[str, Any] = {
+        "manifest_sha256": record.manifest_sha256,
+        "model_revision": record.model_revision,
+        "paper_collection": record.paper_collection,
+        "bm25_vocabulary_sha256": vocabulary.get("sha256"),
+    }
+    try:
+        info = client.get_collection(record.paper_collection)
+        dense = info.config.params.vectors
+        size = dense["dense"].size if isinstance(dense, Mapping) else None
+        facts.update(
+            {
+                "points": info.points_count,
+                "dense_dimensions": size,
+                "dense_vector_bytes": (info.points_count or 0) * (size or 0) * 4,
+            }
+        )
+    except Exception as error:  # noqa: BLE001 - a missing collection fails the run below
+        raise ExperimentError("collection_missing", record.paper_collection) from error
+    return facts
+
+
+def run_retrieval(
+    config: Path,
+    split: str,
+    out: Path,
+    *,
+    data_dir: Path,
+    database_url: str,
+    qdrant_url: str,
+    locked_test: bool = False,
+    limit_queries: int | None = None,
+) -> dict[str, Any]:
+    """Every variant of an experiment over one split: manifest, metrics and per-query rows."""
+
+    from qdrant_client import QdrantClient
+
+    from ..corpus.releases import load_release
+    from ..db.session import make_engine
+    from ..models.embeddings import TransformerEmbedding, load_embedding_spec
+    from ..search.dense import DenseRetriever
+    from ..search.rerank import CrossEncoderReranker, load_reranker_spec
+    from ..search.service import load_search_config
+    from ..search.sparse import SparseRetriever
+
+    experiment = load_experiment(config)
+    if split not in SPLITS:
+        raise ExperimentError("unknown_split", split)
+    if split == "test" and not locked_test:
+        raise ExperimentError(
+            "locked_test_required", "the test split runs only for a release decision"
+        )
+    queries = load_queries(experiment, split, data_dir)
+    if limit_queries is not None:
+        queries = queries[:limit_queries]
+    if not queries:
+        raise ExperimentError("no_queries", split)
+    # Warm-up queries come from another split, so no timed query is pre-cached,
+    # and never from test, which is read only when it is being scored.
+    warm_split = "validation" if split == "development" else "development"
+    warm_queries = load_queries(experiment, warm_split, data_dir)[:WARMUP_QUERIES]
+
+    engine = make_engine(database_url)
+    client = QdrantClient(url=qdrant_url, timeout=60)
+    search_config = load_search_config(experiment.search)
+    releases = {
+        name: load_release(engine, name)
+        for name in {experiment.release_for(v) for v in experiment.variants}
+    }
+    facts = {name: _release_facts(record, client) for name, record in releases.items()}
+
+    embedders: dict[Path, Any] = {}
+    specs = {}
+    for variant in experiment.variants:
+        path = experiment.models_for(variant)
+        if path not in embedders:
+            specs[path] = load_embedding_spec(path)
+            embedders[path] = TransformerEmbedding(specs[path], data_dir)
+    base_reranker = CrossEncoderReranker(load_reranker_spec(experiment.models), data_dir)
+    rerankers = {base_reranker.pair_max_tokens: base_reranker}
+
+    results: dict[str, list[QueryResult]] = {}
+    warmups: dict[str, float] = {}
+    variants_manifest: dict[str, Any] = {}
+    with GpuSampler() as sampler:
+        for variant in experiment.variants:
+            path = experiment.models_for(variant)
+            release = releases[experiment.release_for(variant)]
+            reranker = None
+            if variant.mode == "hybrid_rerank":
+                budget = variant.pair_max_tokens or base_reranker.pair_max_tokens
+                if budget not in rerankers:
+                    rerankers[budget] = base_reranker.with_pair_budget(budget)
+                reranker = rerankers[budget]
+            service = SearchService(
+                engine=engine,
+                lexical=SparseRetriever(engine, client),
+                dense=DenseRetriever(
+                    engine, client, embedders[path], max_tokens=specs[path].max_tokens["papers"]
+                ),
+                reranker=reranker,
+                config=search_config,
+            )
+            try:
+                started = time.monotonic()
+                service.warm(release)
+                for query in warm_queries:
+                    run_query(service, variant, query, release, experiment)
+                warmups[variant.name] = round(time.monotonic() - started, 3)
+                results[variant.name] = [
+                    run_query(service, variant, query, release, experiment) for query in queries
+                ]
+            finally:
+                service.close()
+            variants_manifest[variant.name] = {
+                "mode": variant.mode,
+                "release_id": release.id,
+                "embedding": embedders[path].identity,
+                "embedding_precision": embedders[path].precision,
+                "reranker": reranker.identity if reranker is not None else "none",
+                "reranker_precision": reranker.precision if reranker is not None else None,
+                "baseline": variant.baseline,
+                "changes": variant.changes,
+                "warmup_seconds": warmups[variant.name],
+                "warmup_queries": {"split": warm_split, "count": len(warm_queries)},
+            }
+
+    main = releases[experiment.release]
+    manifest = build_manifest(
+        experiment,
+        split=split,
+        queries=queries,
+        corpus=main,
+        releases=facts,
+        variants=variants_manifest,
+        search_config=search_config,
+        locked_test=locked_test,
+        limited=limit_queries,
+        gpu=sampler.summary(),
+    )
+    return write_run(out, split, experiment, manifest, results)
+
+
+def build_manifest(
+    experiment: Experiment,
+    *,
+    split: str,
+    queries: Sequence[EvalQuery],
+    corpus: ReleaseRecord,
+    releases: Mapping[str, Any],
+    variants: Mapping[str, Any],
+    search_config: SearchConfig,
+    locked_test: bool,
+    limited: int | None,
+    gpu: Mapping[str, Any],
+) -> dict[str, Any]:
+    parsing = yaml.safe_load(Path("configs/parsing.yaml").read_text(encoding="utf-8")) or {}
+    created = datetime.now(UTC)
+    return {
+        "run_id": f"{experiment.name}-{split}-{created:%Y%m%dT%H%M%SZ}",
+        "created_at": created.isoformat(),
+        "code": code_state(),
+        "experiment": {
+            "name": experiment.name,
+            "path": str(experiment.path),
+            "config_sha256": experiment.sha256,
+        },
+        "corpus": {
+            "release_id": corpus.id,
+            "manifest_sha256": corpus.manifest_sha256,
+            "model_revision": corpus.model_revision,
+            "parser_version": (parsing.get("parser") or {}).get("parser_version"),
+            "chunker_version": (parsing.get("chunker") or {}).get("chunker_version"),
+            "releases": dict(releases),
+        },
+        "dataset": {
+            "path": str(experiment.dataset),
+            "digest": dataset_digest(experiment.dataset),
+            "split": split,
+            "slice": experiment.slice,
+            "queries": len(queries),
+            "limited_to": limited,
+        },
+        "search": {
+            "path": str(experiment.search),
+            "config_sha256": _file_sha256(experiment.search),
+            "values": search_config.__dict__,
+        },
+        "variants": dict(variants),
+        "seed": experiment.seed,
+        "bootstrap": {
+            "resamples": experiment.resamples,
+            "seed": experiment.seed,
+            "confidence": experiment.confidence,
+            "unit": "query family",
+        },
+        "hardware": hardware(),
+        "timing": {"methodology": TIMING_METHODOLOGY, "gpu": dict(gpu)},
+        "cost": {
+            "metered_usd": 0.0,
+            "note": "self-hosted models and services; no priced model call is made",
+        },
+        "locked_test": locked_test,
+    }
+
+
+def write_run(
+    out: Path,
+    split: str,
+    experiment: Experiment,
+    manifest: Mapping[str, Any],
+    results: Mapping[str, Sequence[QueryResult]],
+) -> dict[str, Any]:
+    """manifest.json, metrics.json and per_query.parquet under ``out/<split>/``."""
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    validate_manifest(manifest)
+    summaries = {name: summarize(rows, experiment) for name, rows in results.items()}
+    metrics: dict[str, Any] = {
+        "manifest": dict(manifest),
+        "variants": {name: {"summary": summary} for name, summary in summaries.items()},
+        "comparisons": comparisons(results, experiment),
+    }
+    if split == "validation":
+        metrics["decision"] = decide(split, results, summaries, experiment)
+    directory = out / split
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    (directory / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n")
+    rows = [result.row() for name in results for result in results[name]]
+    pq.write_table(pa.Table.from_pylist(rows), directory / "per_query.parquet")
+    return metrics
+
+
+# --- The smoke set: synthetic, service-free, frozen ---------------------------------------
+
+
+class InlineRunner:
+    """Stages one after another, no threads and no deadlines: a deterministic runner."""
+
+    def run(self, stages: Mapping[str, Stage]) -> dict[str, Outcome]:
+        outcomes: dict[str, Outcome] = {}
+        for name, (fn, _) in stages.items():
+            try:
+                outcomes[name] = Outcome(value=fn())
+            except Exception as error:  # noqa: BLE001 - mirrors the threaded runner's typing
+                outcomes[name] = Outcome(error=str(getattr(error, "code", type(error).__name__)))
+        return outcomes
+
+
+class MemoryPapers:
+    def __init__(self, rows: Mapping[str, PaperRow]) -> None:
+        self._rows = dict(rows)
+
+    def load(self, paper_ids: Sequence[str]) -> dict[str, PaperRow]:
+        return {paper_id: self._rows[paper_id] for paper_id in paper_ids if paper_id in self._rows}
+
+
+class MemoryLexical:
+    """The P2.1 BM25 oracle, exact and in memory."""
+
+    def __init__(self, documents: Mapping[str, str]) -> None:
+        from ..search.lexical import BM25
+
+        self._bm25 = BM25()
+        self._bm25.fit(documents)
+
+    def search(
+        self, query: str, filters: PaperFilters | None, limit: int, release_id: str
+    ) -> list[tuple[str, float]]:
+        return self._bm25.search(query, limit)
+
+
+class MemoryDense:
+    """Exhaustive cosine over fixture vectors; ties broken by id so the order is total."""
+
+    def __init__(self, documents: Mapping[str, str], model: Any) -> None:
+        self._model = model
+        self._ids = sorted(documents)
+        self._vectors = model.encode_array([documents[item] for item in self._ids]).vectors
+
+    def search(
+        self, query: str, filters: PaperFilters | None, limit: int, release_id: str
+    ) -> list[tuple[str, float]]:
+        vector = self._model.encode_array([query]).vectors[0]
+        scores = self._vectors @ vector
+        ranked = sorted(
+            zip(self._ids, scores.tolist(), strict=True), key=lambda pair: (-pair[1], pair[0])
+        )
+        return [(item, float(value)) for item, value in ranked[:limit]]
+
+
+SMOKE_EXPERIMENT_NAME = "retrieval-smoke"
+
+
+def _jsonl(path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+
+
+def smoke_experiment(fixture: Path) -> Experiment:
+    return Experiment(
+        path=fixture,
+        sha256="fixture",
+        name=SMOKE_EXPERIMENT_NAME,
+        dataset=fixture,
+        query_text="",
+        slice="all",
+        release="smoke",
+        search=Path("configs/search.yaml"),
+        models=Path("configs/models.yaml"),
+        recall_at=(10, 50),
+        ndcg_at=(10,),
+        mrr_at=(10,),
+        depth=50,
+        resamples=1000,
+        seed=42,
+        confidence=0.95,
+        variants=tuple(Variant(name=mode, mode=mode) for mode in MODES),
+        decision={"primary": "ndcg@10", "order": list(MODES)},
+    )
+
+
+def run_smoke(fixture: Path) -> dict[str, Any]:
+    """The four baselines over the synthetic fixture: fixture models, no services, no network."""
+
+    from ..models.embeddings import FixtureEmbedding
+    from ..search.lexical import paper_text
+    from ..search.rerank import FixtureReranker
+
+    papers = {row["paper_id"]: row for row in _jsonl(fixture / "papers.jsonl")}
+    documents = {pid: paper_text(row["title"], row["abstract"]) for pid, row in papers.items()}
+    rows = {
+        pid: PaperRow(
+            paper_id=pid,
+            title=row["title"],
+            abstract=row["abstract"],
+            authors=(),
+            venue=row["venue"],
+            year=int(row["year"]),
+            pdf_url=None,
+            fulltext=False,
+        )
+        for pid, row in papers.items()
+    }
+    grades: dict[str, dict[str, int]] = {}
+    for qrel in _jsonl(fixture / "qrels.jsonl"):
+        grades.setdefault(qrel["query_id"], {})[qrel["paper_id"]] = int(qrel["grade"])
+    queries = [
+        EvalQuery(
+            query_id=row["query_id"],
+            family_id=row["family_id"],
+            split=row["split"],
+            query_set=row["query_set"],
+            text=row["query"],
+            grades=grades.get(row["query_id"], {}),
+        )
+        for row in sorted(_jsonl(fixture / "queries.jsonl"), key=lambda item: item["query_id"])
+    ]
+    model = FixtureEmbedding()
+    release = ReleaseRecord(
+        id="smoke",
+        manifest_sha256="0" * 64,
+        paper_collection="smoke_paper_abstracts",
+        chunk_collection="smoke_paper_chunks",
+        model_revision=model.identity,
+        status="ready",
+        counts={},
+    )
+    service = SearchService(
+        engine=None,
+        lexical=MemoryLexical(documents),
+        dense=MemoryDense(documents, model),
+        reranker=FixtureReranker(),
+        config=SearchConfig(),
+        runner=InlineRunner(),
+        papers=MemoryPapers(rows),
+        capture=lambda: release,
+    )
+    experiment = smoke_experiment(fixture)
+    ticks = iter(range(10**9))
+    output: dict[str, Any] = {}
+    for variant in experiment.variants:
+        results = [
+            run_query(
+                service, variant, query, release, experiment, clock=lambda: float(next(ticks))
+            )
+            for query in queries
+            if query.relevant
+        ]
+        summary = summarize(results, experiment)
+        rankings = [[result.query_id, result.ranked] for result in results]
+        output[variant.name] = {
+            "metrics": {name: round(summary[name]["mean"], 6) for name in metric_names(experiment)},
+            "intervals": {
+                name: [round(summary[name]["low"], 6), round(summary[name]["high"], 6)]
+                for name in metric_names(experiment)
+            },
+            "queries": len(results),
+            "failures": summary["failures"]["count"],
+            "rankings_sha256": hashlib.sha256(json.dumps(rankings).encode()).hexdigest(),
+        }
+    return output
+
+
+def check_smoke(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> dict[str, Any]:
+    """Spec §11's gate against the frozen outputs, and whether any ranking moved at all."""
+
+    from .regression import GATED_METRICS, regressed
+
+    regressions: list[dict[str, Any]] = []
+    changed: list[str] = []
+    for name, frozen in expected.items():
+        current = actual.get(name)
+        if current is None:
+            regressions.append({"variant": name, "metric": "missing"})
+            continue
+        for metric in GATED_METRICS:
+            before, after = float(frozen["metrics"][metric]), float(current["metrics"][metric])
+            if regressed(before, after):
+                regressions.append(
+                    {"variant": name, "metric": metric, "frozen": before, "now": after}
+                )
+        if current["rankings_sha256"] != frozen["rankings_sha256"]:
+            changed.append(name)
+    return {"passed": not regressions, "regressions": regressions, "rankings_changed": changed}

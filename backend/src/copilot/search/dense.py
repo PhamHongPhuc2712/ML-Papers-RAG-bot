@@ -55,7 +55,9 @@ class DenseRetriever:
             )
         if limit < 1:
             raise IndexBuildError("invalid_limit", str(limit))
-        encoded = self._model.encode_array([query], max_tokens=self._max_tokens)
+        # Queries only: documents were encoded without the model's instruction.
+        prefix = str(getattr(self._model, "query_prefix", "") or "")
+        encoded = self._model.encode_array([prefix + query], max_tokens=self._max_tokens)
         validate_vectors(encoded.vectors, self._model.dimensions)
         hits = self._client.query_points(
             release.collection(self._kind),
