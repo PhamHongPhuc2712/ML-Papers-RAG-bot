@@ -14,8 +14,16 @@ deadlines), P2.4 (the search API) and P2.5 (retrieval ablations) are done, and r
 `m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
 `copilot_v2` is migrated to `0004_search_orderings`. E3 (LitSearch's own corpus, the
 primary G2 evidence) selects `hybrid_rerank` under the pre-registered rule, superseding
-P2.5's underpowered "retain BM25" (`reports/e3-litsearch-baselines.md`). G2 still needs the
-locked test split, run once with `--locked-test`; it has **not** been run. Then P3.1.
+P2.5's underpowered "retain BM25" (`reports/e3-litsearch-baselines.md`).
+
+**URGENT — fix first: P2.6** (retrieval plan, added 2026-10-01). E3 and P2.5 measured
+three gaps in `hybrid_rerank`:
+- the first stage misses the gold paper for 10–21% of queries;
+- the depth-50 rerank cut drops another 7.6–9.1 points;
+- reranking quality collapses on a shared GPU, with 17–51% timeouts.
+
+P2.6 comes before the locked test split and before P3.1. The locked test, run once with
+`--locked-test`, has **not** been run, and it waits for P2.6 and the user's go-ahead.
 
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
 `[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU

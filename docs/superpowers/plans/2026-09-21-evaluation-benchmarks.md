@@ -291,6 +291,18 @@ deliberately broken baseline surfaces as a counted failure, not as a zero.
 
 **Commit:** `feat: run the four retrieval baselines against LitSearch`
 
+**Outcome, and an URGENT follow-up (added 2026-10-01).** E3 is done. The pre-registered rule
+promoted hybrid, then reranking ([evidence](../../../reports/e3-litsearch-baselines.md)). The
+runs also exposed gaps that must be fixed **before the locked test split and before P3.1**.
+They are tracked as P2.6 in the
+[retrieval plan](2026-09-05-02-retrieval-ranking.md#p26-urgent--fix-first-close-the-retrieval-gaps-e3-and-p25-exposed):
+- Recall@50 is 0.696 on validation.
+- The gold paper is outside both branches' top 100 for 21.3% of validation queries.
+- The depth-50 rerank cut drops 7.6–9.1 points of gold papers the pool had found.
+- 17–51% of reranks timed out while another process shared the GPU.
+- The numbers are not yet set against the published LitSearch numbers; they can be recomputed
+  offline from the stored rankings.
+
 ---
 
 ## E4: Run the in-domain slice against our corpus
@@ -304,6 +316,11 @@ corpus at abstract level on the in-domain slice (`reports/retrieval/pilot/`), on
 harness in `evaluation/retrieval.py` rather than a `runner.py`. E4's own work is what that
 run does not cover: chunk-level retrieval, the 30 hand-authored graded queries, and the
 comparison with E3's LitSearch-corpus numbers.
+
+**Urgent precondition (added 2026-10-01).** P2.6 in the retrieval plan comes first and may
+change rerank depth, candidate count or deadlines; E4 runs on whatever configuration P2.6
+settles. E4's chunk-level retrieval is also one of P2.6's first-stage recall levers on our
+corpus, so share the runs rather than doing them twice.
 
 - [ ] Restrict to queries whose gold papers are in our corpus, per E1's strong-ID matching.
       Report the slice size and the excluded count on every table.
@@ -500,7 +517,8 @@ Outputs: metrics JSON, per-query and per-item Parquet, and a Markdown report und
 
 - **G2 Retrieval** passes on E3 and E4: four baselines, one frozen snapshot, Recall@50, MRR@10,
   nDCG@10, judged coverage, p50/p95, bootstrap intervals, and a recorded promotion decision for
-  hybrid and reranking.
+  hybrid and reranking. The locked test for G2 runs only **after P2.6 (urgent, added
+  2026-10-01)** has settled the configuration, and only with the user's go-ahead.
 - **G4 Evidence** passes on E6 and E7: zero fabricated IDs, ≥95% provenance validity, ≥90%
   supported claims on the **human-audited** slice, and a calibrated judge. Below the
   calibration floor, release behavior narrows rather than the gate loosening.

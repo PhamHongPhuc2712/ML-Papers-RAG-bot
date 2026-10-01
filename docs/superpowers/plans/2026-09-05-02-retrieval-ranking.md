@@ -10,7 +10,14 @@
 
 **Spec:** [Technical specification](../specs/2026-09-05-ml-research-copilot-design.md). Read the relevant sections and global contracts before implementing.
 
-**Status:** Draft for review. No implementation tasks completed.
+**Status:** P2.1–P2.5 done (see the progress tracker). **P2.6 is open and URGENT.**
+
+> **⚠ URGENT — fix first (added 2026-10-01).** E3 and P2.5 selected `hybrid_rerank`, and
+> they also measured where it loses the right paper: the first stage misses it for 10–21%
+> of queries, the depth-50 rerank cut drops another 7.6–9.1 points, and reranking quality
+> collapses when another process shares the GPU. Do [P2.6](#p26-urgent--fix-first-close-the-retrieval-gaps-e3-and-p25-exposed)
+> **before the locked test split and before P3.1**. The locked test is scored once per
+> release, so it must score the configuration that will actually ship.
 
 ## Global Constraints
 
@@ -341,6 +348,156 @@ Run BM25, dense, hybrid and hybrid+reranker on the same corpus and candidate poo
 
 - [ ] Save `reports/retrieval/pilot/report.md`, manifest JSON, per-query results and a promote/retain decision; update this task's status in the progress tracker; inspect `git diff --check` and `git diff`, stage only the Files listed here, and commit with message `feat: add reproducible retrieval ablations and regression reports`.
 
+## P2.6 (URGENT — fix first): Close the retrieval gaps E3 and P2.5 exposed
+
+**Added 2026-10-01, after E3.** **Priority:** before the locked test split and before P3.1.
+The selection itself stands: E3's pre-registered rule promoted hybrid, then reranking, on
+clean runs. What this task fixes is how much the selected stack loses on the way, and how
+fragile its quality is on this host. Running the locked test first would spend the
+release's one test score on a configuration this task may change.
+
+**Depends on:** P2.5, E3 (benchmarks plan).
+
+### What the runs showed
+
+Where the gold paper ends up under `hybrid_rerank`. The *pool* is the union of the BM25
+top 100 and the dense top 100. The figures are `candidate_recall` and
+`rerank_pool_recall` in each run's `metrics.json`.
+
+| Run | Queries | Gold in the reranked top 50 | In the pool, cut at 50 | Not in the pool |
+|---|---|---|---|---|
+| E3 development | 359 | 78.4% | 7.6 pts | 14.0% |
+| E3 validation | 120 | 69.6% | 9.1 pts | 21.3% |
+| P2.5 development | 150 | 81.1% | 8.9 pts | 10.0% |
+| P2.5 validation | 52 | 76.9% | 7.7 pts | 15.4% |
+
+1. **The first stage misses too much.** For 10–21% of queries, neither branch has the gold
+   paper in its top 100, so no reranker can recover it. On E3 validation, 30.4% of queries
+   have no gold paper anywhere in the 50 results returned (Recall@50 0.696).
+   - The weak slices on E3 development are broad queries and citation-derived ones.
+     Specificity 0 scores nDCG@10 0.422 against 0.611 for specificity 1. The `inline_*` sets
+     score below the author-written `manual_*` sets for every variant.
+   - The dense model is not the lever. BGE-small did as well as BGE-M3 inside
+     `hybrid_rerank` in P2.5: +0.016 [+0.001, +0.039].
+2. **The depth-50 rerank cut throws away found papers.** In every run, 7.6–9.1 points of
+   gold papers are in the pool but outside the fused top 50 that the reranker sees.
+   Reranking 100 is the cheapest fix. It recovers at most the gold papers that sit at fused
+   ranks 51–100, which is less than the full "cut at 50" column.
+   - It roughly doubles reranker time. At depth 50 the rerank stage's p95 is 785 ms (E3
+     validation), so at depth 100 it will sit near or above the **1.5 s rerank deadline even
+     on a free GPU**. Run the ablation at the current deadline, and it measures timeouts
+     rather than quality.
+3. **Quality depends on having the GPU to ourselves.** During E3, another project's training
+   jobs shared the GPU.
+   - Three attempts lost 60/359, 183/359 and 31/120 reranks (17–51%) to the 1.5 s deadline.
+     Those queries fell back to fused order: correctly flagged, but without reranking's
+     +0.054–0.082 nDCG@10.
+   - BM25, dense and hybrid were unaffected and reproduced exactly.
+   - A demo on this shared host can therefore quietly serve the weaker ranking. Item 2
+     makes this worse.
+4. **Judged coverage is about 6% at rank 10.** LitSearch labels only the paper or papers a
+   query was written about, so every metric here is a lower bound on how useful a page is.
+   Tuning cannot fix this; E4's 30 hand-authored, graded queries are the mitigation.
+5. **The validation sets are small**: 52 queries in P2.5 and 120 in E3. Hybrid's interval on
+   E3 validation clears zero by +0.001.
+   - Diagnose on development and choose on validation.
+   - Pre-register every new decision rule before its validation run.
+6. **The numbers are not yet set against published LitSearch results.**
+   - Our cutoffs are Recall@10/50, nDCG@10 and MRR@10, and the paper's are not the same.
+   - `per_query.parquet` stores each variant's ranked ids 50 deep. Recall at the paper's
+     cutoffs can therefore be recomputed **offline, with no rerun**, once its metric
+     definitions are confirmed: cutoffs, multi-gold scoring and deduplication.
+
+**Files:**
+
+- Create:
+  - `configs/experiments/e3-rerank-depth.yaml`;
+  - `configs/experiments/e3-candidates.yaml`;
+  - `reports/m2-retrieval-gaps.md`.
+- Modify `backend/src/copilot/evaluation/retrieval.py` and
+  `backend/tests/integration/test_eval_runner.py`. A variant must be able to override
+  `rerank.depth`, `candidates.per_branch` and `deadlines_seconds.rerank`. Today a variant
+  can override only the pair budget, the models and the release.
+- Modify `configs/search.yaml` only to adopt a change, and only through a recorded
+  decision.
+- Write `reports/retrieval/<experiment>/` as the harness lays it out.
+
+**Spec contact:** spec §7 fixes "retrieve 100 BM25 and 100 dense candidates" and "rerank
+at most 50", and caches at most 50 for `hybrid_rerank`. Adopting a larger depth or candidate
+count is a spec change:
+- record it in the tracker's decisions;
+- update §7 in the same commit;
+- confirm the cache bound and the 3 s total budget still hold.
+
+- [ ] **Offline first, no GPU.** From the saved E3 and P2.5 `per_query.parquet` files:
+  - recompute recall at LitSearch's published cutoffs, after checking the paper's
+    definitions;
+  - tabulate the gold paper's rank by `query_set` and `specificity`;
+  - list the missed query ids per slice.
+
+  Query text stays under `DATA_DIR` and never enters git or a report.
+- [ ] **Measure the ceilings cheaply.** Re-run `hybrid` only, with no reranker, on
+  development. Record the gold paper's fused rank to depth 100, and pool recall at
+  `per_branch` 100, 200 and 300. This takes milliseconds per query and needs no free GPU
+  beyond the dense encode.
+- [ ] **Rerank depth 100: ablation, pre-registered.** Write the rule into
+  `e3-rerank-depth.yaml` and commit it **before** the validation run. It is a costlier
+  mode, so:
+  - promote it only if the paired nDCG@10 interval lies wholly above zero and the
+    end-to-end p95 is ≤ 3 s;
+  - raise the variant's rerank deadline so that a clean run has zero rerank timeouts (for
+    example 2.5 s, inside the 3 s total);
+  - report the rerank-stage p95, and treat any timeout on a clean GPU as invalidating the
+    run.
+
+  Run it on development, then validation, on a free GPU, with the existing watcher
+  discipline.
+- [ ] **First-stage recall.** On development only:
+  - try a larger `per_branch` if the ceiling run shows it pays;
+  - inspect the misses on the weak slices;
+  - for our own corpus, include E4's chunk-level retrieval, since the chunk collection
+    already exists. LitSearch's corpus is title and abstract only.
+
+  Promote a change only through its own pre-registered rule on validation.
+- [ ] **GPU contention policy.** Decide one option and record it in the tracker:
+  - **(a) Recommended**, no code: evaluation runs and demos happen only on an otherwise idle
+    GPU, checked by the pre-run sample the harness already takes. Surface the service's
+    existing `rerank_timeout` warnings in the demo, so a contended session is visible
+    rather than silently worse.
+  - **(b)** Raise the rerank deadline inside the 3 s total.
+  - **(c)** Ablate a cheaper reranker as a new pinned model.
+
+  CPU reranking (0.8 pairs/s) is not an option.
+- [ ] Re-run E3 validation with the final configuration and regenerate the table above. If
+  a knob changed, re-run P2.5's in-domain slice too.
+- [ ] Write `reports/m2-retrieval-gaps.md`: commands, GPU samples, the regenerated gap
+  table, every decision and its interval.
+- [ ] Update the tracker:
+  - P2.6's status;
+  - the G2 row;
+  - the "First search configuration" decision, if it changed.
+- [ ] Then hand the locked test to the user. **It runs only with the user's go-ahead and on a
+  free GPU, once, with `--locked-test`.** This task never runs it.
+
+**Acceptance cases:**
+- every new decision rule is in a commit that precedes its validation run;
+- the depth-100 run on a clean GPU records zero rerank timeouts, or it is set aside;
+- an overridden `rerank.depth`, `candidates.per_branch` or rerank deadline appears in the
+  run manifest and the search-config digest, so runs that differ are never compared as
+  equal;
+- no LitSearch query or document text is committed;
+- the locked test split is still unrun when this task closes.
+
+**Suites:**
+- `uv run --env-file .env.test --project backend pytest backend/tests/integration/test_eval_runner.py -q`;
+- the full suite;
+- the offline set;
+- Ruff;
+- mypy with `--config-file backend/pyproject.toml`;
+- `eval smoke`.
+
+**Commit:** `feat: measure and close the retrieval recall gaps before the locked test`
+
 ## Exit checkpoint
 
-G2 requires all four comparable baseline reports, index rollback evidence and a usable API. Choose a configuration based on validation quality/latency; a negative experiment does not block progress. Record locked-test results once for this release. Next: Plan 3.
+G2 requires all four comparable baseline reports, index rollback evidence and a usable API. Choose a configuration based on validation quality/latency; a negative experiment does not block progress. Record locked-test results once for this release — **after P2.6 (urgent, added 2026-10-01) has settled the configuration**, and only with the user's go-ahead. Next: Plan 3.
