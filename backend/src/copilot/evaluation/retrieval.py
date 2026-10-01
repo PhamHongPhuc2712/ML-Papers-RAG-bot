@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 import yaml
@@ -53,6 +53,12 @@ from .regression import validate_manifest
 MODES = ("bm25", "dense", "hybrid", "hybrid_rerank")
 WARMUP_QUERIES = 10
 SLICES = ("in_domain", "all")
+# Which id a label names: our corpus's paper id (matched by E1), or a LitSearch
+# corpusid scored against a ``litsearch-v1`` release built from LitSearch's corpus.
+LABELS = ("paper_id", "corpusid")
+# Where paper metadata and reranker text come from: PostgreSQL for our corpus, the
+# release's own snapshot for a corpus that was never ingested (LitSearch's).
+PAPER_SOURCES = ("database", "snapshot")
 TIMING_METHODOLOGY = (
     "Queries run one at a time through SearchService.rank with the production deadlines "
     "of configs/search.yaml; seconds are wall-clock around rank(), which includes both "
@@ -97,7 +103,9 @@ class Experiment:
     dataset: Path
     query_text: str
     slice: str
+    labels: str
     release: str
+    papers: str
     search: Path
     models: Path
     recall_at: tuple[int, ...]
@@ -155,7 +163,9 @@ def load_experiment(path: str | Path) -> Experiment:
             dataset=Path(dataset["path"]),
             query_text=str(dataset["query_text"]),
             slice=str(dataset.get("slice", "in_domain")),
+            labels=str(dataset.get("labels", "paper_id")),
             release=str(raw["corpus"]["release"]),
+            papers=str(raw["corpus"].get("papers", "database")),
             search=Path(raw["search"]),
             models=Path(raw["models"]),
             recall_at=tuple(int(k) for k in metrics["recall_at"]),
@@ -180,6 +190,10 @@ def load_experiment(path: str | Path) -> Experiment:
             raise ExperimentError("experiment_invalid", f"{variant.name}.baseline")
     if experiment.slice not in SLICES:
         raise ExperimentError("experiment_invalid", "dataset.slice")
+    if experiment.labels not in LABELS:
+        raise ExperimentError("experiment_invalid", "dataset.labels")
+    if experiment.papers not in PAPER_SOURCES:
+        raise ExperimentError("experiment_invalid", "corpus.papers")
     if max(experiment.recall_at + experiment.ndcg_at + experiment.mrr_at) > experiment.depth:
         raise ExperimentError("experiment_invalid", "a cutoff exceeds metrics.depth")
     return experiment
@@ -196,6 +210,7 @@ class EvalQuery:
     query_set: str
     text: str
     grades: Mapping[str, int]
+    specificity: int | None = None
 
     @property
     def relevant(self) -> frozenset[str]:
@@ -212,15 +227,21 @@ def dataset_digest(directory: Path) -> str:
     return digest.hexdigest()
 
 
-def select_queries(dataset: Dataset, split: str, slice_: str) -> list[EvalQuery]:
+def select_queries(
+    dataset: Dataset, split: str, slice_: str, labels: str = "paper_id"
+) -> list[EvalQuery]:
     """A split's queries with their labels in our corpus, in query-id order."""
 
     if split not in SPLITS:
         raise ExperimentError("unknown_split", split)
     assigned = {record.query_id: record for record in dataset.splits}
+    from .litsearch import litsearch_paper_id
+
     grades: dict[str, dict[str, int]] = {}
     for qrel in dataset.qrels:
-        if qrel.paper_id is not None:
+        if labels == "corpusid":
+            grades.setdefault(qrel.query_id, {})[litsearch_paper_id(qrel.corpusid)] = qrel.grade
+        elif qrel.paper_id is not None:
             grades.setdefault(qrel.query_id, {})[qrel.paper_id] = qrel.grade
     chosen = []
     for query in sorted(dataset.queries, key=lambda record: record.query_id):
@@ -229,8 +250,8 @@ def select_queries(dataset: Dataset, split: str, slice_: str) -> list[EvalQuery]
             continue
         if slice_ == "in_domain" and not query.in_domain:
             continue
-        labels = grades.get(query.query_id, {})
-        if not any(grade > 0 for grade in labels.values()):
+        query_grades = grades.get(query.query_id, {})
+        if not any(grade > 0 for grade in query_grades.values()):
             # Nothing it asks for is in this corpus: recall would be undefined.
             continue
         chosen.append(
@@ -240,7 +261,8 @@ def select_queries(dataset: Dataset, split: str, slice_: str) -> list[EvalQuery]
                 split=split,
                 query_set=query.query_set,
                 text=query.query,
-                grades=labels,
+                grades=query_grades,
+                specificity=query.specificity,
             )
         )
     return chosen
@@ -255,7 +277,8 @@ def load_queries(experiment: Experiment, split: str, data_dir: Path) -> list[Eva
         for row in (json.loads(line) for line in source.read_text(encoding="utf-8").splitlines())
         if row.get("query")
     }
-    return select_queries(hydrate(read_dataset(experiment.dataset), texts), split, experiment.slice)
+    dataset = hydrate(read_dataset(experiment.dataset), texts)
+    return select_queries(dataset, split, experiment.slice, experiment.labels)
 
 
 # --- Scoring ------------------------------------------------------------------------------
@@ -305,6 +328,7 @@ class QueryResult:
     stages: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     failure: str | None = None
+    specificity: int | None = None
 
     def row(self) -> dict[str, Any]:
         return {
@@ -312,6 +336,7 @@ class QueryResult:
             "query_id": self.query_id,
             "family_id": self.family_id,
             "query_set": self.query_set,
+            "specificity": self.specificity,
             "ranked": self.ranked,
             "relevant": self.relevant,
             **{key: value for key, value in sorted(self.metrics.items())},
@@ -347,6 +372,7 @@ def _failed(
         rerank_pool_recall=0.0 if variant.mode == "hybrid_rerank" else None,
         seconds=seconds,
         failure=code,
+        specificity=query.specificity,
     )
 
 
@@ -406,6 +432,7 @@ def run_query(
             if isinstance(detail, Mapping) and "seconds" in detail
         },
         warnings=list(ranking.ordering.warnings),
+        specificity=query.specificity,
     )
 
 
@@ -504,15 +531,30 @@ def summarize(results: Sequence[QueryResult], experiment: Experiment) -> dict[st
         name: _percentiles([result.stages[name] for result in results if name in result.stages])
         for name in stage_names
     }
-    by_set: dict[str, Any] = {}
-    for query_set in sorted({result.query_set for result in results}):
-        subset = [result for result in results if result.query_set == query_set]
-        by_set[query_set] = {"queries": len(subset)} | {
+    summary["by_query_set"] = _facet(results, experiment, lambda result: result.query_set)
+    if any(result.specificity is not None for result in results):
+        summary["by_specificity"] = _facet(
+            results, experiment, lambda result: str(result.specificity)
+        )
+    return summary
+
+
+def _facet(
+    results: Sequence[QueryResult], experiment: Experiment, key: Callable[[QueryResult], str]
+) -> dict[str, Any]:
+    """Mean metrics per value of one query attribute, with its query count."""
+
+    groups: dict[str, list[QueryResult]] = {}
+    for result in results:
+        groups.setdefault(key(result), []).append(result)
+    return {
+        value: {"queries": len(subset)}
+        | {
             name: float(np.mean([float(r.metrics[name]) for r in subset]))
             for name in metric_names(experiment)
         }
-    summary["by_query_set"] = by_set
-    return summary
+        for value, subset in sorted(groups.items())
+    }
 
 
 def paired(
@@ -791,7 +833,115 @@ class GpuSampler:
         }
 
 
+def gpu_before_run(seconds: int = 5) -> dict[str, Any]:
+    """What the GPU was doing before this run loaded anything: someone else's load.
+
+    During a run our own reranking keeps utilization high, so contention can
+    only be told apart beforehand. Above 20% here, the run's latencies — and any
+    deadline it missed — are not this system's alone.
+    """
+
+    try:
+        output = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu,memory.used",
+                "--format=csv,noheader,nounits",
+                "-l",
+                "1",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=seconds,
+        ).stdout
+    except subprocess.TimeoutExpired as expired:
+        output = (
+            expired.stdout.decode() if isinstance(expired.stdout, bytes) else (expired.stdout or "")
+        )
+    except OSError:
+        return {"available": False}
+    samples = [
+        (int(parts[0]), int(parts[1]))
+        for parts in (line.replace(" ", "").split(",") for line in output.splitlines())
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit()
+    ]
+    if not samples:
+        return {"available": False}
+    utilization = float(np.median([sample[0] for sample in samples]))
+    return {
+        "available": True,
+        "samples": len(samples),
+        "utilization_percent_p50": utilization,
+        "memory_mib": max(sample[1] for sample in samples),
+        "busy": utilization > 20,
+    }
+
+
 # --- The real run -------------------------------------------------------------------------
+
+
+class ModelFactory(Protocol):
+    """Where a run's models come from: the pinned weights, or fixtures in a test."""
+
+    def embedder(self, models: Path) -> tuple[Any, int | None]: ...
+
+    def reranker(self, models: Path) -> Any: ...
+
+
+class PinnedModels:
+    """The pinned embedders and reranker under DATA_DIR, each loaded once per run."""
+
+    def __init__(self, data_dir: Path) -> None:
+        self._data_dir = data_dir
+        self._embedders: dict[Path, tuple[Any, int | None]] = {}
+        self._rerankers: dict[Path, Any] = {}
+
+    def embedder(self, models: Path) -> tuple[Any, int | None]:
+        from ..models.embeddings import TransformerEmbedding, load_embedding_spec
+
+        if models not in self._embedders:
+            spec = load_embedding_spec(models)
+            model = TransformerEmbedding(spec, self._data_dir)
+            self._embedders[models] = (model, spec.max_tokens["papers"])
+        return self._embedders[models]
+
+    def reranker(self, models: Path) -> Any:
+        from ..search.rerank import CrossEncoderReranker, load_reranker_spec
+
+        if models not in self._rerankers:
+            self._rerankers[models] = CrossEncoderReranker(
+                load_reranker_spec(models), self._data_dir
+            )
+        return self._rerankers[models]
+
+
+def snapshot_papers(release: ReleaseRecord) -> MemoryPapers:
+    """Paper metadata and reranker text from the snapshot a release was built from.
+
+    For a corpus that was never ingested into PostgreSQL — LitSearch's — this is
+    the only copy of its titles and abstracts, and the same text the index encoded.
+    """
+
+    import pyarrow.parquet as pq
+
+    from ..corpus.export import shard_paths, validate_manifest
+
+    manifest_path = Path(str(release.counts.get("manifest", "")))
+    manifest = validate_manifest(manifest_path)
+    rows: dict[str, PaperRow] = {}
+    for shard in shard_paths(manifest, "papers"):
+        for row in pq.read_table(manifest_path.parent / shard).to_pylist():
+            rows[str(row["paper_id"])] = PaperRow(
+                paper_id=str(row["paper_id"]),
+                title=str(row["title"] or ""),
+                abstract=row.get("abstract"),
+                authors=(),
+                venue=str(row.get("venue") or ""),
+                year=int(row.get("year") or 0),
+                pdf_url=row.get("pdf_url"),
+                fulltext=row.get("parse_status") == "parsed",
+            )
+    return MemoryPapers(rows)
 
 
 def _release_facts(record: ReleaseRecord, client: Any) -> dict[str, Any]:
@@ -829,6 +979,7 @@ def run_retrieval(
     qdrant_url: str,
     locked_test: bool = False,
     limit_queries: int | None = None,
+    models: ModelFactory | None = None,
 ) -> dict[str, Any]:
     """Every variant of an experiment over one split: manifest, metrics and per-query rows."""
 
@@ -836,9 +987,7 @@ def run_retrieval(
 
     from ..corpus.releases import load_release
     from ..db.session import make_engine
-    from ..models.embeddings import TransformerEmbedding, load_embedding_spec
     from ..search.dense import DenseRetriever
-    from ..search.rerank import CrossEncoderReranker, load_reranker_spec
     from ..search.service import load_search_config
     from ..search.sparse import SparseRetriever
 
@@ -859,6 +1008,7 @@ def run_retrieval(
     warm_split = "validation" if split == "development" else "development"
     warm_queries = load_queries(experiment, warm_split, data_dir)[:WARMUP_QUERIES]
 
+    before = gpu_before_run()
     engine = make_engine(database_url)
     client = QdrantClient(url=qdrant_url, timeout=60)
     search_config = load_search_config(experiment.search)
@@ -867,16 +1017,22 @@ def run_retrieval(
         for name in {experiment.release_for(v) for v in experiment.variants}
     }
     facts = {name: _release_facts(record, client) for name, record in releases.items()}
+    papers = (
+        {name: snapshot_papers(record) for name, record in releases.items()}
+        if experiment.papers == "snapshot"
+        else {}
+    )
 
-    embedders: dict[Path, Any] = {}
-    specs = {}
-    for variant in experiment.variants:
-        path = experiment.models_for(variant)
-        if path not in embedders:
-            specs[path] = load_embedding_spec(path)
-            embedders[path] = TransformerEmbedding(specs[path], data_dir)
-    base_reranker = CrossEncoderReranker(load_reranker_spec(experiment.models), data_dir)
-    rerankers = {base_reranker.pair_max_tokens: base_reranker}
+    factory = models or PinnedModels(data_dir)
+    embedders = {
+        path: factory.embedder(path)
+        for path in {experiment.models_for(variant) for variant in experiment.variants}
+    }
+    base_reranker = None
+    rerankers: dict[int | None, Any] = {}
+    if any(variant.mode == "hybrid_rerank" for variant in experiment.variants):
+        base_reranker = factory.reranker(experiment.models)
+        rerankers[getattr(base_reranker, "pair_max_tokens", None)] = base_reranker
 
     results: dict[str, list[QueryResult]] = {}
     warmups: dict[str, float] = {}
@@ -886,19 +1042,19 @@ def run_retrieval(
             path = experiment.models_for(variant)
             release = releases[experiment.release_for(variant)]
             reranker = None
-            if variant.mode == "hybrid_rerank":
-                budget = variant.pair_max_tokens or base_reranker.pair_max_tokens
+            if variant.mode == "hybrid_rerank" and base_reranker is not None:
+                budget = variant.pair_max_tokens or getattr(base_reranker, "pair_max_tokens", None)
                 if budget not in rerankers:
                     rerankers[budget] = base_reranker.with_pair_budget(budget)
                 reranker = rerankers[budget]
+            embedder, max_tokens = embedders[path]
             service = SearchService(
                 engine=engine,
                 lexical=SparseRetriever(engine, client),
-                dense=DenseRetriever(
-                    engine, client, embedders[path], max_tokens=specs[path].max_tokens["papers"]
-                ),
+                dense=DenseRetriever(engine, client, embedder, max_tokens=max_tokens),
                 reranker=reranker,
                 config=search_config,
+                papers=papers.get(release.id),
             )
             try:
                 started = time.monotonic()
@@ -914,10 +1070,10 @@ def run_retrieval(
             variants_manifest[variant.name] = {
                 "mode": variant.mode,
                 "release_id": release.id,
-                "embedding": embedders[path].identity,
-                "embedding_precision": embedders[path].precision,
+                "embedding": embedder.identity,
+                "embedding_precision": getattr(embedder, "precision", None),
                 "reranker": reranker.identity if reranker is not None else "none",
-                "reranker_precision": reranker.precision if reranker is not None else None,
+                "reranker_precision": getattr(reranker, "precision", None),
                 "baseline": variant.baseline,
                 "changes": variant.changes,
                 "warmup_seconds": warmups[variant.name],
@@ -929,13 +1085,14 @@ def run_retrieval(
         experiment,
         split=split,
         queries=queries,
+        sources={record.source for record in read_dataset(experiment.dataset).queries},
         corpus=main,
         releases=facts,
         variants=variants_manifest,
         search_config=search_config,
         locked_test=locked_test,
         limited=limit_queries,
-        gpu=sampler.summary(),
+        gpu={**sampler.summary(), "before_run": before},
     )
     return write_run(out, split, experiment, manifest, results)
 
@@ -945,6 +1102,7 @@ def build_manifest(
     *,
     split: str,
     queries: Sequence[EvalQuery],
+    sources: Iterable[str] = (),
     corpus: ReleaseRecord,
     releases: Mapping[str, Any],
     variants: Mapping[str, Any],
@@ -954,6 +1112,11 @@ def build_manifest(
     gpu: Mapping[str, Any],
 ) -> dict[str, Any]:
     parsing = yaml.safe_load(Path("configs/parsing.yaml").read_text(encoding="utf-8")) or {}
+    parser = (parsing.get("parser") or {}).get("parser_version")
+    chunker = (parsing.get("chunker") or {}).get("chunker_version")
+    if experiment.papers == "snapshot":
+        # A benchmark corpus is packaged text: nothing was parsed or chunked.
+        parser = chunker = "none: packaged title and abstract"
     created = datetime.now(UTC)
     return {
         "run_id": f"{experiment.name}-{split}-{created:%Y%m%dT%H%M%SZ}",
@@ -968,8 +1131,9 @@ def build_manifest(
             "release_id": corpus.id,
             "manifest_sha256": corpus.manifest_sha256,
             "model_revision": corpus.model_revision,
-            "parser_version": (parsing.get("parser") or {}).get("parser_version"),
-            "chunker_version": (parsing.get("chunker") or {}).get("chunker_version"),
+            "parser_version": parser,
+            "chunker_version": chunker,
+            "papers": experiment.papers,
             "releases": dict(releases),
         },
         "dataset": {
@@ -977,6 +1141,8 @@ def build_manifest(
             "digest": dataset_digest(experiment.dataset),
             "split": split,
             "slice": experiment.slice,
+            "labels": experiment.labels,
+            "sources": sorted(sources),
             "queries": len(queries),
             "limited_to": limited,
         },
@@ -1108,7 +1274,9 @@ def smoke_experiment(fixture: Path) -> Experiment:
         dataset=fixture,
         query_text="",
         slice="all",
+        labels="paper_id",
         release="smoke",
+        papers="database",
         search=Path("configs/search.yaml"),
         models=Path("configs/models.yaml"),
         recall_at=(10, 50),

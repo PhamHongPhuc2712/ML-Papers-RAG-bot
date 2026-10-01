@@ -1,0 +1,167 @@
+{
+  "bootstrap": {
+    "confidence": 0.95,
+    "resamples": 1000,
+    "seed": 42,
+    "unit": "query family"
+  },
+  "code": {
+    "diff_sha256": "b13dd4056878d00942af0a9781b0c4b98aca988d7a290dc57cd4e25566527049",
+    "dirty": true,
+    "git_sha": "07ebd3ad8980a9e028612b00ca005f65838e733b"
+  },
+  "corpus": {
+    "chunker_version": "none: packaged title and abstract",
+    "manifest_sha256": "5246fa7a9aa70c8691b3f35141beaa84332cce02cd2908492cea2126940bca24",
+    "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+    "papers": "snapshot",
+    "parser_version": "none: packaged title and abstract",
+    "release_id": "litsearch-v1",
+    "releases": {
+      "litsearch-v1": {
+        "bm25_vocabulary_sha256": "08267a516392200e6ba5fe8d6da4898f9d5d0c654a4041ed1c1abd5c18ddb137",
+        "dense_dimensions": 1024,
+        "dense_vector_bytes": 262893568,
+        "manifest_sha256": "5246fa7a9aa70c8691b3f35141beaa84332cce02cd2908492cea2126940bca24",
+        "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "paper_collection": "dev_paper_abstracts_litsearch-v1",
+        "points": 64183
+      }
+    }
+  },
+  "cost": {
+    "metered_usd": 0.0,
+    "note": "self-hosted models and services; no priced model call is made"
+  },
+  "created_at": "2026-10-01T05:51:40.283209+00:00",
+  "dataset": {
+    "digest": "dfcb643e87b52cdc74d109d2614b07537d3912dfae99b5c88d71ee0433dee7d7",
+    "labels": "corpusid",
+    "limited_to": null,
+    "path": "data/fixtures/retrieval",
+    "queries": 359,
+    "slice": "all",
+    "sources": [
+      "litsearch@9573fb284a1026c998df47024b888a163f0f0e25"
+    ],
+    "split": "development"
+  },
+  "experiment": {
+    "config_sha256": "a35d0ebe7494ec483bfaea9923f8979cb8006bf3d221f130b3638f7c241888a0",
+    "name": "e3-litsearch",
+    "path": "configs/experiments/e3-litsearch.yaml"
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "locked_test": false,
+  "run_id": "e3-litsearch-development-20261001T055140Z",
+  "search": {
+    "config_sha256": "270cdbd35d20c8c3a21d57e7ac0de59a49199939db066f75135f63a0df2b8475",
+    "path": "configs/search.yaml",
+    "values": {
+      "branch_seconds": 1.0,
+      "cache_depth": 200,
+      "cache_ttl_seconds": 600,
+      "candidates_per_branch": 100,
+      "rerank_depth": 50,
+      "rerank_retries": 1,
+      "rerank_seconds": 1.5,
+      "rrf_k": 60,
+      "total_seconds": 3.0
+    }
+  },
+  "seed": 42,
+  "timing": {
+    "gpu": {
+      "available": true,
+      "before_run": {
+        "available": true,
+        "busy": false,
+        "memory_mib": 1407,
+        "samples": 5,
+        "utilization_percent_p50": 0.0
+      },
+      "compute_processes_seen": [
+        "27"
+      ],
+      "memory_mib": {
+        "max": 5987,
+        "min": 3744
+      },
+      "samples": 246,
+      "utilization_percent": {
+        "max": 100,
+        "p50": 83.0
+      }
+    },
+    "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+  },
+  "variants": {
+    "bm25": {
+      "baseline": null,
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "bm25",
+      "release_id": "litsearch-v1",
+      "reranker": "none",
+      "reranker_precision": null,
+      "warmup_queries": {
+        "count": 10,
+        "split": "validation"
+      },
+      "warmup_seconds": 3.473
+    },
+    "dense": {
+      "baseline": null,
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "dense",
+      "release_id": "litsearch-v1",
+      "reranker": "none",
+      "reranker_precision": null,
+      "warmup_queries": {
+        "count": 10,
+        "split": "validation"
+      },
+      "warmup_seconds": 5.058
+    },
+    "hybrid": {
+      "baseline": null,
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid",
+      "release_id": "litsearch-v1",
+      "reranker": "none",
+      "reranker_precision": null,
+      "warmup_queries": {
+        "count": 10,
+        "split": "validation"
+      },
+      "warmup_seconds": 0.868
+    },
+    "hybrid_rerank": {
+      "baseline": null,
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "litsearch-v1",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "warmup_queries": {
+        "count": 10,
+        "split": "validation"
+      },
+      "warmup_seconds": 6.642
+    }
+  }
+}

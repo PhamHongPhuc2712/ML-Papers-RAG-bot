@@ -65,12 +65,18 @@ def _run_table(runs: Mapping[str, Mapping[str, Any]]) -> list[str]:
         sampled = m["timing"]["gpu"]
         if not sampled.get("available"):
             return "not sampled"
-        return (
+        text = (
             f"util p50 {sampled['utilization_percent']['p50']:.0f}% / max "
             f"{sampled['utilization_percent']['max']}%; memory "
             f"{sampled['memory_mib']['min']}–{sampled['memory_mib']['max']} MiB; "
             f"{len(sampled['compute_processes_seen'])} GPU processes seen"
         )
+        before = sampled.get("before_run") or {}
+        if before.get("available"):
+            text += f"; before the run {before['utilization_percent_p50']:.0f}% busy" + (
+                " — **contended**" if before.get("busy") else ""
+            )
+        return text
 
     row("GPU during the run", gpu)
     row("Locked test", lambda m: "yes" if m.get("locked_test") else "no")
@@ -118,23 +124,8 @@ def _split_section(split: str, run: Mapping[str, Any]) -> list[str]:
             )
             + f" | {warm} |"
         )
-    sets = sorted({s for entry in variants.values() for s in entry["summary"]["by_query_set"]})
-    if len(sets) > 1:
-        lines += ["", "nDCG@10 by query set:", ""]
-        lines += ["| Variant | " + " | ".join(f"{s} (n)" for s in sets) + " |"]
-        lines += ["|---|" + "---|" * len(sets)]
-        for name, entry in variants.items():
-            by_set = entry["summary"]["by_query_set"]
-            lines.append(
-                f"| `{name}` | "
-                + " | ".join(
-                    f"{_number(by_set[s]['ndcg@10'])} ({by_set[s]['queries']})"
-                    if s in by_set
-                    else "—"
-                    for s in sets
-                )
-                + " |"
-            )
+    for facet, label in (("by_query_set", "query set"), ("by_specificity", "specificity")):
+        lines += _facet_table(variants, facet, label)
     comparisons = run.get("comparisons") or {}
     if comparisons:
         lines += [
@@ -161,6 +152,27 @@ def _split_section(split: str, run: Mapping[str, Any]) -> list[str]:
     decision = run.get("decision")
     if decision:
         lines += _decision(decision)
+    return lines
+
+
+def _facet_table(variants: Mapping[str, Any], facet: str, label: str) -> list[str]:
+    """nDCG@10 per value of one query attribute, with each value's query count."""
+
+    values = sorted({v for entry in variants.values() for v in entry["summary"].get(facet, {})})
+    if len(values) < 2:
+        return []
+    lines = ["", f"nDCG@10 by {label}:", ""]
+    lines += ["| Variant | " + " | ".join(f"{value} (n)" for value in values) + " |"]
+    lines += ["|---|" + "---|" * len(values)]
+    for name, entry in variants.items():
+        groups = entry["summary"].get(facet, {})
+        cells = [
+            f"{_number(groups[value]['ndcg@10'])} ({groups[value]['queries']})"
+            if value in groups
+            else "—"
+            for value in values
+        ]
+        lines.append(f"| `{name}` | " + " | ".join(cells) + " |")
     return lines
 
 

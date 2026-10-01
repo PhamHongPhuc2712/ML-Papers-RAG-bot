@@ -12,9 +12,10 @@ it before assuming anything about status. M2 is under way: P2.1 (metrics, labels
 BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded reranking,
 deadlines), P2.4 (the search API) and P2.5 (retrieval ablations) are done, and release
 `m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
-`copilot_v2` is migrated to `0004_search_orderings`. P2.5's pre-registered rule retained
-BM25 as the first search configuration (`reports/retrieval/pilot/`); G2 still needs E3
-and the locked test split, which has **not** been run. Next is E3.
+`copilot_v2` is migrated to `0004_search_orderings`. E3 (LitSearch's own corpus, the
+primary G2 evidence) selects `hybrid_rerank` under the pre-registered rule, superseding
+P2.5's underpowered "retain BM25" (`reports/e3-litsearch-baselines.md`). G2 still needs the
+locked test split, run once with `--locked-test`; it has **not** been run. Then P3.1.
 
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
 `[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU
@@ -206,6 +207,22 @@ uv run --project backend python -m copilot.cli eval report --out reports/retriev
 uv run --project backend python -m copilot.cli eval compare --baseline A/validation/metrics.json --candidate B/validation/metrics.json
 uv run --project backend python -m copilot.cli eval smoke        # offline, frozen outputs; --update to re-freeze
 ```
+
+E3 runs the same harness over LitSearch's own corpus: `eval litsearch-snapshot` writes its
+64,183 documents as a snapshot under `${DATA_DIR}/exports/litsearch-v1/` — never in git;
+LitSearch has no license — keyed by `uuid5` of each corpusid. `litsearch-v1` is a separate
+release, paper collection only, never activated. `configs/experiments/e3-litsearch.yaml`
+scores by corpusid (`labels: corpusid`) and reads paper text from that snapshot
+(`papers: snapshot`), since LitSearch's papers are not in PostgreSQL.
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli eval litsearch-snapshot
+uv run --env-file .env --project backend python -m copilot.cli search build-index --manifest litsearch-v1/manifest.json --release litsearch-v1 --collections papers
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/e3-litsearch.yaml --split validation --out reports/retrieval/e3-litsearch
+```
+
+Every run samples the GPU for 5 s before loading a model and marks itself **contended**
+when another process kept it over 20% busy. Run timing evidence only on a free GPU.
 
 ```bash
 uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head

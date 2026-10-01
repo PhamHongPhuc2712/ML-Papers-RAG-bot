@@ -28,12 +28,17 @@ enters a corpus export.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unicodedata
+import uuid
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ..corpus.mirror import hf_fetch
 
@@ -44,6 +49,10 @@ LITSEARCH_REVISION = "9573fb284a1026c998df47024b888a163f0f0e25"
 QUERY_MEMBER = "query/full-00000-of-00001.parquet"
 CORPUS_CLEAN_MEMBERS = tuple(f"corpus_clean/full-0000{i}-of-00006.parquet" for i in range(6))
 CORPUS_S2ORC_MEMBERS = tuple(f"corpus_s2orc/full-0000{i}-of-00008.parquet" for i in range(8))
+
+# Fixed for good: a LitSearch document's id in our snapshot format is derived from
+# its corpusid, so gold labels and indexed points meet without a lookup table.
+LITSEARCH_NAMESPACE = uuid.UUID("2b6c3f1e-8d47-4f0a-9c55-3e1d7a9b4c20")
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -308,3 +317,144 @@ def gold_coverage(queries: Sequence[LitSearchQuery], matched: set[str]) -> GoldC
             for name, (c, p, m) in per_set.items()
         },
     )
+
+
+def litsearch_paper_id(corpusid: str | int) -> str:
+    """The UUID a LitSearch document carries in a snapshot and in Qdrant.
+
+    Qdrant point ids are UUIDs or integers, and every release keys its points
+    by paper id. A name-based UUID keeps the corpusid recoverable from the
+    snapshot and needs no table to map labels onto points.
+    """
+
+    return str(uuid.uuid5(LITSEARCH_NAMESPACE, f"litsearch:corpusid:{corpusid}"))
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def local_paths(root: Path, checksums: Mapping[str, str]) -> LitSearchPaths:
+    """The pinned files E1 captured, checked against their recorded sha256, offline.
+
+    Only the members a conversion reads are hashed: the query file and the six
+    ``corpus_clean`` shards. A missing or altered file is refused, not refetched.
+    """
+
+    for member in (QUERY_MEMBER, *CORPUS_CLEAN_MEMBERS):
+        path = root / member
+        if not path.is_file():
+            raise LitSearchError("benchmark_file_missing", str(path))
+        expected = checksums.get(member)
+        if expected is None:
+            raise LitSearchError("benchmark_checksum_unpinned", member)
+        if _file_sha256(path) != expected:
+            raise LitSearchError("benchmark_checksum_mismatch", member)
+    return LitSearchPaths(
+        root=root,
+        query=root / QUERY_MEMBER,
+        corpus_clean=tuple(root / member for member in CORPUS_CLEAN_MEMBERS),
+        corpus_s2orc=tuple(root / member for member in CORPUS_S2ORC_MEMBERS),
+    )
+
+
+def write_litsearch_snapshot(
+    paths: LitSearchPaths,
+    destination: Path,
+    *,
+    run_id: str = "litsearch-v1",
+    revision: str = LITSEARCH_REVISION,
+    batch_rows: int = 20_000,
+) -> dict[str, Any]:
+    """``corpus_clean`` as a schema-2 corpus snapshot that ``search build-index`` reads.
+
+    Title and abstract only, the shape the benchmark is packaged in, so the
+    headline number never mixes in full text. The chunks table is written
+    empty, its digest is that of no rows, and every row is marked
+    ``redistribution: unknown``: LitSearch declares no license, so the
+    snapshot stays under ``DATA_DIR`` like the rest of the benchmark.
+    """
+
+    import pyarrow.parquet as pq
+
+    from ..corpus.export import (
+        CHUNKS_SCHEMA,
+        DIGEST_RULE,
+        PAPERS_SCHEMA,
+        SCHEMA_VERSION,
+        SHARD_BYTES,
+        _ShardWriter,
+    )
+    from ..search.lexical import paper_text
+
+    target = Path(destination)
+    if (target / "manifest.json").exists():
+        raise LitSearchError("snapshot_exists", str(target))
+    target.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for shard in paths.corpus_clean:
+        source = pq.ParquetFile(shard)
+        for batch in source.iter_batches(columns=["corpusid", "title", "abstract"]):
+            for row in batch.to_pylist():
+                corpusid = str(row["corpusid"])
+                if corpusid in seen:
+                    raise LitSearchError("duplicate_corpusid", corpusid)
+                seen.add(corpusid)
+                title = str(row["title"] or "")
+                abstract = row["abstract"] or None
+                document = paper_text(title, abstract)
+                rows.append(
+                    {
+                        "paper_id": litsearch_paper_id(corpusid),
+                        "title": title,
+                        "abstract": abstract,
+                        "source": "litsearch",
+                        "source_revision": revision,
+                        "redistribution": "unknown",
+                        "identifiers": json.dumps({"litsearch_corpusid": corpusid}),
+                        "text_sha256": hashlib.sha256(document.encode("utf-8")).hexdigest(),
+                    }
+                )
+    # The digest rule and the index build both read papers in id order.
+    rows.sort(key=lambda row: str(row["paper_id"]))
+    digest = hashlib.sha256()
+    for row in rows:
+        digest.update(f"{row['paper_id']}\t{row['text_sha256']}\n".encode())
+    papers = _ShardWriter(target, "papers", PAPERS_SCHEMA, SHARD_BYTES)
+    for start in range(0, len(rows), batch_rows):
+        papers.write(rows[start : start + batch_rows])
+    chunks = _ShardWriter(target, "chunks", CHUNKS_SCHEMA, SHARD_BYTES)
+    golds = {corpusid for query in load_queries(paths) for corpusid in query.corpusids}
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "created_at": datetime.now(UTC).isoformat(),
+        "shards": [*papers.close(), *chunks.close()],
+        "counts": {
+            "papers": len(rows),
+            "chunks_total": 0,
+            "chunks_exported": 0,
+            "withheld_chunks": 0,
+        },
+        "digests": {"papers": digest.hexdigest(), "chunks": hashlib.sha256().hexdigest()},
+        "digest_rule": DIGEST_RULE,
+        "versions": {"parser": [], "chunker": []},
+        "rights": {"exported_when": "allowed", "withheld": ["unknown"]},
+        "source": {
+            "benchmark": "litsearch",
+            "repo": LITSEARCH_REPO,
+            "revision": revision,
+            "members": list(CORPUS_CLEAN_MEMBERS),
+            "id_rule": "uuid5(LITSEARCH_NAMESPACE, 'litsearch:corpusid:<corpusid>')",
+        },
+        "golds": {"distinct": len(golds), "missing_from_corpus": len(golds - seen)},
+    }
+    (target / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, default=str), encoding="utf-8"
+    )
+    return manifest

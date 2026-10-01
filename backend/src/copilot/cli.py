@@ -19,6 +19,7 @@ DEFAULT_ARTIFACTS_PATH = Path("configs/artifacts.yaml")
 DEFAULT_MODELS_PATH = Path("configs/models.yaml")
 DEFAULT_SEARCH_PATH = Path("configs/search.yaml")
 DEFAULT_EXPERIMENT_PATH = Path("configs/experiments/retrieval.yaml")
+DEFAULT_EVALUATION_PATH = Path("configs/evaluation.yaml")
 DEFAULT_SMOKE_PATH = Path("data/fixtures/retrieval-smoke")
 DEFAULT_DATASET_PATH = Path("data/fixtures/retrieval")
 
@@ -1138,6 +1139,29 @@ def run_search_pilot(
     }
 
 
+def run_litsearch_snapshot(*, out: Path, source: Path | None, data_dir: Path) -> dict[str, Any]:
+    """Write LitSearch's corpus as a snapshot under the exports directory, offline."""
+
+    import yaml
+
+    from .evaluation.litsearch import local_paths, write_litsearch_snapshot
+
+    evaluation = yaml.safe_load(DEFAULT_EVALUATION_PATH.read_text(encoding="utf-8"))
+    pinned = evaluation["benchmarks"]["litsearch"]
+    root = source or data_dir / "benchmarks" / "litsearch"
+    destination = _snapshot_path(out, data_dir, DEFAULT_ARTIFACTS_PATH)
+    manifest = write_litsearch_snapshot(
+        local_paths(root, pinned["checksums"]),
+        destination,
+        run_id=destination.name,
+        revision=pinned["revision"],
+    )
+    return {
+        "out": str(destination / "manifest.json"),
+        **{key: manifest[key] for key in ("counts", "digests", "golds")},
+    }
+
+
 def run_eval_smoke(fixture: Path, *, update: bool) -> dict[str, Any]:
     """The synthetic smoke set against its frozen outputs; ``update`` re-freezes them."""
 
@@ -1433,6 +1457,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     compare.add_argument("--baseline", type=Path, required=True, help="a run's metrics.json")
     compare.add_argument("--candidate", type=Path, required=True, help="a run's metrics.json")
+    litsearch_snapshot = evaluation_commands.add_parser(
+        "litsearch-snapshot",
+        help="LitSearch's corpus_clean as a corpus snapshot, for its own release (E3)",
+    )
+    litsearch_snapshot.add_argument(
+        "--out", type=Path, default=Path("litsearch-v1"), help="relative to the exports directory"
+    )
+    litsearch_snapshot.add_argument(
+        "--source", type=Path, default=None, help="defaults to DATA_DIR/benchmarks/litsearch"
+    )
+    litsearch_snapshot.add_argument("--data-dir", type=Path, default=None)
     report = evaluation_commands.add_parser("report", help="re-render an experiment's report.md")
     report.add_argument("--out", type=Path, required=True)
 
@@ -1507,6 +1542,10 @@ def main(argv: list[str] | None = None) -> int:
         if result["regressed"]:
             print(json.dumps(result, sort_keys=True, default=str))
             return 1
+    elif args.command == "eval" and args.eval_command == "litsearch-snapshot":
+        result = run_litsearch_snapshot(
+            out=args.out, source=args.source, data_dir=_data_dir(args.data_dir, parser)
+        )
     elif args.command == "eval" and args.eval_command == "report":
         from .evaluation.report import render_report
 

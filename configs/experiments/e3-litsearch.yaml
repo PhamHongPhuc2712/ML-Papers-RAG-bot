@@ -1,0 +1,59 @@
+# E3: the four retrieval baselines over LitSearch's own corpus — the same 597
+# queries and 64,183 documents published results use, so this measures our
+# retrieval stack, not our corpus. Title and abstract only, the shape the corpus
+# is packaged in.
+#
+#   eval litsearch-snapshot --out litsearch-v1
+#   search build-index --manifest litsearch-v1/manifest.json --release litsearch-v1 \
+#     --collections papers
+#   eval retrieval --config configs/experiments/e3-litsearch.yaml --split validation \
+#     --out reports/retrieval/e3-litsearch
+#
+# litsearch-v1 is its own release with its own collections; it is never activated.
+schema_version: 1
+name: e3-litsearch
+
+dataset:
+  path: data/fixtures/retrieval
+  query_text: benchmarks/litsearch-dataset/queries.jsonl
+  # Every query: each one's gold papers are in LitSearch's own corpus.
+  slice: all
+  # Score against LitSearch's corpusids, not E1's matches into our corpus.
+  labels: corpusid
+
+corpus:
+  release: litsearch-v1
+  # LitSearch's documents were never ingested: metadata and reranker text come
+  # from the release's snapshot.
+  papers: snapshot
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: bm25
+    mode: bm25
+  - name: dense
+    mode: dense
+  - name: hybrid
+    mode: hybrid
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+
+decision:
+  # Fixed before any E3 number was seen, and the same rules P2.5 used.
+  primary: ndcg@10
+  order: [bm25, dense, hybrid, hybrid_rerank]
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
