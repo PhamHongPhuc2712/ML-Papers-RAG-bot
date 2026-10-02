@@ -78,8 +78,11 @@ def test_the_repository_config_prices_every_model():
     assert {"openai-gpt-6-luna", "openai-gpt-6-luna-low", "deepseek-flash"} <= set(config.models)
     assert config.models["openai-gpt-6-luna"].request["reasoning_effort"] == "none"
     assert config.models["openai-gpt-6-luna-low"].request["reasoning_effort"] == "low"
+    # Measured 2026-10-02: effort `low` refuses temperature, so only `none` pins it.
+    assert config.models["openai-gpt-6-luna"].request["temperature"] == 0
+    assert "temperature" not in config.models["openai-gpt-6-luna-low"].request
     assert config.models["deepseek-flash"].pinned is False
-    assert config.models["deepseek-flash"].request == {}
+    assert config.providers["deepseek"].request_extra == {"thinking": {"type": "disabled"}}
 
 
 def test_the_memory_ledger_refuses_past_the_cap_and_charges_failures_their_estimate():

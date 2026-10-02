@@ -16,26 +16,31 @@ providers:
     api_key_env: DEEPSEEK_API_KEY
     max_tokens_param: max_tokens
     usage: deepseek
+    # DeepSeek thinks by default, at high effort, and ignores temperature while it does
+    # (api-docs.deepseek.com/guides/thinking_mode, read 2026-10-02). Reranking asks for a
+    # ranking, not a reasoning trace.
+    request_extra: {thinking: {type: disabled}}
 models:
   openai-gpt-6-luna:
     # The chosen model (2026-10-02). A reasoning model whose default effort is medium;
     # `none` keeps hidden reasoning tokens, billed as output, out of every call. An alias
-    # with no dated snapshot: the served model is recorded on every call. L2 step 3 adds
-    # `temperature: 0` and `seed: 42` here if the live call shows the model accepts them.
+    # with no dated snapshot: the served model is recorded on every call. Live calls on
+    # 2026-10-02 showed that at effort `none` it accepts `temperature: 0` and `seed: 42`.
     provider: openai
     model: gpt-6-luna
     pinned: false
     max_output_tokens: 1024
-    request: {reasoning_effort: none}
+    request: {reasoning_effort: none, temperature: 0, seed: 42}
     price: {input: 0.10, cached_input: 0.01, output: 0.50}
   openai-gpt-6-luna-low:
     # The same model with a little reasoning, piloted against `none`. Reasoning tokens
-    # count against the output cap, hence the larger one.
+    # count against the output cap, hence the larger one. At effort `low` the API refuses
+    # `temperature` (HTTP 400, 2026-10-02) and accepts `seed`.
     provider: openai
     model: gpt-6-luna
     pinned: false
     max_output_tokens: 4096
-    request: {reasoning_effort: low}
+    request: {reasoning_effort: low, seed: 42}
     price: {input: 0.10, cached_input: 0.01, output: 0.50}
   deepseek-flash:
     # Fallback: used only in place of a luna variant that fails the pilot, and only when
