@@ -8,10 +8,18 @@ in it is written by the harness (`backend/src/copilot/evaluation/retrieval.py`),
 reports/retrieval/<experiment>/
   report.md                      rendered by `eval report` from the files below
   analysis.md                    written by hand; included in report.md verbatim
+  gaps.md, gaps.json             rendered by `eval gaps`: where the gold paper is lost (P2.6)
   <split>/manifest.json          what produced the run: code, corpus, dataset, models, hardware
   <split>/metrics.json           per-variant summaries, paired comparisons, the decision
   <split>/per_query.parquet      one row per variant and query: ranked ids, labels, scores, timing
 ```
+
+`eval gaps` reads only the recorded `per_query.parquet` files, so it reruns nothing and needs
+no service, model or GPU. Per variant it reports recall at LitSearch's published cutoffs
+(R@20 broad, R@5 and R@20 specific, set beside the paper's Table 3 when the run is over
+LitSearch's own corpus); the share of gold papers returned within the depth, pooled but
+cut, or never pooled; the gold rank distribution; and, for one focus variant, the query ids
+that lost their gold, per slice. It refuses the test split.
 
 ## Producing a run
 
@@ -22,7 +30,16 @@ uv run --project backend python -m copilot.cli eval report --out reports/retriev
 uv run --project backend python -m copilot.cli eval compare \
   --baseline OLD/validation/metrics.json --candidate NEW/validation/metrics.json
 uv run --project backend python -m copilot.cli eval smoke
+uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/e3-litsearch
 ```
+
+A variant may override three search knobs, and only these (P2.6): `candidates.per_branch`
+for any mode, and `rerank.depth` and `deadlines_seconds.rerank` for `hybrid_rerank`. They go
+in a `search:` block shaped like `configs/search.yaml`. Each variant's effective settings and
+their digest are in the manifest (`variants.<name>.search`, `search_sha256`), and `eval
+compare` lists any variant whose settings differ between the two runs. A decision block may
+set `require_undegraded: true`; a step is then promoted only if neither side degraded a
+single query.
 
 `eval retrieval` needs the core services, the `models` dependency group and the pinned
 models under `DATA_DIR`. `eval smoke` needs none of them: it ranks the synthetic fixture in

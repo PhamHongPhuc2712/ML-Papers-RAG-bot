@@ -1470,6 +1470,19 @@ def _parser() -> argparse.ArgumentParser:
     litsearch_snapshot.add_argument("--data-dir", type=Path, default=None)
     report = evaluation_commands.add_parser("report", help="re-render an experiment's report.md")
     report.add_argument("--out", type=Path, required=True)
+    gaps = evaluation_commands.add_parser(
+        "gaps", help="where recorded runs lose the gold paper, offline; never the test split"
+    )
+    gaps.add_argument("--run", type=Path, required=True, help="an experiment's output directory")
+    gaps.add_argument(
+        "--split",
+        action="append",
+        default=None,
+        choices=["development", "validation"],
+        help="repeatable; defaults to every recorded diagnostic split",
+    )
+    gaps.add_argument("--focus", default="hybrid_rerank", help="variant to break down by slice")
+    gaps.add_argument("--depth", type=int, default=50, help="the cut a gold must survive")
 
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
@@ -1550,6 +1563,11 @@ def main(argv: list[str] | None = None) -> int:
         from .evaluation.report import render_report
 
         result = {"report": str(render_report(args.out))}
+    elif args.command == "eval" and args.eval_command == "gaps":
+        from .evaluation.gaps import render_gaps
+
+        path = render_gaps(args.run, splits=args.split, focus=args.focus, depth=args.depth)
+        result = {"report": str(path), "data": str(path.with_suffix(".json"))}
     elif args.command == "eval" and args.eval_command == "validate-dataset":
         from .evaluation.datasets import validate_dataset
 

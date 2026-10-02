@@ -1,0 +1,66 @@
+# P2.6, step 3: rerank the fused top 100 instead of the top 50, on E3's corpus and
+# queries. One factor against the shipped `hybrid_rerank`: the depth, plus the deadline
+# the deeper rerank needs so that it measures ranking quality rather than timeouts.
+#
+#   eval retrieval --config configs/experiments/e3-rerank-depth.yaml --split development \
+#     --out reports/retrieval/e3-rerank-depth
+#   eval retrieval --config configs/experiments/e3-rerank-depth.yaml --split validation \
+#     --out reports/retrieval/e3-rerank-depth
+#
+# Both on an idle GPU, under the watcher discipline E3 used. Development may tune the
+# deadline (a clean run must have zero rerank timeouts). The rule below is fixed before
+# any validation number exists and is committed before the validation run.
+#
+# Adopting depth 100 changes spec §7 ("rerank at most 50", and hybrid_rerank caching at
+# most 50): it is recorded as a decision and the spec is amended in the same commit.
+schema_version: 1
+name: e3-rerank-depth
+
+dataset:
+  path: data/fixtures/retrieval
+  query_text: benchmarks/litsearch-dataset/queries.jsonl
+  slice: all
+  labels: corpusid
+
+corpus:
+  release: litsearch-v1
+  papers: snapshot
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50, 100]
+  ndcg_at: [10]
+  mrr_at: [10]
+  # Kept 100 deep, so a gold the deeper rerank reaches is visible in the rankings.
+  depth: 100
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  # As shipped: depth 50, rerank deadline 1.5 s.
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+  - name: hybrid_rerank_depth100
+    mode: hybrid_rerank
+    changes: rerank depth 50 -> 100, rerank deadline 1.5 s -> 2.5 s (inside the 3 s total)
+    search:
+      rerank: {depth: 100}
+      deadlines_seconds: {rerank: 2.5}
+
+decision:
+  # Pre-registered (P2.6). A costlier mode: promoted only if the paired 95% interval
+  # of its nDCG@10 gain over hybrid_rerank lies wholly above zero AND its end-to-end
+  # p95 is within 3 s AND neither variant degraded a single query. Any rerank timeout
+  # on an idle GPU sets the run aside instead. The rerank-stage p95 is reported.
+  # Deliberately no `baseline` on the candidate: that would also test it under the
+  # non-inferiority rule meant for cheaper ablations.
+  primary: ndcg@10
+  order: [hybrid_rerank, hybrid_rerank_depth100]
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
+  require_undegraded: true

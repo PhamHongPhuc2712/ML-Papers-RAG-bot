@@ -178,6 +178,7 @@ def _facet_table(variants: Mapping[str, Any], facet: str, label: str) -> list[st
 
 def _decision(decision: Mapping[str, Any]) -> list[str]:
     rules = decision["rules"]
+    strict = bool(rules.get("require_undegraded"))
     lines = [
         "",
         "### Decision",
@@ -185,10 +186,17 @@ def _decision(decision: Mapping[str, Any]) -> list[str]:
         f"Pre-registered rules (`decision` in the config): primary metric `{decision['primary']}`; "
         f"a costlier mode is promoted only if its paired interval lies above zero and its p95 is "
         f"within {rules.get('latency_p95_seconds', 3.0)} s; a cheaper ablation is adopted only if "
-        f"its interval rules out losing more than {rules.get('max_drop', 0.03)}.",
+        f"its interval rules out losing more than {rules.get('max_drop', 0.03)}."
+        + (
+            " A candidate with any degraded query is never chosen (`require_undegraded`)."
+            if strict
+            else ""
+        ),
         "",
-        "| Step | Difference [interval] | p95 s | Gain supported | Fits budget | Promoted |",
-        "|---|---|---|---|---|---|",
+        "| Step | Difference [interval] | p95 s | Gain supported | Fits budget | "
+        + ("Degraded | " if strict else "")
+        + "Promoted |",
+        "|---|---|---|---|---|" + ("---|" if strict else "") + "---|",
     ]
     for step in decision["steps"]:
         item = step["comparison"]
@@ -197,7 +205,8 @@ def _decision(decision: Mapping[str, Any]) -> list[str]:
             f"[{_signed(item['low'])}, {_signed(item['high'])}] | {step['p95_seconds']:.2f} | "
             f"{'yes' if step['gain_supported'] else 'no'} | "
             f"{'yes' if step['fits_budget'] else 'no'} | "
-            f"{'**yes**' if step['promoted'] else 'no'} |"
+            + (f"{step.get('degraded', 0)} | " if strict else "")
+            + f"{'**yes**' if step['promoted'] else 'no'} |"
         )
     if decision["ablations"]:
         lines += [

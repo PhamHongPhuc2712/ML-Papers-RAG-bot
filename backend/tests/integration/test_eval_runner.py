@@ -336,3 +336,61 @@ def test_a_duplicate_corpusid_is_refused(tmp_path):
     pq.write_table(pa.Table.from_pylist(table + table[:1]), paths.corpus_clean[0])
     with pytest.raises(LitSearchError, match="duplicate_corpusid"):
         write_litsearch_snapshot(paths, tmp_path / "out")
+
+
+def test_a_variant_overriding_search_knobs_runs_with_them_and_records_them(
+    bench, test_settings, tmp_path
+):
+    """P2.6: rerank depth, candidates per branch and the rerank deadline, per variant."""
+
+    config = yaml.safe_load(bench.config.read_text())
+    config["variants"] = [
+        {"name": "hybrid", "mode": "hybrid"},
+        {
+            "name": "hybrid_pool2",
+            "mode": "hybrid",
+            "baseline": "hybrid",
+            "changes": "candidates per branch 100 -> 2",
+            "search": {"candidates": {"per_branch": 2}},
+        },
+        {"name": "hybrid_rerank", "mode": "hybrid_rerank"},
+        {
+            "name": "hybrid_rerank_depth3",
+            "mode": "hybrid_rerank",
+            "baseline": "hybrid_rerank",
+            "changes": "rerank depth 50 -> 3, rerank deadline 1.5 s -> 2.5 s",
+            "search": {"rerank": {"depth": 3}, "deadlines_seconds": {"rerank": 2.5}},
+        },
+    ]
+    config["decision"]["order"] = ["hybrid", "hybrid_rerank"]
+    path = tmp_path / "overrides.yaml"
+    path.write_text(yaml.safe_dump(config))
+    metrics = run_retrieval(
+        path,
+        "development",
+        tmp_path / "out",
+        data_dir=bench.data_dir,
+        database_url=test_settings.database_url,
+        qdrant_url=test_settings.qdrant_url,
+        models=FixtureModels(),
+    )
+    variants = metrics["manifest"]["variants"]
+    assert variants["hybrid"]["search"]["candidates_per_branch"] == 100
+    assert variants["hybrid_pool2"]["search"]["candidates_per_branch"] == 2
+    assert variants["hybrid_pool2"]["search_overrides"] == {"candidates_per_branch": 2}
+    deeper = variants["hybrid_rerank_depth3"]["search"]
+    assert (deeper["rerank_depth"], deeper["rerank_seconds"]) == (3, 2.5)
+    # Same knobs, same digest; any override, its own digest.
+    assert variants["hybrid"]["search_sha256"] == variants["hybrid_rerank"]["search_sha256"]
+    assert len({entry["search_sha256"] for entry in variants.values()}) == 3
+    # The run-level record still names the file every variant started from.
+    assert metrics["manifest"]["search"]["values"]["rerank_depth"] == 50
+
+    rows = pq.read_table(tmp_path / "out" / "development" / "per_query.parquet").to_pylist()
+
+    def longest(name):
+        return max(len(row["ranked"]) for row in rows if row["variant"] == name)
+
+    # Two candidates from each branch fuse to at most four; the corpus has eight.
+    assert longest("hybrid_pool2") <= 4 < longest("hybrid")
+    assert longest("hybrid_rerank_depth3") == 3 < longest("hybrid_rerank")

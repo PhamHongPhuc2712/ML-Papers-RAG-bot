@@ -27,7 +27,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -84,6 +84,16 @@ class ExperimentError(ValueError):
 # --- Configuration ------------------------------------------------------------------------
 
 
+# What a variant may change about search (P2.6), by its path in configs/search.yaml:
+# the SearchConfig field it sets, that field's type, and the modes it means anything
+# for. Anything else in the file is shared by every variant of an experiment.
+SEARCH_OVERRIDES: Mapping[tuple[str, str], tuple[str, type, tuple[str, ...]]] = {
+    ("candidates", "per_branch"): ("candidates_per_branch", int, MODES),
+    ("rerank", "depth"): ("rerank_depth", int, ("hybrid_rerank",)),
+    ("deadlines_seconds", "rerank"): ("rerank_seconds", float, ("hybrid_rerank",)),
+}
+
+
 @dataclass(frozen=True)
 class Variant:
     name: str
@@ -93,6 +103,8 @@ class Variant:
     models: str | None = None
     release: str | None = None
     pair_max_tokens: int | None = None
+    # (SearchConfig field, value) pairs this variant overrides, sorted by field.
+    search: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,6 +147,57 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _search_overrides(name: str, mode: str, raw: object) -> tuple[tuple[str, float], ...]:
+    """A variant's ``search`` block, refused unless every entry is a knob P2.6 may turn."""
+
+    if raw is None:
+        return ()
+    if not isinstance(raw, Mapping):
+        raise ExperimentError("experiment_invalid", f"{name}.search")
+    overrides: dict[str, float] = {}
+    for section, values in raw.items():
+        if not isinstance(values, Mapping):
+            raise ExperimentError("experiment_invalid", f"{name}.search.{section}")
+        for key, value in values.items():
+            where = f"{name}.search.{section}.{key}"
+            target = SEARCH_OVERRIDES.get((str(section), str(key)))
+            if target is None:
+                raise ExperimentError("experiment_invalid", f"{where} cannot be overridden")
+            field_name, kind, modes = target
+            if mode not in modes:
+                raise ExperimentError("experiment_invalid", f"{where} means nothing for {mode}")
+            if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
+                raise ExperimentError("experiment_invalid", f"{where} must be a positive number")
+            if kind is int and not isinstance(value, int):
+                raise ExperimentError("experiment_invalid", f"{where} must be a whole number")
+            overrides[field_name] = value
+    return tuple(sorted(overrides.items()))
+
+
+def search_config_for(variant: Variant, base: SearchConfig) -> SearchConfig:
+    """The search configuration one variant runs under: the shared file plus its overrides."""
+
+    # Types were checked per field when the experiment loaded (SEARCH_OVERRIDES).
+    overrides: dict[str, Any] = dict(variant.search)
+    config = replace(base, **overrides)
+    if config.rerank_seconds > config.total_seconds:
+        # The reranker's budget is cut to what the total leaves, so a larger one is a
+        # deadline the run claims and never applies.
+        raise ExperimentError(
+            "experiment_invalid",
+            f"{variant.name}: rerank deadline {config.rerank_seconds} s exceeds the "
+            f"{config.total_seconds} s total",
+        )
+    return config
+
+
+def search_digest(config: SearchConfig) -> str:
+    """What a variant searched under, as one digest: equal only if every knob was."""
+
+    values = json.dumps(asdict(config), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(values.encode()).hexdigest()
+
+
 def load_experiment(path: str | Path) -> Experiment:
     """Read and check an experiment config; an inconsistent one is refused before running."""
 
@@ -153,6 +216,9 @@ def load_experiment(path: str | Path) -> Experiment:
                 models=item.get("models"),
                 release=item.get("release"),
                 pair_max_tokens=item.get("pair_max_tokens"),
+                search=_search_overrides(
+                    str(item["name"]), str(item["mode"]), item.get("search")
+                ),
             )
             for item in raw["variants"]
         )
@@ -641,6 +707,9 @@ def decide(
     primary = str(rules.get("primary", "ndcg@10"))
     budget = float(rules.get("latency_p95_seconds", 3.0))
     max_drop = float(rules.get("max_drop", 0.03))
+    # Opt-in (P2.6): a candidate with any degraded query measured a fallback — a
+    # timeout or a missing stage — rather than itself, so it cannot be chosen.
+    require_clean = bool(rules.get("require_undegraded", False))
     order = [name for name in rules.get("order", []) if name in results]
     if not order:
         raise ExperimentError("experiment_invalid", "decision.order")
@@ -649,12 +718,20 @@ def decide(
         value = summaries[name]["latency"]["p95_ms"]
         return float("inf") if value is None else float(value) / 1000
 
+    def degraded(name: str) -> int:
+        return int((summaries[name].get("degraded") or {}).get("count", 0))
+
+    def clean(name: str) -> bool:
+        return not require_clean or degraded(name) == 0
+
     current = order[0]
     steps = []
     for name in order[1:]:
         comparison = paired(results[current], results[name], primary, experiment)
         better = comparison["low"] > 0
         fits = p95(name) <= budget
+        # Both sides: a degraded baseline would flatter the candidate's gain.
+        both_clean = clean(current) and clean(name)
         steps.append(
             {
                 "from": current,
@@ -663,10 +740,12 @@ def decide(
                 "p95_seconds": p95(name),
                 "gain_supported": better,
                 "fits_budget": fits,
-                "promoted": better and fits,
+                "degraded": degraded(name),
+                "clean": both_clean,
+                "promoted": better and fits and both_clean,
             }
         )
-        if better and fits:
+        if better and fits and both_clean:
             current = name
     ablations = []
     for variant in experiment.variants:
@@ -682,7 +761,8 @@ def decide(
                 "comparison": comparison,
                 "p95_seconds": p95(variant.name),
                 "noninferior": noninferior,
-                "adopt": noninferior and p95(variant.name) <= budget,
+                "clean": clean(variant.name),
+                "adopt": noninferior and p95(variant.name) <= budget and clean(variant.name),
                 "applies": experiment.variant(variant.baseline).mode
                 == experiment.variant(current).mode,
             }
@@ -1007,11 +1087,16 @@ def run_retrieval(
     # and never from test, which is read only when it is being scored.
     warm_split = "validation" if split == "development" else "development"
     warm_queries = load_queries(experiment, warm_split, data_dir)[:WARMUP_QUERIES]
+    # Every variant's configuration is settled before anything loads, so an override
+    # that cannot apply fails in seconds rather than after the models warm up.
+    search_config = load_search_config(experiment.search)
+    configs = {
+        variant.name: search_config_for(variant, search_config) for variant in experiment.variants
+    }
 
     before = gpu_before_run()
     engine = make_engine(database_url)
     client = QdrantClient(url=qdrant_url, timeout=60)
-    search_config = load_search_config(experiment.search)
     releases = {
         name: load_release(engine, name)
         for name in {experiment.release_for(v) for v in experiment.variants}
@@ -1053,7 +1138,7 @@ def run_retrieval(
                 lexical=SparseRetriever(engine, client),
                 dense=DenseRetriever(engine, client, embedder, max_tokens=max_tokens),
                 reranker=reranker,
-                config=search_config,
+                config=configs[variant.name],
                 papers=papers.get(release.id),
             )
             try:
@@ -1076,6 +1161,10 @@ def run_retrieval(
                 "reranker_precision": getattr(reranker, "precision", None),
                 "baseline": variant.baseline,
                 "changes": variant.changes,
+                # What this variant searched under, so two that differ never pass as equal.
+                "search": asdict(configs[variant.name]),
+                "search_overrides": dict(variant.search),
+                "search_sha256": search_digest(configs[variant.name]),
                 "warmup_seconds": warmups[variant.name],
                 "warmup_queries": {"split": warm_split, "count": len(warm_queries)},
             }

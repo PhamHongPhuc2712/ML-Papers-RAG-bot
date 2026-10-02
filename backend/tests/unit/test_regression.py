@@ -292,6 +292,32 @@ def test_a_costlier_mode_is_promoted_only_on_a_supported_gain_within_budget():
     assert decision["chosen"]["variant"] == "dense"
 
 
+def test_a_degraded_candidate_is_never_promoted_when_the_rule_requires_a_clean_run():
+    from dataclasses import replace
+
+    n = 40
+    results = {
+        "bm25": _variant_results("bm25", [0.5] * n),
+        "dense": _variant_results("dense", [0.8] * n),
+    }
+    summaries = _summaries(results, {"bm25": 0.1, "dense": 0.1})
+    # One query fell back to an earlier stage: the run measured a timeout, not the mode.
+    summaries["dense"]["degraded"] = {"count": 1, "warnings": {"rerank_timeout": 1}}
+    rules = {"primary": "ndcg@10", "order": ["bm25", "dense"], "require_undegraded": True}
+    strict = replace(smoke_experiment(SMOKE), decision=rules)
+    step = decide("validation", results, summaries, strict)["steps"][0]
+    assert (step["gain_supported"], step["clean"], step["promoted"]) == (True, False, False)
+    assert decide("validation", results, summaries, strict)["chosen"]["variant"] == "bm25"
+    # The rule is opt-in, so earlier experiments decide exactly as they did.
+    lenient = replace(strict, decision={**rules, "require_undegraded": False})
+    assert decide("validation", results, summaries, lenient)["chosen"]["variant"] == "dense"
+    summaries["dense"]["degraded"] = {"count": 0, "warnings": {}}
+    assert decide("validation", results, summaries, strict)["chosen"]["variant"] == "dense"
+    # A degraded baseline flatters the candidate, so it blocks the step too.
+    summaries["bm25"]["degraded"] = {"count": 2, "warnings": {"dense_timeout": 2}}
+    assert decide("validation", results, summaries, strict)["steps"][0]["clean"] is False
+
+
 def test_the_pilot_config_loads_and_its_ablations_change_one_thing():
     experiment = load_experiment(EXPERIMENT)
     by_name = {variant.name: variant for variant in experiment.variants}
@@ -366,3 +392,86 @@ def test_the_dense_branch_prefixes_queries_and_only_queries():
     retriever._releases["r"] = ReleaseRecord("r", "0" * 64, "p", "c", model.identity, "ready", {})
     retriever.search("graph learning", None, 10, "r")
     assert model.seen == ["Represent: graph learning"]
+
+
+# --- P2.6: variants that change how candidates are gathered and reranked ---------------
+
+
+def _config_with(tmp_path, variants):
+    import yaml
+
+    raw = yaml.safe_load(EXPERIMENT.read_text(encoding="utf-8"))
+    raw["variants"] = [{"name": "hybrid", "mode": "hybrid"}, *variants]
+    raw["decision"]["order"] = ["hybrid"]
+    path = tmp_path / "experiment.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+def test_a_variant_may_override_the_three_knobs_p26_names(tmp_path):
+    path = _config_with(
+        tmp_path,
+        [
+            {
+                "name": "pool200",
+                "mode": "hybrid",
+                "baseline": "hybrid",
+                "search": {"candidates": {"per_branch": 200}},
+            },
+            {
+                "name": "depth100",
+                "mode": "hybrid_rerank",
+                "search": {"rerank": {"depth": 100}, "deadlines_seconds": {"rerank": 2.5}},
+            },
+        ],
+    )
+    by_name = {variant.name: variant for variant in load_experiment(path).variants}
+    assert by_name["hybrid"].search == ()
+    assert by_name["pool200"].search == (("candidates_per_branch", 200),)
+    assert dict(by_name["depth100"].search) == {"rerank_depth": 100, "rerank_seconds": 2.5}
+
+
+@pytest.mark.parametrize(
+    ("mode", "search", "why"),
+    [
+        ("hybrid", {"fusion": {"rrf_k": 30}}, "search.fusion.rrf_k"),
+        ("hybrid", {"rerank": {"depth": 100}}, "search.rerank.depth"),
+        ("dense", {"deadlines_seconds": {"rerank": 2.0}}, "search.deadlines_seconds.rerank"),
+        ("hybrid", {"candidates": {"per_branch": 0}}, "search.candidates.per_branch"),
+        ("hybrid", {"candidates": {"per_branch": 150.5}}, "search.candidates.per_branch"),
+        ("hybrid_rerank", {"deadlines_seconds": {"rerank": True}}, "search.deadlines_seconds"),
+        ("hybrid", {"candidates": 200}, "search.candidates"),
+    ],
+)
+def test_an_override_outside_those_knobs_or_their_modes_is_refused(tmp_path, mode, search, why):
+    path = _config_with(tmp_path, [{"name": "changed", "mode": mode, "search": search}])
+    with pytest.raises(ExperimentError, match=f"changed.{why}"):
+        load_experiment(path)
+
+
+def test_an_override_replaces_only_its_own_values_and_must_fit_the_total_deadline():
+    from copilot.evaluation.retrieval import search_config_for
+    from copilot.search.service import SearchConfig
+
+    base = SearchConfig()
+    deeper = Variant(
+        name="deeper",
+        mode="hybrid_rerank",
+        search=(("rerank_depth", 100), ("rerank_seconds", 2.5)),
+    )
+    config = search_config_for(deeper, base)
+    assert (config.rerank_depth, config.rerank_seconds) == (100, 2.5)
+    assert (config.candidates_per_branch, config.total_seconds) == (100, 3.0)
+    assert search_config_for(Variant(name="same", mode="hybrid"), base) == base
+    late = Variant(name="late", mode="hybrid_rerank", search=(("rerank_seconds", 3.5),))
+    with pytest.raises(ExperimentError, match="late.*total"):
+        search_config_for(late, base)
+
+
+def test_a_comparison_says_when_a_variant_searched_differently():
+    baseline = _metrics_doc(_manifest(), 0.70, 0.60)
+    same = compare_runs(baseline, _metrics_doc(_manifest(run_id="run-2"), 0.70, 0.60))
+    assert same["search_changed"] == []
+    deeper = _manifest(run_id="run-3", **{"variants.bm25.search": {"candidates_per_branch": 200}})
+    changed = compare_runs(baseline, _metrics_doc(deeper, 0.70, 0.60))
+    assert changed["search_changed"] == ["bm25"]

@@ -105,6 +105,16 @@ def comparable(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> Non
                 raise ManifestError("incomparable_runs", f"{what}: {path}")
 
 
+def variant_search(manifest: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """What one variant searched under. Runs before P2.6 record only the shared file's values."""
+
+    variant = manifest["variants"][name]
+    recorded = variant.get("search") if isinstance(variant, Mapping) else None
+    if recorded is None:
+        recorded = (manifest.get("search") or {}).get("values") or {}
+    return dict(recorded)
+
+
 def compare_runs(
     baseline: Mapping[str, Any],
     candidate: Mapping[str, Any],
@@ -138,5 +148,13 @@ def compare_runs(
         "candidate_run": candidate["manifest"]["run_id"],
         "max_drop": max_drop,
         "variants": variants,
+        # Same name, different depth, candidate count or deadline: a change of system,
+        # reported as such rather than read as a like-for-like regression check.
+        "search_changed": [
+            name
+            for name in shared
+            if variant_search(baseline["manifest"], name)
+            != variant_search(candidate["manifest"], name)
+        ],
         "regressed": any(row["regressed"] for rows in variants.values() for row in rows.values()),
     }

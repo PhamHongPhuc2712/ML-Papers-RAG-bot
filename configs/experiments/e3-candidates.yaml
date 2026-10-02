@@ -1,0 +1,56 @@
+# P2.6, step 2: how much the first stage could find, measured cheaply. Hybrid only, no
+# reranker, on E3's corpus and queries, at three pool sizes. Rankings are kept 100 deep,
+# so the fused rank of every gold paper is visible to depth 100 — what a depth-100
+# rerank could at most reach — and each variant's candidate recall is the pool's
+# ceiling at its size.
+#
+#   eval retrieval --config configs/experiments/e3-candidates.yaml --split development \
+#     --out reports/retrieval/e3-candidates
+#   eval gaps --run reports/retrieval/e3-candidates --focus hybrid --depth 100
+#
+# Development only: a diagnostic, never a choice. There is deliberately no `decision`
+# block, so a validation run of this config cannot produce one. Any change it suggests
+# is promoted only through its own pre-registered rule on validation.
+schema_version: 1
+name: e3-candidates
+
+dataset:
+  path: data/fixtures/retrieval
+  query_text: benchmarks/litsearch-dataset/queries.jsonl
+  slice: all
+  labels: corpusid
+
+corpus:
+  release: litsearch-v1
+  papers: snapshot
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50, 100]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 100
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  # The shipped first stage: must reproduce E3's development `hybrid` exactly.
+  - name: hybrid
+    mode: hybrid
+  - name: hybrid_pool200
+    mode: hybrid
+    baseline: hybrid
+    changes: candidates per branch 100 -> 200
+    search:
+      candidates: {per_branch: 200}
+  - name: hybrid_pool300
+    mode: hybrid
+    baseline: hybrid
+    changes: candidates per branch 100 -> 300
+    search:
+      candidates: {per_branch: 300}
