@@ -381,15 +381,23 @@ class FakeListwise:
 
     identity = "fake/listwise@v1"
 
-    def __init__(self, reverse: bool = False, fail: str | None = None) -> None:
+    def __init__(self, reverse: bool = False, fail: str | None = None, sleep: float = 0.0) -> None:
         self.reverse = reverse
         self.fail = fail
+        self.sleep = sleep
         self.calls = 0
         self.budgets: list[float] = []
+        self.texts: list[list[str]] = []
 
     def order(self, query, texts, *, timeout, purpose, request_id=None, run_id=None):
         self.calls += 1
         self.budgets.append(timeout)
+        self.texts.append(list(texts))
+        if self.sleep:
+            threading.Event().wait(self.sleep)
+        if self.fail == "not_a_permutation":
+            return ListwiseResult(order=[0] * len(texts), ranked_by_model=1, cost_usd=0.0,
+                                  served_model="fake-model", cached=False)
         if self.fail == "spend_cap":
             raise LlmError("llm_spend_cap")
         if self.fail == "unparseable":
@@ -472,3 +480,47 @@ def test_the_llm_mode_has_its_own_cache_identity(service_factory):
     assert "listwise" not in service.identity("hybrid_rerank")
     plain = service.identity("hybrid_rerank")
     assert {key: service.identity("hybrid_rerank_llm")[key] for key in plain} == plain
+
+
+def test_a_head_partly_missing_from_the_database_is_reordered_without_the_ghost(corpus):
+    ghost = str(uuid4())
+    lexical = Fixed([(ghost, 9.0), (corpus.ids["Graph transformers at scale"], 1.0)])
+    listwise = FakeListwise(reverse=True)
+    # No cross-encoder, so the LLM stage is the first to read the head's metadata.
+    deep = _service(corpus, lexical=lexical, reranker=None, listwise=listwise).rank(_deep())
+    ids = [pid for pid, _ in deep.ordering.items]
+    assert ghost not in ids and ids
+    assert len(listwise.texts[0]) == len(ids)
+    assert {"rerank_unavailable", "metadata_missing"} <= set(deep.ordering.warnings)
+
+
+def test_an_empty_head_never_calls_the_llm(corpus):
+    empty = Fixed([])
+    listwise = FakeListwise()
+    deep = _service(corpus, lexical=empty, dense=empty, listwise=listwise).rank(_deep())
+    assert deep.ordering.items == () and not deep.ordering.warnings
+    assert listwise.calls == 0
+
+
+def test_an_answer_that_is_not_a_permutation_keeps_the_cross_encoder_order(service_factory):
+    service = service_factory(listwise=FakeListwise(fail="not_a_permutation"))
+    plain = service.rank(_deep().model_copy(update={"mode": "hybrid_rerank"}))
+    deep = service.rank(_deep())
+    assert deep.ordering.items == plain.ordering.items
+    assert "llm_rerank_failed" in deep.ordering.warnings
+    assert deep.trace.stages["llm"]["error"] == "not_a_permutation"
+
+
+def test_a_real_llm_timeout_falls_back_on_the_threaded_runner(corpus):
+    from dataclasses import replace
+
+    config = replace(CONFIG, llm_rerank_seconds=0.2)
+    listwise = FakeListwise(reverse=True, sleep=1.0)
+    service = _service(corpus, config=config, runner=ThreadedStageRunner(), listwise=listwise)
+    try:
+        plain = service.rank(_deep().model_copy(update={"mode": "hybrid_rerank"}))
+        deep = service.rank(_deep())
+    finally:
+        service.close()
+    assert deep.ordering.items == plain.ordering.items
+    assert deep.ordering.warnings == ("llm_rerank_timeout",)

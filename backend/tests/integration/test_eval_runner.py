@@ -561,3 +561,27 @@ def test_spend_past_the_budget_stops_the_run_and_writes_nothing(
         _run_llm(llm_config, bench, test_settings, tmp_path / "out", models, max_spend=0.05,
                  cache=tmp_path / "cache")
     assert len(models.llm_calls) == 1 and not (tmp_path / "out").exists()
+
+
+def test_the_guard_sums_every_llm_variant_in_a_run(
+    bench, test_settings, migrated_database, tmp_path
+):
+    with migrated_database.begin() as connection:
+        connection.execute(text("delete from llm_calls"))
+    config = yaml.safe_load(bench.config.read_text())
+    config["variants"] = [
+        {"name": "hybrid_rerank", "mode": "hybrid_rerank"},
+        {"name": "deep", "mode": "hybrid_rerank_llm", "llm": "openai-gpt-6-luna"},
+        {"name": "deep_low", "mode": "hybrid_rerank_llm", "llm": "openai-gpt-6-luna-low"},
+    ]
+    config["decision"]["order"] = ["hybrid_rerank", "deep", "deep_low"]
+    path = tmp_path / "two.yaml"
+    path.write_text(yaml.safe_dump(config))
+    # Each answer bills 40,000 output tokens, about $0.0201, so four queries cost about
+    # $0.080 per variant. A $0.12 budget passes the preflight and the first variant, and
+    # the second variant's second query takes the run past it.
+    models = FixtureModels(completion_tokens=40_000)
+    with pytest.raises(ExperimentError, match="run_budget_exceeded"):
+        _run_llm(path, bench, test_settings, tmp_path / "out", models, max_spend=0.12,
+                 cache=tmp_path / "cache")
+    assert len(models.llm_calls) == 4 + 2 and not (tmp_path / "out").exists()

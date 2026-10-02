@@ -1,11 +1,19 @@
 """One client for OpenAI-compatible Chat Completions: OpenAI and DeepSeek.
 
-Every call goes through the spend ledger (``models/spend.py``). It reserves the
-call's worst case first; a refusal raises ``llm_spend_cap`` before a request is
-even built. The client then posts, retrying rate limits, server errors and
-transport timeouts while the caller's deadline allows, and settles the
-reservation on every path. A response cut off at the output cap is invalid,
-never a partial answer.
+Every request goes through the spend ledger (``models/spend.py``). Each attempt
+reserves its own worst case before it is sent, and a refusal raises
+``llm_spend_cap`` with no request made. A retry is a new request the provider
+may bill, so it is a new reservation too. Each attempt then settles on every
+path:
+* at the cost its usage implies, when the provider reports usage;
+* at zero, when the provider refused it outright with a 4xx;
+* at its whole estimate, when a timeout, a 5xx or a dropped connection leaves
+  the bill unknown.
+Rate limits, server errors and transport timeouts are retried while the caller's
+deadline allows. A response cut off at the output cap is invalid, never a
+partial answer. httpx applies the deadline to each phase (connect, each read),
+not to the whole exchange, so a response that trickles in can run past it. The
+search service stops waiting at its own budget either way.
 
 Errors carry a code and, at most, an HTTP status. A provider's error body can
 echo the key or the prompt, so no body, header or message ever reaches an
@@ -18,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import time
 from collections.abc import Callable, Mapping
@@ -40,14 +49,17 @@ from .spend import (
 )
 
 MAX_ATTEMPTS = 3
+ZERO_USAGE = Usage(input_tokens=0, cached_input_tokens=0, output_tokens=0)
+
+logger = logging.getLogger(__name__)
 
 
 class LlmError(RuntimeError):
     """A hosted-LLM call failed. The message is the code and, at most, an HTTP status.
 
-    ``unbilled`` is True only when every attempt was refused outright with a 4xx,
-    so the provider generated nothing. A timeout, a 5xx or a dropped connection
-    leaves the bill unknown.
+    ``unbilled`` is True when the attempt that raised was refused outright with a
+    4xx, so the provider generated nothing for it. ``retry_after`` is the
+    provider's requested wait, when it gave one.
     """
 
     def __init__(
@@ -57,11 +69,13 @@ class LlmError(RuntimeError):
         status: int | None = None,
         *,
         unbilled: bool = False,
+        retry_after: float | None = None,
     ) -> None:
         self.code = code
         self.retryable = retryable
         self.status = status
         self.unbilled = unbilled
+        self.retry_after = retry_after
         super().__init__(code if status is None else f"{code}:http_{status}")
 
 
@@ -92,24 +106,31 @@ class ResponseCache:
         return self._directory / key[:2] / f"{key}.json"
 
     def get(self, key: str) -> tuple[str, Usage, str] | None:
+        """The cached answer, or None. An unreadable entry is a miss, never an error."""
+
         path = self._path(key)
-        if not path.exists():
+        try:
+            if not path.exists():
+                return None
+            entry = json.loads(path.read_text(encoding="utf-8"))
+            usage = entry["usage"]
+            return (
+                str(entry["text"]),
+                Usage(
+                    input_tokens=int(usage["input_tokens"]),
+                    cached_input_tokens=int(usage["cached_input_tokens"]),
+                    output_tokens=int(usage["output_tokens"]),
+                ),
+                str(entry["served_model"]),
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            logger.warning("unreadable LLM cache entry %s treated as a miss", key[:12])
             return None
-        entry = json.loads(path.read_text(encoding="utf-8"))
-        usage = entry["usage"]
-        return (
-            str(entry["text"]),
-            Usage(
-                input_tokens=int(usage["input_tokens"]),
-                cached_input_tokens=int(usage["cached_input_tokens"]),
-                output_tokens=int(usage["output_tokens"]),
-            ),
-            str(entry["served_model"]),
-        )
 
     def put(self, key: str, text: str, usage: Usage, served_model: str) -> None:
+        """Store an answer. A paid answer is never lost to a failed write: it is logged."""
+
         path = self._path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "text": text,
             "usage": {
@@ -119,9 +140,13 @@ class ResponseCache:
             },
             "served_model": served_model,
         }
-        partial = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        partial.write_text(json.dumps(entry, sort_keys=True), encoding="utf-8")
-        partial.replace(path)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            partial = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+            partial.write_text(json.dumps(entry, sort_keys=True), encoding="utf-8")
+            partial.replace(path)
+        except OSError as error:
+            logger.warning("LLM cache entry %s not written (%s)", key[:12], type(error).__name__)
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -235,6 +260,7 @@ class ChatClient:
         run_id: str | None = None,
     ) -> ChatResult:
         started = time.monotonic()
+        deadline = started + timeout
         body = self._body(messages)
         key = ResponseCache.key(self.provider.base_url, body)
         if self._cache is not None:
@@ -246,6 +272,43 @@ class ChatClient:
         estimate = estimate_usd(
             self.model.price, len(json.dumps(messages)), self.model.max_output_tokens
         )
+        spent = 0.0
+        attempt = 0
+        while True:
+            attempt += 1
+            if deadline - time.monotonic() <= 0:
+                raise LlmError("llm_timeout", retryable=True)
+            try:
+                text, usage, served, cost = self._attempt(
+                    body, estimate, deadline, purpose, request_id, run_id
+                )
+            except LlmError as error:
+                if not error.retryable or attempt >= MAX_ATTEMPTS:
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                wait = 2.0**attempt if error.retry_after is None else error.retry_after
+                self._sleep(min(wait, remaining))
+                continue
+            spent += cost
+            break
+        if self._cache is not None:
+            self._cache.put(key, text, usage, served)
+        latency = int((time.monotonic() - started) * 1000)
+        return ChatResult(text, usage, served, spent, False, latency)
+
+    def _attempt(
+        self,
+        body: Mapping[str, Any],
+        estimate: float,
+        deadline: float,
+        purpose: str,
+        request_id: UUID | None,
+        run_id: str | None,
+    ) -> tuple[str, Usage, str, float]:
+        """One request under its own reservation, settled whatever happens to it."""
+
         call = self._ledger.reserve(
             model=self.model,
             estimated_usd=estimate,
@@ -255,94 +318,78 @@ class ChatClient:
         )
         if call is None:
             raise LlmError("llm_spend_cap")
-
-        status = "failed"
+        started = time.monotonic()
         # Usage is recorded as soon as it is known: a cut-off answer was still billed.
         usage: Usage | None = None
         served: str | None = None
-        error_code: str | None = None
-        answer: tuple[str, str] | None = None
-        try:
-            payload = self._post(body, deadline=started + timeout)
-            usage = _usage(payload, self.provider.usage)
-            model_name = payload.get("model")
-            served = model_name if isinstance(model_name, str) else None
-            answer = _answer(payload)
-            status = "succeeded"
-        except LlmError as error:
-            error_code = error.code
-            if usage is None and error.unbilled:
-                # Refused outright: nothing was generated, so nothing is charged.
-                usage = Usage(input_tokens=0, cached_input_tokens=0, output_tokens=0)
-            raise
-        finally:
-            latency = int((time.monotonic() - started) * 1000)
-            cost = self._ledger.settle(
+
+        def settle(status: str, error_code: str | None) -> float:
+            return self._ledger.settle(
                 call,
                 status=status,
                 usage=usage,
                 served_model=served,
-                latency_ms=latency,
+                latency_ms=int((time.monotonic() - started) * 1000),
                 error_code=error_code,
             )
-        if answer is None or usage is None:  # unreachable: a failure raised above
-            raise LlmError("llm_response_invalid")
-        text, served_model = answer
-        if self._cache is not None:
-            self._cache.put(key, text, usage, served_model)
-        return ChatResult(text, usage, served_model, cost, False, latency)
+
+        try:
+            payload = self._post(body, deadline=deadline)
+            usage = _usage(payload, self.provider.usage)
+            model_name = payload.get("model")
+            served = model_name if isinstance(model_name, str) else None
+            text, served_model = _answer(payload)
+        except LlmError as error:
+            if usage is None and error.unbilled:
+                # Refused outright: nothing was generated, so nothing is charged.
+                usage = ZERO_USAGE
+            settle("failed", error.code)
+            raise
+        except Exception:
+            # Unexpected: the reservation keeps its whole estimate.
+            settle("failed", "llm_client_error")
+            raise
+        return text, usage, served_model, settle("succeeded", None)
 
     def _post(self, body: Mapping[str, Any], *, deadline: float) -> dict[str, Any]:
+        """One HTTP request. Its failure says whether a retry may help and whether it cost."""
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise LlmError("llm_timeout", retryable=True, unbilled=True)
         headers = {"Authorization": f"Bearer {self._key.get_secret_value()}"}
-        attempt = 0
-        # Set once an attempt ends in a way that may have been billed.
-        uncertain = False
-        while True:
-            attempt += 1
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise LlmError("llm_timeout", retryable=True, unbilled=not uncertain)
-            wait: float | None = None
+        try:
+            response = self._http.post(self._url, json=body, headers=headers, timeout=remaining)
+        except httpx.TimeoutException as error:
+            raise LlmError("llm_timeout", retryable=True) from error
+        except httpx.TransportError as error:
+            raise LlmError("llm_server_error", retryable=True) from error
+        code = response.status_code
+        if code == 200:
             try:
-                response = self._http.post(self._url, json=body, headers=headers, timeout=remaining)
-            except httpx.TimeoutException:
-                uncertain = True
-                failure = LlmError("llm_timeout", retryable=True)
-            except httpx.TransportError:
-                uncertain = True
-                failure = LlmError("llm_server_error", retryable=True)
-            else:
-                code = response.status_code
-                if code == 200:
-                    try:
-                        payload = response.json()
-                    except ValueError as error:
-                        raise LlmError("llm_response_invalid") from error
-                    if not isinstance(payload, dict):
-                        raise LlmError("llm_response_invalid")
-                    return payload
-                refused = not uncertain
-                if code in (401, 403):
-                    raise LlmError("llm_auth_failed", status=code, unbilled=refused)
-                if code == 404 or _error_code(response) == "model_not_found":
-                    raise LlmError("llm_model_unavailable", status=code, unbilled=refused)
-                if code == 429:
-                    failure = LlmError(
-                        "llm_rate_limited", retryable=True, status=code, unbilled=refused
-                    )
-                    wait = _retry_after(response)
-                elif code >= 500:
-                    uncertain = True
-                    failure = LlmError("llm_server_error", retryable=True, status=code)
-                    wait = _retry_after(response)
-                else:
-                    raise LlmError("llm_bad_request", status=code, unbilled=refused)
-            if attempt >= MAX_ATTEMPTS:
-                raise failure
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise failure
-            self._sleep(min(2.0**attempt if wait is None else wait, remaining))
+                payload = response.json()
+            except ValueError as error:
+                raise LlmError("llm_response_invalid") from error
+            if not isinstance(payload, dict):
+                raise LlmError("llm_response_invalid")
+            return payload
+        if code in (401, 403):
+            raise LlmError("llm_auth_failed", status=code, unbilled=True)
+        if code == 404 or _error_code(response) == "model_not_found":
+            raise LlmError("llm_model_unavailable", status=code, unbilled=True)
+        if code == 429:
+            raise LlmError(
+                "llm_rate_limited",
+                retryable=True,
+                status=code,
+                unbilled=True,
+                retry_after=_retry_after(response),
+            )
+        if code >= 500:
+            raise LlmError(
+                "llm_server_error", retryable=True, status=code, retry_after=_retry_after(response)
+            )
+        raise LlmError("llm_bad_request", status=code, unbilled=True)
 
 
 def _api_key(settings: Settings, provider: ProviderSpec) -> SecretStr | None:

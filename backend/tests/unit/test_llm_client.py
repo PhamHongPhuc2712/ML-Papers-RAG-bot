@@ -12,12 +12,19 @@ from pydantic import SecretStr
 
 from copilot.config import Settings
 from copilot.models.llm import ChatClient, LlmError, ResponseCache, build_client
-from copilot.models.spend import MemoryLedger, load_llm_config
+from copilot.models.spend import MemoryLedger, estimate_usd, load_llm_config
 
 CONFIG = load_llm_config("configs/llm.yaml")
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "llm"
 KEY = SecretStr("sk-test-must-never-appear")
 MESSAGES = [{"role": "user", "content": "rank these"}]
+
+
+def _estimate(model_key):
+    """One attempt's reservation, as the ledger records it: rounded to six decimals."""
+
+    model = CONFIG.models[model_key]
+    return round(estimate_usd(model.price, len(json.dumps(MESSAGES)), model.max_output_tokens), 6)
 
 
 def _client(model_key, handler, *, cap="1.00", cache=None, ledger=None):
@@ -112,8 +119,8 @@ def test_retries_stop_after_three_attempts_and_charge_the_estimate():
             MESSAGES, timeout=5.0, purpose="search", run_id="run-b")
     assert raised.value.code == "llm_server_error" and raised.value.retryable
     assert len(calls) == 3
-    # A 5xx leaves the bill unknown, so the call keeps its whole estimate.
-    assert ledger.run_spend("run-b") > 0
+    # A 5xx leaves each attempt's bill unknown, so every attempt keeps its whole estimate.
+    assert ledger.run_spend("run-b") == pytest.approx(3 * _estimate("openai-gpt-6-luna"), abs=1e-6)
 
 
 def test_a_call_refused_outright_is_charged_nothing():
@@ -130,16 +137,77 @@ def test_a_call_refused_outright_is_charged_nothing():
         assert ledger.run_spend(run) == 0.0
 
 
-def test_a_refusal_after_a_server_error_keeps_the_estimate():
+def test_a_refusal_after_a_server_error_keeps_only_that_attempts_estimate():
     responses = iter([httpx.Response(503, headers={"retry-after": "0"}),
                       httpx.Response(429, headers={"retry-after": "0"}),
                       httpx.Response(429, headers={"retry-after": "0"})])
     ledger = MemoryLedger(daily_cap_usd=Decimal("1.00"))
-    with pytest.raises(LlmError) as raised:
+    with pytest.raises(LlmError, match="llm_rate_limited"):
         _client("openai-gpt-6-luna", lambda r: next(responses), ledger=ledger).complete(
             MESSAGES, timeout=5.0, purpose="search", run_id="run-d")
-    assert not raised.value.unbilled
-    assert ledger.run_spend("run-d") > 0
+    assert ledger.run_spend("run-d") == pytest.approx(_estimate("openai-gpt-6-luna"), abs=1e-6)
+
+
+def test_a_success_after_a_timed_out_attempt_is_charged_for_both():
+    # Review finding, 2026-10-02: a timed-out attempt may have been generated and billed,
+    # so it keeps its own estimate beside the successful attempt's actual cost.
+    attempts = []
+
+    def handler(request):
+        attempts.append(request)
+        if len(attempts) == 1:
+            raise httpx.ReadTimeout("slow", request=request)
+        return _recorded("openai_chat.json")(request)
+
+    ledger = MemoryLedger(daily_cap_usd=Decimal("1.00"))
+    result = _client("openai-gpt-6-luna", handler, ledger=ledger).complete(
+        MESSAGES, timeout=5.0, purpose="evaluation", run_id="run-e")
+    usage = json.loads((FIXTURES / "openai_chat.json").read_text())["usage"]
+    cached = usage["prompt_tokens_details"]["cached_tokens"]
+    actual = ((usage["prompt_tokens"] - cached) * 0.10 + cached * 0.01
+              + usage["completion_tokens"] * 0.50) / 1e6
+    expected = _estimate("openai-gpt-6-luna") + actual
+    assert ledger.run_spend("run-e") == pytest.approx(expected, abs=1e-6)
+    assert result.cost_usd == pytest.approx(actual, abs=1e-6)
+
+
+def test_every_retry_needs_its_own_reservation_under_the_cap():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503, headers={"retry-after": "0"})
+
+    one_attempt = Decimal(str(round(_estimate("openai-gpt-6-luna") * 1.5, 6)))
+    with pytest.raises(LlmError, match="llm_spend_cap"):
+        _client("openai-gpt-6-luna", handler, ledger=MemoryLedger(daily_cap_usd=one_attempt)
+                ).complete(MESSAGES, timeout=5.0, purpose="search")
+    assert len(calls) == 1
+
+
+def test_an_unreadable_cache_entry_is_a_miss(tmp_path):
+    cache = ResponseCache(tmp_path)
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return _recorded("openai_chat.json")(request)
+
+    client = _client("openai-gpt-6-luna", handler, cache=cache)
+    client.complete(MESSAGES, timeout=5.0, purpose="evaluation")
+    (entry,) = tmp_path.rglob("*.json")
+    entry.write_text("{not json")
+    again = client.complete(MESSAGES, timeout=5.0, purpose="evaluation")
+    assert len(calls) == 2 and not again.cached
+
+
+def test_a_failed_cache_write_never_loses_a_paid_answer(tmp_path):
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("a file where the cache directory should be")
+    result = _client("openai-gpt-6-luna", _recorded("openai_chat.json"),
+                     cache=ResponseCache(blocked)).complete(
+        MESSAGES, timeout=5.0, purpose="evaluation")
+    assert result.text == "ok" and not result.cached
 
 
 def test_a_transport_timeout_is_typed():

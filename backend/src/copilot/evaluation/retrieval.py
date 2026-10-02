@@ -235,11 +235,15 @@ def _llm_models() -> Mapping[str, Any]:
 def llm_preflight_usd(
     variants: Sequence[Variant], configs: Mapping[str, SearchConfig], *, queries: int
 ) -> float:
-    """The most a run's LLM variants can spend: every query priced at its worst case.
+    """What a run's LLM variants could spend, priced before any query runs.
 
-    A query's prompt is the whole reranked head, each candidate at most 300 words of
-    at most 7 characters; its answer is the model's whole output budget. Cached
-    answers cost nothing, so this is an upper bound, never an estimate to report.
+    Each query's prompt is assumed to be the whole reranked head, each candidate at
+    300 words of 7 characters, and its answer the model's whole output budget.
+    Cached answers cost nothing. This is a planning bound, not a guarantee: a
+    reservation counts the JSON-escaped prompt, so an abstract heavy in long words or
+    non-ASCII text can be reserved above it. The hard limits are the per-query
+    mid-run guard and the ledger's daily cap, which stop a run, never let it
+    overspend.
     """
 
     from ..models.spend import estimate_usd
@@ -270,6 +274,11 @@ class MeteredListwise:
         self.calls = 0
         self.cache_hits = 0
         self.served_models: set[str] = set()
+
+    def close(self) -> None:
+        close = getattr(self.inner, "close", None)
+        if callable(close):
+            close()
 
     def order(
         self,
@@ -1330,6 +1339,8 @@ def run_retrieval(
                 results[variant.name] = rows
             finally:
                 service.close()
+                if listwise is not None:
+                    listwise.close()
             variants_manifest[variant.name] = {
                 "mode": variant.mode,
                 "release_id": release.id,

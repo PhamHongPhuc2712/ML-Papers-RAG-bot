@@ -107,6 +107,9 @@ class LlmListwiseReranker:
             f"{self.model.key}={self.model.model}#{prompt.name}:{prompt.sha256[:12]}#w{words}"
         )
 
+    def close(self) -> None:
+        self._client.close()
+
     def order(
         self,
         query: str,

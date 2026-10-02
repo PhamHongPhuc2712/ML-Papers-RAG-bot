@@ -443,9 +443,10 @@ class SearchService:
         return report
 
     def close(self) -> None:
-        close = getattr(self._runner, "close", None)
-        if callable(close):
-            close()
+        for part in (self._runner, self._listwise):
+            close = getattr(part, "close", None)
+            if callable(close):
+                close()
 
     def search(self, request: SearchRequest) -> SearchResponse:
         return self.search_with_trace(request)[0]
@@ -703,7 +704,10 @@ class SearchService:
         """Let the hosted LLM reorder the reranked head; on any failure keep it as it is.
 
         Scores become ordinal (head size minus position, higher is better): the
-        LLM gives an order, not a calibrated score.
+        LLM gives an order, not a calibrated score. When the cross-encoder failed,
+        the head is the RRF order and the LLM still reorders it, as LitSearch's
+        listwise reranker reorders a BM25 list. The cross-encoder's own warning
+        stays, so the ordering is still marked degraded.
         """
 
         listwise = self._listwise
