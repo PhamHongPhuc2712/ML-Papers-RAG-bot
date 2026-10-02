@@ -64,6 +64,21 @@ class RankedPaper(ContractModel):
     rank: int = Field(ge=1)
 
 
+class ListwiseResult(ContractModel):
+    """A hosted LLM's order over a reranked head: indices into it, best first.
+
+    ``order`` is always a permutation of every candidate given; ``ranked_by_model``
+    counts how many of them the model placed itself before the rest were appended
+    in their incoming order.
+    """
+
+    order: list[int]
+    ranked_by_model: int = Field(ge=1)
+    cost_usd: float = Field(ge=0)
+    served_model: str
+    cached: bool
+
+
 class PaperSummary(ContractModel):
     title: str
     authors: list[str]
