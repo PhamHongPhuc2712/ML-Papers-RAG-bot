@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -13,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -514,3 +516,44 @@ class SearchOrdering(Base):
     warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LlmCall(Base):
+    """One priced hosted-LLM call: its reservation, then what it actually cost (spec §12).
+
+    A row counts at ``estimated_usd`` against the daily cap until it is settled,
+    then at ``cost_usd``. There is no column for a prompt, a query or a response.
+    """
+
+    __tablename__ = "llm_calls"
+    __table_args__ = (
+        CheckConstraint("purpose in ('search', 'evaluation')", name="ck_llm_calls_purpose"),
+        CheckConstraint(
+            "status in ('reserved', 'succeeded', 'failed')", name="ck_llm_calls_status"
+        ),
+        CheckConstraint(
+            "estimated_usd >= 0 and (cost_usd is null or cost_usd >= 0)",
+            name="ck_llm_calls_nonnegative",
+        ),
+        Index("ix_llm_calls_created_at", "created_at"),
+        Index("ix_llm_calls_run_id", "run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
+    request_id: Mapped[UUID | None] = mapped_column(SAUUID(as_uuid=True), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    model_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    served_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    estimated_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

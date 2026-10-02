@@ -1198,6 +1198,24 @@ def run_export_schema(out: Path) -> dict[str, object]:
     }
 
 
+def run_llm_spend(
+    *, database_url: str, day: str | None, run_id: str | None
+) -> dict[str, Any]:
+    """Hosted-LLM calls, tokens and cost by model, for one UTC day or one run."""
+
+    from datetime import date
+
+    from .models.spend import spend_report
+
+    engine = make_engine(database_url)
+    try:
+        return spend_report(
+            engine, day=date.fromisoformat(day) if day else None, run_id=run_id
+        )
+    finally:
+        engine.dispose()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="copilot")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1421,6 +1439,16 @@ def _parser() -> argparse.ArgumentParser:
         "export-schema", help="write the public OpenAPI schema, sorted for review"
     )
     export_schema.add_argument("--out", type=Path, required=True)
+
+    llm = subparsers.add_parser("llm")
+    llm_commands = llm.add_subparsers(dest="llm_command", required=True)
+    spend = llm_commands.add_parser(
+        "spend", help="hosted-LLM calls, tokens and cost by model; never prompt text"
+    )
+    spend_scope = spend.add_mutually_exclusive_group()
+    spend_scope.add_argument("--day", default=None, help="UTC day, YYYY-MM-DD; default today")
+    spend_scope.add_argument("--run", default=None, help="an evaluation run id")
+    spend.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
 
     evaluation = subparsers.add_parser("eval")
     evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
@@ -1743,6 +1771,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.command == "api" and args.api_command == "export-schema":
         result = run_export_schema(args.out)
+    elif args.command == "llm" and args.llm_command == "spend":
+        result = run_llm_spend(
+            database_url=_database_url(args.database_url), day=args.day, run_id=args.run
+        )
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
             database_url=_database_url(args.database_url),

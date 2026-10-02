@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
-from pydantic import AliasChoices, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 SettingsError = ValidationError
@@ -77,6 +85,28 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias=AliasChoices("COPILOT_CORS_ORIGINS", "CORS_ORIGINS"),
     )
+    # Hosted LLM keys (spec §12). Secret: masked in repr, logs and dumps.
+    openai_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY")
+    )
+    deepseek_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("DEEPSEEK_API_KEY")
+    )
+    # The operator's daily cap on hosted-LLM spend, in USD. Unset disables every
+    # priced call: the spend ledger cannot be built without it.
+    llm_daily_spend_cap_usd: Decimal | None = Field(
+        default=None, gt=0, validation_alias=AliasChoices("LLM_DAILY_SPEND_CAP_USD")
+    )
+
+    @field_validator(
+        "openai_api_key", "deepseek_api_key", "llm_daily_spend_cap_usd", mode="before"
+    )
+    @classmethod
+    def blank_means_unset(cls, value: object) -> object:
+        # `.env.example` lists these empty; an empty line must not become a key or a cap.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("data_dir", mode="before")
     @classmethod

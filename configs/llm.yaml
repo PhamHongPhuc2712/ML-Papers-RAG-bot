@@ -1,0 +1,48 @@
+# Hosted LLM providers and the models this project may call (spec §12). Prices are USD per 1M
+# tokens, read from the providers' pricing pages: DeepSeek 2026-10-01, OpenAI 2026-10-02.
+# A model without a price cannot be called: priced calls are disabled when cost
+# configuration is missing.
+# Keys are read from the environment variables named here, never from this file.
+schema_version: 1
+providers:
+  openai:
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    # Newer OpenAI models reject max_tokens on Chat Completions.
+    max_tokens_param: max_completion_tokens
+    usage: openai
+  deepseek:
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    max_tokens_param: max_tokens
+    usage: deepseek
+models:
+  openai-gpt-6-luna:
+    # The chosen model (2026-10-02). A reasoning model whose default effort is medium;
+    # `none` keeps hidden reasoning tokens, billed as output, out of every call. An alias
+    # with no dated snapshot: the served model is recorded on every call. L2 step 3 adds
+    # `temperature: 0` and `seed: 42` here if the live call shows the model accepts them.
+    provider: openai
+    model: gpt-6-luna
+    pinned: false
+    max_output_tokens: 1024
+    request: {reasoning_effort: none}
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+  openai-gpt-6-luna-low:
+    # The same model with a little reasoning, piloted against `none`. Reasoning tokens
+    # count against the output cap, hence the larger one.
+    provider: openai
+    model: gpt-6-luna
+    pinned: false
+    max_output_tokens: 4096
+    request: {reasoning_effort: low}
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+  deepseek-flash:
+    # Fallback: used only in place of a luna variant that fails the pilot, and only when
+    # DEEPSEEK_API_KEY is set. DeepSeek publishes aliases only. Peak rates: an upper bound
+    # off-peak.
+    provider: deepseek
+    model: deepseek-flash
+    pinned: false
+    max_output_tokens: 1024
+    price: {input: 0.30, cached_input: 0.006, output: 1.20}
