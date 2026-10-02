@@ -475,3 +475,69 @@ def test_a_comparison_says_when_a_variant_searched_differently():
     deeper = _manifest(run_id="run-3", **{"variants.bm25.search": {"candidates_per_branch": 200}})
     changed = compare_runs(baseline, _metrics_doc(deeper, 0.70, 0.60))
     assert changed["search_changed"] == ["bm25"]
+
+
+# --- LLM reranking variants (LLM reranking plan, L5) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("variant", "why"),
+    [
+        ({"name": "deep", "mode": "hybrid_rerank_llm"}, "deep.llm"),
+        ({"name": "deep", "mode": "hybrid_rerank", "llm": "openai-gpt-6-luna"}, "deep.llm"),
+        ({"name": "deep", "mode": "hybrid_rerank_llm", "llm": "no-such-model"}, "deep.llm"),
+    ],
+)
+def test_an_llm_variant_names_a_configured_model_and_only_the_llm_mode_may(tmp_path, variant, why):
+    with pytest.raises(ExperimentError, match=why):
+        load_experiment(_config_with(tmp_path, [variant]))
+
+
+def test_an_llm_variant_loads_with_its_model_and_may_rerank_deeper(tmp_path):
+    path = _config_with(
+        tmp_path,
+        [
+            {
+                "name": "deep",
+                "mode": "hybrid_rerank_llm",
+                "llm": "openai-gpt-6-luna",
+                "search": {"rerank": {"depth": 100}, "deadlines_seconds": {"rerank": 2.5}},
+            }
+        ],
+    )
+    deep = load_experiment(path).variant("deep")
+    assert deep.llm == "openai-gpt-6-luna"
+    assert deep.search == (("rerank_depth", 100), ("rerank_seconds", 2.5))
+
+
+def test_the_preflight_prices_every_query_at_its_worst_case():
+    from copilot.evaluation.retrieval import llm_preflight_usd
+    from copilot.models.spend import estimate_usd, load_llm_config
+    from copilot.search.service import SearchConfig
+
+    model = load_llm_config("configs/llm.yaml").models["openai-gpt-6-luna"]
+    deep = Variant(name="deep", mode="hybrid_rerank_llm", llm="openai-gpt-6-luna")
+    plain = Variant(name="plain", mode="hybrid_rerank")
+    configs = {"deep": SearchConfig(rerank_depth=100), "plain": SearchConfig()}
+    worst = estimate_usd(model.price, 300 * 7 * 100, model.max_output_tokens)
+    assert llm_preflight_usd([deep, plain], configs, queries=359) == pytest.approx(359 * worst)
+    assert llm_preflight_usd([plain], configs, queries=359) == 0.0
+
+
+def test_a_comparison_says_when_a_variant_s_llm_moved():
+    llm = {"served_models": ["gpt-6-luna"], "prompt_sha256": "a" * 64}
+    baseline = _metrics_doc(_manifest(**{"variants.bm25.llm": llm}), 0.70, 0.60)
+    same = compare_runs(
+        baseline, _metrics_doc(_manifest(run_id="run-2", **{"variants.bm25.llm": llm}), 0.70, 0.60)
+    )
+    assert same["llm_changed"] == []
+    moved = {**llm, "served_models": ["gpt-6-luna-2026-11-01"]}
+    changed = compare_runs(
+        baseline,
+        _metrics_doc(_manifest(run_id="run-3", **{"variants.bm25.llm": moved}), 0.70, 0.60),
+    )
+    assert changed["llm_changed"] == ["bm25"]
+    plain = compare_runs(
+        _metrics_doc(_manifest(), 0.70, 0.60), _metrics_doc(_manifest(run_id="r"), 0.70, 0.60)
+    )
+    assert plain["llm_changed"] == []

@@ -100,11 +100,11 @@ class LlmListwiseReranker:
         if words < 1:
             raise ValueError("listwise_words_invalid")
         self._client = client
-        self._prompt = prompt
-        self._words = words
-        model = client.model
+        self.prompt = prompt
+        self.words = words
+        self.model = client.model
         self.identity = (
-            f"{model.key}={model.model}#{prompt.name}:{prompt.sha256[:12]}#w{words}"
+            f"{self.model.key}={self.model.model}#{prompt.name}:{prompt.sha256[:12]}#w{words}"
         )
 
     def order(
@@ -117,7 +117,7 @@ class LlmListwiseReranker:
         request_id: UUID | None = None,
         run_id: str | None = None,
     ) -> ListwiseResult:
-        messages = build_messages(self._prompt, query, texts, self._words)
+        messages = build_messages(self.prompt, query, texts, self.words)
         result = self._client.complete(
             messages, timeout=timeout, purpose=purpose, request_id=request_id, run_id=run_id
         )

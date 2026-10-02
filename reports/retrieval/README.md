@@ -41,6 +41,17 @@ compare` lists any variant whose settings differ between the two runs. A decisio
 set `require_undegraded: true`; a step is then promoted only if neither side degraded a
 single query.
 
+A `hybrid_rerank_llm` variant names the hosted model it uses with `llm:`, a key in
+`configs/llm.yaml`; no other mode may. Such a run needs `--max-spend-usd`. It is refused before
+anything loads when its worst case passes that budget, the worst case being every query's
+whole head at 300 words and the model's whole output budget. It stops, writing nothing, once
+the spend ledger shows its real spend past the budget. Every call is billed to the variant's
+own ledger run. The manifest records what each LLM variant was and what it cost
+(`variants.<name>.llm`: model, served models, prompt digest, calls, cache hits, billed tokens
+and cost), and the total goes in `cost.metered_usd`. Answers are cached under
+`${DATA_DIR}/cache/llm/`, so a rerun is free and identical. Warm-up never calls the LLM, and
+`eval compare` lists variants whose served model or prompt changed (`llm_changed`).
+
 `eval retrieval` needs the core services, the `models` dependency group and the pinned
 models under `DATA_DIR`. `eval smoke` needs none of them: it ranks the synthetic fixture in
 `data/fixtures/retrieval-smoke/` with the exact BM25 oracle and the fixture models, and

@@ -115,6 +115,16 @@ def variant_search(manifest: Mapping[str, Any], name: str) -> dict[str, Any]:
     return dict(recorded)
 
 
+def variant_llm(manifest: Mapping[str, Any], name: str) -> tuple[Any, Any] | None:
+    """The served models and prompt digest of an LLM variant; None for any other."""
+
+    variant = manifest["variants"][name]
+    llm = variant.get("llm") if isinstance(variant, Mapping) else None
+    if not isinstance(llm, Mapping):
+        return None
+    return sorted(llm.get("served_models") or []), llm.get("prompt_sha256")
+
+
 def compare_runs(
     baseline: Mapping[str, Any],
     candidate: Mapping[str, Any],
@@ -155,6 +165,13 @@ def compare_runs(
             for name in shared
             if variant_search(baseline["manifest"], name)
             != variant_search(candidate["manifest"], name)
+        ],
+        # A hosted model can move under an alias, and a prompt can be edited: either one
+        # makes the "same" LLM variant a different ranker.
+        "llm_changed": [
+            name
+            for name in shared
+            if variant_llm(baseline["manifest"], name) != variant_llm(candidate["manifest"], name)
         ],
         "regressed": any(row["regressed"] for rows in variants.values() for row in rows.values()),
     }

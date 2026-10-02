@@ -22,7 +22,9 @@ opt-in `hybrid_rerank_llm` mode on `gpt-6-luna`, served when `LLM_RERANK_MODEL` 
 model in `configs/llm.yaml` whose key and cap are set; otherwise it degrades with
 `llm_rerank_unavailable`. Every priced call reserves its worst case
 in the `llm_calls` ledger under `LLM_DAILY_SPEND_CAP_USD` ($3 a day) before it reaches the
-network. `llm spend [--day | --run]` reports calls, tokens and cost.
+network. `llm spend [--day | --run]` reports calls, tokens and cost. An evaluation with an
+LLM variant needs `eval retrieval ... --max-spend-usd N`. It is refused when its worst case
+exceeds N and stopped once its ledger spend does.
 
 **URGENT — fix first: P2.6** (retrieval plan, added 2026-10-01). E3 and P2.5 measured
 three gaps in `hybrid_rerank`:

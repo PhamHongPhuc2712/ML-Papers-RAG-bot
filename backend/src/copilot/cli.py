@@ -90,6 +90,12 @@ def _database_url(explicit: str | None) -> str:
     return Settings().database_url  # type: ignore[call-arg]
 
 
+def _llm_daily_cap() -> Any:
+    from .config import Settings
+
+    return Settings().llm_daily_spend_cap_usd  # type: ignore[call-arg]
+
+
 def _staging_dir(explicit: Path | None, parser: argparse.ArgumentParser) -> Path:
     staging_dir = explicit or default_staging_dir()
     if staging_dir is None:
@@ -1470,6 +1476,13 @@ def _parser() -> argparse.ArgumentParser:
     retrieval.add_argument(
         "--limit-queries", type=int, default=None, help="a partial run, recorded as such"
     )
+    retrieval.add_argument(
+        "--max-spend-usd",
+        type=float,
+        default=None,
+        help="required with an LLM variant: refused if its worst case exceeds this, "
+        "stopped if its real spend does",
+    )
     retrieval.add_argument("--database-url", default=None)
     retrieval.add_argument("--qdrant-url", default=None)
     retrieval.add_argument("--data-dir", type=Path, default=None)
@@ -1554,6 +1567,8 @@ def main(argv: list[str] | None = None) -> int:
             qdrant_url=args.qdrant_url or _service_settings()[0],
             locked_test=args.locked_test,
             limit_queries=args.limit_queries,
+            max_spend_usd=args.max_spend_usd,
+            llm_daily_cap_usd=_llm_daily_cap(),
         )
         result = {
             "run_id": metrics["manifest"]["run_id"],

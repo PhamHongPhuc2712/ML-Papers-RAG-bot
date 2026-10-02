@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 import yaml
+from pydantic import SecretStr
 from qdrant_client import QdrantClient
 from sqlalchemy import text
 
@@ -27,8 +32,10 @@ from copilot.evaluation.litsearch import (
     write_litsearch_snapshot,
 )
 from copilot.evaluation.regression import validate_manifest
-from copilot.evaluation.retrieval import run_retrieval
+from copilot.evaluation.retrieval import ExperimentError, run_retrieval
 from copilot.models.embeddings import FixtureEmbedding
+from copilot.models.llm import ChatClient
+from copilot.models.spend import SpendLedger, load_llm_config
 from copilot.search.index import (
     CHUNKS,
     PAPERS,
@@ -37,6 +44,7 @@ from copilot.search.index import (
     build_index,
     collection_names,
 )
+from copilot.search.llm_rerank import LlmListwiseReranker, load_prompt
 from copilot.search.rerank import FixtureReranker
 
 pytestmark = pytest.mark.integration
@@ -149,8 +157,40 @@ def _write_dataset(directory: Path, data_dir: Path) -> None:
     )
 
 
+LLM_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "llm" / "openai_chat.json"
+
+
+def _reversing_llm(calls: list[str], *, completion_tokens: int):
+    """A stand-in OpenAI endpoint: it answers every head in reverse, and counts the calls."""
+
+    template = json.loads(LLM_FIXTURE.read_text())
+
+    def handler(request):
+        payload = json.loads(request.content)
+        calls.append(payload["model"])
+        count = int(re.search(r"Rank all (\d+) candidates", payload["messages"][1]["content"])[1])
+        body = copy.deepcopy(template)
+        body["model"] = "fixture-llm"
+        body["choices"][0]["message"]["content"] = " > ".join(
+            f"[{number}]" for number in range(count, 0, -1)
+        )
+        body["usage"] = {
+            "prompt_tokens": 900,
+            "completion_tokens": completion_tokens,
+            "total_tokens": 900 + completion_tokens,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        }
+        return httpx.Response(200, json=body)
+
+    return handler
+
+
 class FixtureModels:
     """The run's model factory with fixture models; one path names a mismatched embedder."""
+
+    def __init__(self, *, completion_tokens: int = 30) -> None:
+        self.llm_calls: list[str] = []
+        self.completion_tokens = completion_tokens
 
     def embedder(self, models: Path):
         if models.name == "broken.yaml":
@@ -159,6 +199,22 @@ class FixtureModels:
 
     def reranker(self, models: Path):
         return FixtureReranker()
+
+    def listwise(self, model_key: str, ledger, cache):
+        config = load_llm_config("configs/llm.yaml")
+        model = config.models[model_key]
+        client = ChatClient(
+            model,
+            config.providers[model.provider],
+            SecretStr("sk-test-fixture"),
+            ledger,
+            transport=httpx.MockTransport(
+                _reversing_llm(self.llm_calls, completion_tokens=self.completion_tokens)
+            ),
+            cache=cache,
+            sleep=lambda _seconds: None,
+        )
+        return LlmListwiseReranker(client, load_prompt("prompts/rerank/listwise-v1.yaml"))
 
 
 @pytest.fixture(scope="module")
@@ -394,3 +450,114 @@ def test_a_variant_overriding_search_knobs_runs_with_them_and_records_them(
     # Two candidates from each branch fuse to at most four; the corpus has eight.
     assert longest("hybrid_pool2") <= 4 < longest("hybrid")
     assert longest("hybrid_rerank_depth3") == 3 < longest("hybrid_rerank")
+
+
+# --- LLM reranking variants (LLM reranking plan, L5) ---------------------------------------
+
+
+@pytest.fixture
+def llm_config(bench, migrated_database, tmp_path) -> Path:
+    with migrated_database.begin() as connection:
+        connection.execute(text("delete from llm_calls"))
+    config = yaml.safe_load(bench.config.read_text())
+    config["variants"] = [
+        {"name": "hybrid_rerank", "mode": "hybrid_rerank"},
+        {"name": "deep", "mode": "hybrid_rerank_llm", "llm": "openai-gpt-6-luna",
+         "changes": "the cross-encoder head reordered by a listwise LLM"},
+    ]
+    config["decision"]["order"] = ["hybrid_rerank", "deep"]
+    path = tmp_path / "llm.yaml"
+    path.write_text(yaml.safe_dump(config))
+    return path
+
+
+def _run_llm(path, bench, test_settings, out, models, *, max_spend=1.0, cache=None):
+    return run_retrieval(
+        path,
+        "development",
+        out,
+        data_dir=bench.data_dir,
+        database_url=test_settings.database_url,
+        qdrant_url=test_settings.qdrant_url,
+        models=models,
+        max_spend_usd=max_spend,
+        llm_daily_cap_usd=Decimal("5.00"),
+        llm_cache=cache,
+    )
+
+
+def test_an_llm_variant_records_its_model_prompt_and_real_cost(
+    llm_config, bench, test_settings, migrated_database, tmp_path
+):
+    models = FixtureModels()
+    metrics = _run_llm(llm_config, bench, test_settings, tmp_path / "a", models,
+                       cache=tmp_path / "cache")
+    manifest = metrics["manifest"]
+    validate_manifest(manifest)
+    llm = manifest["variants"]["deep"]["llm"]
+    assert llm["model_key"] == "openai-gpt-6-luna" and llm["model"] == "gpt-6-luna"
+    assert llm["served_models"] == ["fixture-llm"]
+    assert llm["prompt_sha256"] == load_prompt("prompts/rerank/listwise-v1.yaml").sha256
+    assert llm["words"] == 300
+    # Four development queries, one call each: the warm-up never reached the LLM.
+    assert llm["calls"] == 4 and len(models.llm_calls) == 4 and llm["cache_hits"] == 0
+    assert llm["input_tokens"] == 4 * 900 and llm["output_tokens"] == 4 * 30
+    ledger = SpendLedger(migrated_database, daily_cap_usd=Decimal("5.00"))
+    assert llm["cost_usd"] > 0
+    assert llm["cost_usd"] == pytest.approx(ledger.run_spend(llm["ledger_run_id"]))
+    assert manifest["cost"]["metered_usd"] == pytest.approx(llm["cost_usd"])
+    assert "hybrid_rerank" not in manifest["cost"]["by_variant"]
+
+    rows = pq.read_table(tmp_path / "a" / "development" / "per_query.parquet").to_pylist()
+    ranked = {(row["variant"], row["query_id"]): row["ranked"] for row in rows}
+    development = [query_id for query_id, split, *_ in QUERIES if split == "development"]
+    for query_id in development:
+        assert ranked[("deep", query_id)] == ranked[("hybrid_rerank", query_id)][::-1]
+
+    from copilot.evaluation.report import render_report
+
+    report = render_report(tmp_path / "a").read_text()
+    assert "| LLM cost USD | LLM calls (cached) |" in report
+    assert f"| {llm['cost_usd']:.4f} | 4 (0) |" in report
+    assert "USD metered (development " in report
+
+
+def test_a_rerun_over_the_same_cache_is_free_and_identical(
+    llm_config, bench, test_settings, tmp_path
+):
+    models = FixtureModels()
+    _run_llm(llm_config, bench, test_settings, tmp_path / "a", models, cache=tmp_path / "cache")
+    again = _run_llm(llm_config, bench, test_settings, tmp_path / "b", models,
+                     cache=tmp_path / "cache")
+    llm = again["manifest"]["variants"]["deep"]["llm"]
+    assert llm["cache_hits"] == llm["calls"] == 4 and len(models.llm_calls) == 4
+    assert llm["cost_usd"] == 0.0 and again["manifest"]["cost"]["metered_usd"] == 0.0
+
+    def rankings(directory):
+        rows = pq.read_table(directory / "development" / "per_query.parquet").to_pylist()
+        return [(row["variant"], row["query_id"], row["ranked"]) for row in rows]
+
+    assert rankings(tmp_path / "a") == rankings(tmp_path / "b")
+
+
+def test_a_budget_below_the_preflight_refuses_before_any_query(
+    llm_config, bench, test_settings, tmp_path
+):
+    models = FixtureModels()
+    with pytest.raises(ExperimentError, match="run_budget_exceeded"):
+        _run_llm(llm_config, bench, test_settings, tmp_path / "out", models, max_spend=1e-6)
+    assert models.llm_calls == [] and not (tmp_path / "out").exists()
+    with pytest.raises(ExperimentError, match="run_budget_required"):
+        _run_llm(llm_config, bench, test_settings, tmp_path / "out", models, max_spend=None)
+
+
+def test_spend_past_the_budget_stops_the_run_and_writes_nothing(
+    llm_config, bench, test_settings, tmp_path
+):
+    # Each answer reports 400,000 output tokens, $0.20 at luna's price: far past its
+    # reservation, so only the mid-run guard can stop it.
+    models = FixtureModels(completion_tokens=400_000)
+    with pytest.raises(ExperimentError, match="run_budget_exceeded"):
+        _run_llm(llm_config, bench, test_settings, tmp_path / "out", models, max_spend=0.05,
+                 cache=tmp_path / "cache")
+    assert len(models.llm_calls) == 1 and not (tmp_path / "out").exists()

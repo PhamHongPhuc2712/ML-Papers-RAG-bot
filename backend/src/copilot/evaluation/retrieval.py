@@ -29,14 +29,16 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol
+from uuid import UUID, uuid4
 
 import numpy as np
 import yaml
 from pydantic import ValidationError
 
-from ..contracts import PaperFilters, SearchRequest
+from ..contracts import ListwiseResult, PaperFilters, SearchRequest
 from ..corpus.releases import ReleaseRecord
 from ..search.service import (
     Outcome,
@@ -50,7 +52,16 @@ from .datasets import SPLITS, Dataset, hydrate, read_dataset
 from .metrics import evaluate
 from .regression import validate_manifest
 
-MODES = ("bm25", "dense", "hybrid", "hybrid_rerank")
+# The four baselines, cheapest first; the smoke set runs exactly these.
+BASELINE_MODES = ("bm25", "dense", "hybrid", "hybrid_rerank")
+MODES = (*BASELINE_MODES, "hybrid_rerank_llm")
+RERANKED = ("hybrid_rerank", "hybrid_rerank_llm")
+LLM_MODE = "hybrid_rerank_llm"
+LLM_CONFIG = Path("configs/llm.yaml")
+LISTWISE_PROMPT = Path("prompts/rerank/listwise-v1.yaml")
+# Characters a word is assumed to take when the preflight prices a prompt: generous,
+# so the worst case it reserves is never below what a call can cost.
+PREFLIGHT_CHARS_PER_WORD = 7
 WARMUP_QUERIES = 10
 SLICES = ("in_domain", "all")
 # Which id a label names: our corpus's paper id (matched by E1), or a LitSearch
@@ -89,8 +100,8 @@ class ExperimentError(ValueError):
 # for. Anything else in the file is shared by every variant of an experiment.
 SEARCH_OVERRIDES: Mapping[tuple[str, str], tuple[str, type, tuple[str, ...]]] = {
     ("candidates", "per_branch"): ("candidates_per_branch", int, MODES),
-    ("rerank", "depth"): ("rerank_depth", int, ("hybrid_rerank",)),
-    ("deadlines_seconds", "rerank"): ("rerank_seconds", float, ("hybrid_rerank",)),
+    ("rerank", "depth"): ("rerank_depth", int, RERANKED),
+    ("deadlines_seconds", "rerank"): ("rerank_seconds", float, RERANKED),
 }
 
 
@@ -105,6 +116,8 @@ class Variant:
     pair_max_tokens: int | None = None
     # (SearchConfig field, value) pairs this variant overrides, sorted by field.
     search: tuple[tuple[str, float], ...] = ()
+    # The configs/llm.yaml model key behind a hybrid_rerank_llm variant, and only one.
+    llm: str | None = None
 
 
 @dataclass(frozen=True)
@@ -213,6 +226,76 @@ def search_digest(config: SearchConfig, mode: str | None) -> str:
     return hashlib.sha256(values.encode()).hexdigest()
 
 
+def _llm_models() -> Mapping[str, Any]:
+    from ..models.spend import load_llm_config
+
+    return load_llm_config(LLM_CONFIG).models
+
+
+def llm_preflight_usd(
+    variants: Sequence[Variant], configs: Mapping[str, SearchConfig], *, queries: int
+) -> float:
+    """The most a run's LLM variants can spend: every query priced at its worst case.
+
+    A query's prompt is the whole reranked head, each candidate at most 300 words of
+    at most 7 characters; its answer is the model's whole output budget. Cached
+    answers cost nothing, so this is an upper bound, never an estimate to report.
+    """
+
+    from ..models.spend import estimate_usd
+
+    models = _llm_models()
+    total = 0.0
+    for variant in variants:
+        if variant.llm is None:
+            continue
+        model = models[variant.llm]
+        chars = 300 * PREFLIGHT_CHARS_PER_WORD * configs[variant.name].rerank_depth
+        total += queries * estimate_usd(model.price, chars, model.max_output_tokens)
+    return total
+
+
+class MeteredListwise:
+    """An evaluation's view of a listwise reranker: every call is billed to one run.
+
+    The service asks for purpose ``search``; here every call is ``evaluation``,
+    under this variant's own ledger run, and the facts the manifest reports —
+    calls, cache hits, served models — are counted as they happen.
+    """
+
+    def __init__(self, inner: Any, ledger_run: str) -> None:
+        self.inner = inner
+        self.identity: str = str(inner.identity)
+        self.ledger_run = ledger_run
+        self.calls = 0
+        self.cache_hits = 0
+        self.served_models: set[str] = set()
+
+    def order(
+        self,
+        query: str,
+        texts: Sequence[str],
+        *,
+        timeout: float,
+        purpose: str,
+        request_id: UUID | None = None,
+        run_id: str | None = None,
+    ) -> ListwiseResult:
+        self.calls += 1
+        result: ListwiseResult = self.inner.order(
+            query,
+            texts,
+            timeout=timeout,
+            purpose="evaluation",
+            request_id=request_id,
+            run_id=self.ledger_run,
+        )
+        if result.cached:
+            self.cache_hits += 1
+        self.served_models.add(result.served_model)
+        return result
+
+
 def load_experiment(path: str | Path) -> Experiment:
     """Read and check an experiment config; an inconsistent one is refused before running."""
 
@@ -234,6 +317,7 @@ def load_experiment(path: str | Path) -> Experiment:
                 search=_search_overrides(
                     str(item["name"]), str(item["mode"]), item.get("search")
                 ),
+                llm=None if item.get("llm") is None else str(item["llm"]),
             )
             for item in raw["variants"]
         )
@@ -269,6 +353,12 @@ def load_experiment(path: str | Path) -> Experiment:
             raise ExperimentError("experiment_invalid", f"{variant.name}.mode")
         if variant.baseline is not None and variant.baseline not in names:
             raise ExperimentError("experiment_invalid", f"{variant.name}.baseline")
+        if (variant.mode == LLM_MODE) != (variant.llm is not None):
+            raise ExperimentError(
+                "experiment_invalid", f"{variant.name}.llm is required by {LLM_MODE} and only by it"
+            )
+        if variant.llm is not None and variant.llm not in _llm_models():
+            raise ExperimentError("experiment_invalid", f"{variant.name}.llm {variant.llm} unknown")
     if experiment.slice not in SLICES:
         raise ExperimentError("experiment_invalid", "dataset.slice")
     if experiment.labels not in LABELS:
@@ -450,7 +540,7 @@ def _failed(
         relevant=sorted(query.relevant),
         metrics=zeros,
         candidate_recall=0.0,
-        rerank_pool_recall=0.0 if variant.mode == "hybrid_rerank" else None,
+        rerank_pool_recall=0.0 if variant.mode in RERANKED else None,
         seconds=seconds,
         failure=code,
         specificity=query.specificity,
@@ -982,6 +1072,8 @@ class ModelFactory(Protocol):
 
     def reranker(self, models: Path) -> Any: ...
 
+    def listwise(self, model_key: str, ledger: Any, cache: Any) -> Any: ...
+
 
 class PinnedModels:
     """The pinned embedders and reranker under DATA_DIR, each loaded once per run."""
@@ -1008,6 +1100,21 @@ class PinnedModels:
                 load_reranker_spec(models), self._data_dir
             )
         return self._rerankers[models]
+
+    def listwise(self, model_key: str, ledger: Any, cache: Any) -> Any:
+        """The configured hosted LLM, with the key from the environment; never a fixture."""
+
+        from ..config import Settings
+        from ..models.llm import LlmError, build_client
+        from ..search.llm_rerank import LlmListwiseReranker, load_prompt
+
+        try:
+            client = build_client(
+                model_key, Settings(), ledger, cache=cache, llm_config=LLM_CONFIG  # type: ignore[call-arg]
+            )
+        except LlmError as error:
+            raise ExperimentError(error.code, model_key) from error
+        return LlmListwiseReranker(client, load_prompt(LISTWISE_PROMPT))
 
 
 def snapshot_papers(release: ReleaseRecord) -> MemoryPapers:
@@ -1075,8 +1182,16 @@ def run_retrieval(
     locked_test: bool = False,
     limit_queries: int | None = None,
     models: ModelFactory | None = None,
+    max_spend_usd: float | None = None,
+    llm_daily_cap_usd: Decimal | None = None,
+    llm_cache: Path | None = None,
 ) -> dict[str, Any]:
-    """Every variant of an experiment over one split: manifest, metrics and per-query rows."""
+    """Every variant of an experiment over one split: manifest, metrics and per-query rows.
+
+    A run with an LLM variant needs a budget (``max_spend_usd``). It is refused
+    before anything loads when its worst case would pass that budget, and it stops,
+    writing nothing, once the ledger shows its real spend past it.
+    """
 
     from qdrant_client import QdrantClient
 
@@ -1108,6 +1223,20 @@ def run_retrieval(
     configs = {
         variant.name: search_config_for(variant, search_config) for variant in experiment.variants
     }
+    llm_variants = [variant for variant in experiment.variants if variant.llm is not None]
+    if llm_variants:
+        if max_spend_usd is None:
+            raise ExperimentError(
+                "run_budget_required", "a run with an LLM variant needs --max-spend-usd"
+            )
+        worst = llm_preflight_usd(llm_variants, configs, queries=len(queries))
+        if worst > max_spend_usd:
+            raise ExperimentError(
+                "run_budget_exceeded",
+                f"worst case ${worst:.4f} for {len(queries)} queries > budget ${max_spend_usd:.4f}",
+            )
+    created = datetime.now(UTC)
+    run_id = f"{experiment.name}-{split}-{created:%Y%m%dT%H%M%SZ}"
 
     before = gpu_before_run()
     engine = make_engine(database_url)
@@ -1130,9 +1259,20 @@ def run_retrieval(
     }
     base_reranker = None
     rerankers: dict[int | None, Any] = {}
-    if any(variant.mode == "hybrid_rerank" for variant in experiment.variants):
+    if any(variant.mode in RERANKED for variant in experiment.variants):
         base_reranker = factory.reranker(experiment.models)
         rerankers[getattr(base_reranker, "pair_max_tokens", None)] = base_reranker
+    ledger = None
+    cache = None
+    if llm_variants:
+        from ..models.llm import ResponseCache
+        from ..models.spend import SpendLedger
+
+        try:
+            ledger = SpendLedger(engine, llm_daily_cap_usd)
+        except ValueError as error:
+            raise ExperimentError(str(error), "LLM_DAILY_SPEND_CAP_USD") from error
+        cache = ResponseCache(llm_cache or data_dir / "cache" / "llm")
 
     results: dict[str, list[QueryResult]] = {}
     warmups: dict[str, float] = {}
@@ -1142,12 +1282,19 @@ def run_retrieval(
             path = experiment.models_for(variant)
             release = releases[experiment.release_for(variant)]
             reranker = None
-            if variant.mode == "hybrid_rerank" and base_reranker is not None:
+            if variant.mode in RERANKED and base_reranker is not None:
                 budget = variant.pair_max_tokens or getattr(base_reranker, "pair_max_tokens", None)
                 if budget not in rerankers:
                     rerankers[budget] = base_reranker.with_pair_budget(budget)
                 reranker = rerankers[budget]
             embedder, max_tokens = embedders[path]
+            listwise = None
+            if variant.llm is not None:
+                # Each LLM variant bills its own ledger run, so its cost is its own.
+                listwise = MeteredListwise(
+                    factory.listwise(variant.llm, ledger, cache),
+                    f"{run_id}.{variant.name}.{uuid4().hex[:8]}",
+                )
             service = SearchService(
                 engine=engine,
                 lexical=SparseRetriever(engine, client),
@@ -1155,16 +1302,32 @@ def run_retrieval(
                 reranker=reranker,
                 config=configs[variant.name],
                 papers=papers.get(release.id),
+                listwise=listwise,
             )
+            # Warm-up never spends: an LLM variant warms as the mode it builds on.
+            warm_variant = replace(variant, mode="hybrid_rerank") if listwise else variant
             try:
                 started = time.monotonic()
                 service.warm(release)
                 for query in warm_queries:
-                    run_query(service, variant, query, release, experiment)
+                    run_query(service, warm_variant, query, release, experiment)
                 warmups[variant.name] = round(time.monotonic() - started, 3)
-                results[variant.name] = [
-                    run_query(service, variant, query, release, experiment) for query in queries
-                ]
+                rows: list[QueryResult] = []
+                for query in queries:
+                    rows.append(run_query(service, variant, query, release, experiment))
+                    if listwise is not None and ledger is not None and max_spend_usd is not None:
+                        spent = sum(
+                            ledger.run_spend(entry["llm"]["ledger_run_id"])
+                            for entry in variants_manifest.values()
+                            if "llm" in entry
+                        ) + ledger.run_spend(listwise.ledger_run)
+                        if spent > max_spend_usd:
+                            raise ExperimentError(
+                                "run_budget_exceeded",
+                                f"spent ${spent:.4f} > budget ${max_spend_usd:.4f}; "
+                                "nothing written",
+                            )
+                results[variant.name] = rows
             finally:
                 service.close()
             variants_manifest[variant.name] = {
@@ -1183,6 +1346,8 @@ def run_retrieval(
                 "warmup_seconds": warmups[variant.name],
                 "warmup_queries": {"split": warm_split, "count": len(warm_queries)},
             }
+            if listwise is not None and ledger is not None:
+                variants_manifest[variant.name]["llm"] = _llm_facts(listwise, engine)
 
     main = releases[experiment.release]
     manifest = build_manifest(
@@ -1197,8 +1362,39 @@ def run_retrieval(
         locked_test=locked_test,
         limited=limit_queries,
         gpu={**sampler.summary(), "before_run": before},
+        created=created,
     )
     return write_run(out, split, experiment, manifest, results)
+
+
+def _llm_facts(listwise: MeteredListwise, engine: Any) -> dict[str, Any]:
+    """What an LLM variant was and what it cost, from the counts and the spend ledger.
+
+    Tokens and cost are what this run was billed: cached answers add neither.
+    """
+
+    from ..models.spend import spend_report
+
+    inner = listwise.inner
+    billed = spend_report(engine, run_id=listwise.ledger_run)
+    entries = billed["models"].values()
+    return {
+        "model_key": inner.model.key,
+        "model": inner.model.model,
+        "pinned": inner.model.pinned,
+        "served_models": sorted(listwise.served_models),
+        "identity": listwise.identity,
+        "prompt": inner.prompt.name,
+        "prompt_sha256": inner.prompt.sha256,
+        "words": inner.words,
+        "calls": listwise.calls,
+        "cache_hits": listwise.cache_hits,
+        "input_tokens": sum(entry["input_tokens"] for entry in entries),
+        "cached_input_tokens": sum(entry["cached_input_tokens"] for entry in entries),
+        "output_tokens": sum(entry["output_tokens"] for entry in entries),
+        "cost_usd": billed["total_usd"],
+        "ledger_run_id": listwise.ledger_run,
+    }
 
 
 def build_manifest(
@@ -1214,6 +1410,7 @@ def build_manifest(
     locked_test: bool,
     limited: int | None,
     gpu: Mapping[str, Any],
+    created: datetime | None = None,
 ) -> dict[str, Any]:
     parsing = yaml.safe_load(Path("configs/parsing.yaml").read_text(encoding="utf-8")) or {}
     parser = (parsing.get("parser") or {}).get("parser_version")
@@ -1221,7 +1418,23 @@ def build_manifest(
     if experiment.papers == "snapshot":
         # A benchmark corpus is packaged text: nothing was parsed or chunked.
         parser = chunker = "none: packaged title and abstract"
-    created = datetime.now(UTC)
+    created = created or datetime.now(UTC)
+    metered = {
+        name: float(entry["llm"]["cost_usd"])
+        for name, entry in variants.items()
+        if isinstance(entry, Mapping) and isinstance(entry.get("llm"), Mapping)
+    }
+    cost: dict[str, Any] = {
+        "metered_usd": 0.0,
+        "note": "self-hosted models and services; no priced model call is made",
+    }
+    if metered:
+        cost = {
+            "metered_usd": round(sum(metered.values()), 6),
+            "by_variant": metered,
+            "note": "hosted LLM calls as the spend ledger recorded them; cached answers cost "
+            "nothing; every other model and service is self-hosted",
+        }
     return {
         "run_id": f"{experiment.name}-{split}-{created:%Y%m%dT%H%M%SZ}",
         "created_at": created.isoformat(),
@@ -1265,10 +1478,7 @@ def build_manifest(
         },
         "hardware": hardware(),
         "timing": {"methodology": TIMING_METHODOLOGY, "gpu": dict(gpu)},
-        "cost": {
-            "metered_usd": 0.0,
-            "note": "self-hosted models and services; no priced model call is made",
-        },
+        "cost": cost,
         "locked_test": locked_test,
     }
 
@@ -1390,8 +1600,8 @@ def smoke_experiment(fixture: Path) -> Experiment:
         resamples=1000,
         seed=42,
         confidence=0.95,
-        variants=tuple(Variant(name=mode, mode=mode) for mode in MODES),
-        decision={"primary": "ndcg@10", "order": list(MODES)},
+        variants=tuple(Variant(name=mode, mode=mode) for mode in BASELINE_MODES),
+        decision={"primary": "ndcg@10", "order": list(BASELINE_MODES)},
     )
 
 

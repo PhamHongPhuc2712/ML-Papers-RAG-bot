@@ -109,21 +109,36 @@ def _split_section(split: str, run: Mapping[str, Any]) -> list[str]:
         "",
         "Latency of `rank()` in milliseconds; stage columns are p95.",
         "",
-        "| Variant | p50 | p95 | max | lexical | dense | rerank | warm-up s |",
-        "|---|---|---|---|---|---|---|---|",
     ]
+    # LLM columns appear only when a variant called a hosted LLM, so every report
+    # recorded before them re-renders unchanged.
+    llm = {
+        name: manifest["variants"][name]["llm"]
+        for name in variants
+        if isinstance(manifest["variants"][name].get("llm"), dict)
+    }
+    stage_names = ("lexical", "dense", "rerank", "llm") if llm else ("lexical", "dense", "rerank")
+    header = "| Variant | p50 | p95 | max | " + " | ".join(stage_names) + " | warm-up s |"
+    if llm:
+        header += " LLM cost USD | LLM calls (cached) |"
+    lines += [header, "|" + "---|" * (header.count("|") - 1)]
     for name, entry in variants.items():
         summary = entry["summary"]
         latency, stages = summary["latency"], summary["stages"]
         warm = manifest["variants"][name].get("warmup_seconds")
-        lines.append(
+        row = (
             f"| `{name}` | {latency['p50_ms']} | {latency['p95_ms']} | {latency['max_ms']} | "
-            + " | ".join(
-                str(stages.get(stage, {}).get("p95_ms", "—"))
-                for stage in ("lexical", "dense", "rerank")
-            )
+            + " | ".join(str(stages.get(stage, {}).get("p95_ms", "—")) for stage in stage_names)
             + f" | {warm} |"
         )
+        if llm:
+            facts = llm.get(name)
+            row += (
+                f" {facts['cost_usd']:.4f} | {facts['calls']} ({facts['cache_hits']}) |"
+                if facts
+                else " — | — |"
+            )
+        lines.append(row)
     for facet, label in (("by_query_set", "query set"), ("by_specificity", "specificity")):
         lines += _facet_table(variants, facet, label)
     comparisons = run.get("comparisons") or {}
@@ -234,6 +249,19 @@ def _decision(decision: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _cost_line(runs: Mapping[str, Any]) -> str:
+    """One line of cost: the first split's when nothing was metered, every split's when it was."""
+
+    costs = {split: run["manifest"]["cost"] for split, run in runs.items()}
+    first = next(iter(costs.values()))
+    if not any(cost.get("by_variant") for cost in costs.values()):
+        return f"Cost: {first['metered_usd']:.2f} USD metered — {first['note']}."
+    total = sum(float(cost["metered_usd"]) for cost in costs.values())
+    parts = ", ".join(f"{split} {float(cost['metered_usd']):.4f}" for split, cost in costs.items())
+    note = next(cost["note"] for cost in costs.values() if cost.get("by_variant"))
+    return f"Cost: {total:.4f} USD metered ({parts}) — {note}."
+
+
 def render_report(out: Path) -> Path:
     """Write ``<out>/report.md`` from every recorded split, plus ``analysis.md`` if present."""
 
@@ -252,7 +280,7 @@ def render_report(out: Path) -> Path:
         "",
         f"Timing: {first['timing']['methodology']}",
         "",
-        f"Cost: {first['cost']['metered_usd']:.2f} USD metered — {first['cost']['note']}.",
+        _cost_line(runs),
     ]
     for split, run in runs.items():
         lines += ["", *_split_section(split, run)]
