@@ -331,7 +331,8 @@
               "bm25",
               "dense",
               "hybrid",
-              "hybrid_rerank"
+              "hybrid_rerank",
+              "hybrid_rerank_llm"
             ],
             "title": "Mode",
             "type": "string"

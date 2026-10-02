@@ -97,9 +97,18 @@ class Settings(BaseSettings):
     llm_daily_spend_cap_usd: Decimal | None = Field(
         default=None, gt=0, validation_alias=AliasChoices("LLM_DAILY_SPEND_CAP_USD")
     )
+    # The `configs/llm.yaml` model behind `hybrid_rerank_llm`. Unset, that mode serves
+    # the cross-encoder order with `llm_rerank_unavailable`.
+    llm_rerank_model: str | None = Field(
+        default=None, validation_alias=AliasChoices("LLM_RERANK_MODEL")
+    )
 
     @field_validator(
-        "openai_api_key", "deepseek_api_key", "llm_daily_spend_cap_usd", mode="before"
+        "openai_api_key",
+        "deepseek_api_key",
+        "llm_daily_spend_cap_usd",
+        "llm_rerank_model",
+        mode="before",
     )
     @classmethod
     def blank_means_unset(cls, value: object) -> object:

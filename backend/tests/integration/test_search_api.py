@@ -291,6 +291,27 @@ def test_a_degraded_ordering_pages_but_is_never_reused(search_corpus):
     assert cache.get(healthy.id, now + 600) is None
 
 
+def test_the_llm_mode_without_an_llm_degrades_and_is_never_reused(api_client, search_corpus):
+    body = {**QUERY, "mode": "hybrid_rerank_llm"}
+
+    def stored() -> int:
+        with search_corpus.engine.connect() as connection:
+            return connection.execute(text(
+                "select count(*) from search_orderings where mode = 'hybrid_rerank_llm'"
+            )).scalar_one()
+
+    before = stored()
+    first = _search(api_client, body)
+    assert first.status_code == 200, first.text
+    payload = first.json()
+    assert payload["degraded"] and "llm_rerank_unavailable" in payload["warnings"]
+    assert payload["items"]
+    second = _search(api_client, body)
+    assert second.status_code == 200, second.text
+    # Degraded orderings are stored for paging but never reused: each search ranks afresh.
+    assert stored() == before + 2
+
+
 def test_a_tampered_or_foreign_cursor_is_refused(api_client):
     cursor = _search(api_client, limit=2).json()["next_cursor"]
     payload, signature = cursor.split(".")

@@ -40,6 +40,7 @@ from .cache import CursorError, OrderingCache, decode_cursor, encode_cursor, que
 from .index import CHUNKS, DENSE, PAPERS, IndexBuildError, collection_names, qdrant_filter
 from .service import (
     CandidateRetriever,
+    ListwiseReranker,
     Ordering,
     PaperRow,
     PaperStore,
@@ -52,6 +53,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODELS_PATH = Path("configs/models.yaml")
 DEFAULT_SEARCH_PATH = Path("configs/search.yaml")
+DEFAULT_LLM_PATH = Path("configs/llm.yaml")
+DEFAULT_LISTWISE_PROMPT = Path("prompts/rerank/listwise-v1.yaml")
 
 
 # --- Errors -----------------------------------------------------------------
@@ -233,6 +236,36 @@ class UnavailableBranch:
         raise SearchUnavailable(self.code)
 
 
+def default_listwise(
+    settings: Settings,
+    engine: Engine,
+    *,
+    llm_path: str | Path = DEFAULT_LLM_PATH,
+    prompt_path: str | Path = DEFAULT_LISTWISE_PROMPT,
+) -> ListwiseReranker | None:
+    """The deep-search LLM reranker, or None: then ``hybrid_rerank_llm`` degrades.
+
+    Built only when ``LLM_RERANK_MODEL`` names a priced model whose key is set
+    and a daily cap is configured. Nothing here makes a call, and a missing
+    piece is logged by its code alone, never with a key.
+    """
+
+    if settings.llm_rerank_model is None:
+        return None
+    try:
+        from ..models.llm import build_client
+        from ..models.spend import SpendLedger
+        from .llm_rerank import LlmListwiseReranker, load_prompt
+
+        ledger = SpendLedger(engine, settings.llm_daily_spend_cap_usd)
+        client = build_client(settings.llm_rerank_model, settings, ledger, llm_config=llm_path)
+        return LlmListwiseReranker(client, load_prompt(prompt_path))
+    except Exception as error:  # noqa: BLE001 - any gap degrades the opt-in mode, typed
+        code = getattr(error, "code", None) or str(error).split(":")[0] or type(error).__name__
+        logger.warning("LLM reranker unavailable (%s); hybrid_rerank_llm will degrade", code)
+        return None
+
+
 def default_search_service(
     settings: Settings,
     engine: Engine,
@@ -246,7 +279,8 @@ def default_search_service(
     A model that cannot load degrades search rather than stopping the API
     (spec §12): without the embedder the dense branch fails typed and search
     serves BM25 with ``dense_unavailable``; without the reranker
-    ``hybrid_rerank`` serves the RRF order with ``rerank_unavailable``.
+    ``hybrid_rerank`` serves the RRF order with ``rerank_unavailable``. Mock mode
+    never builds the hosted-LLM reranker, so no test can spend money.
     """
 
     from ..models.embeddings import FixtureEmbedding, load_embedding_spec
@@ -286,7 +320,12 @@ def default_search_service(
     except Exception as error:  # noqa: BLE001 - any load failure degrades, typed
         logger.warning("reranker unavailable; hybrid_rerank will degrade", exc_info=error)
     return SearchService(
-        engine=engine, lexical=lexical, dense=dense, reranker=reranker, config=config
+        engine=engine,
+        lexical=lexical,
+        dense=dense,
+        reranker=reranker,
+        config=config,
+        listwise=default_listwise(settings, engine),
     )
 
 

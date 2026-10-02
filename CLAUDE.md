@@ -12,13 +12,15 @@ it before assuming anything about status. M2 is under way: P2.1 (metrics, labels
 BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded reranking,
 deadlines), P2.4 (the search API) and P2.5 (retrieval ablations) are done, and release
 `m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
-`copilot_v2` is migrated to `0005_llm_calls`, the hosted-LLM spend ledger (L1 of the LLM
-reranking plan). E3 (LitSearch's own corpus, the primary G2 evidence) selects
+`copilot_v2` is migrated to `0006_search_ordering_mode`: the hosted-LLM spend ledger
+(`0005`), then a wider ordering mode for `hybrid_rerank_llm`. E3 (LitSearch's own corpus, the primary G2 evidence) selects
 `hybrid_rerank` under the pre-registered rule, superseding P2.5's underpowered "retain
 BM25" (`reports/e3-litsearch-baselines.md`).
 
 **LLM reranking** (`docs/superpowers/plans/2026-10-01-llm-reranking.md`, L1–L5) adds an
-opt-in `hybrid_rerank_llm` mode on `gpt-6-luna`. Every priced call reserves its worst case
+opt-in `hybrid_rerank_llm` mode on `gpt-6-luna`, served when `LLM_RERANK_MODEL` names a
+model in `configs/llm.yaml` whose key and cap are set; otherwise it degrades with
+`llm_rerank_unavailable`. Every priced call reserves its worst case
 in the `llm_calls` ledger under `LLM_DAILY_SPEND_CAP_USD` ($3 a day) before it reaches the
 network. `llm spend [--day | --run]` reports calls, tokens and cost.
 

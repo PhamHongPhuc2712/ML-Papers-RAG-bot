@@ -7,9 +7,10 @@ from uuid import uuid4
 
 import pytest
 
-from copilot.contracts import PaperFilters, SearchRequest
+from copilot.contracts import ListwiseResult, PaperFilters, SearchRequest
 from copilot.corpus.releases import capture_release
 from copilot.models.embeddings import FixtureEmbedding
+from copilot.models.llm import LlmError
 from copilot.search.dense import DenseRetriever
 from copilot.search.fusion import rrf
 from copilot.search.rerank import FixtureReranker, RerankError
@@ -370,3 +371,104 @@ def test_hydrate_time_includes_the_metadata_the_reranker_reads(corpus):
         _, trace = service.search_with_trace(_request(mode))
         # One load each: hybrid_rerank's page is drawn from the head it already read.
         assert trace.stages["hydrate"]["seconds"] == pytest.approx(0.25)
+
+
+# --- hybrid_rerank_llm (LLM reranking plan, L4) --------------------------------------------
+
+
+class FakeListwise:
+    """A listwise reranker that reverses the head, or fails the way it is told to."""
+
+    identity = "fake/listwise@v1"
+
+    def __init__(self, reverse: bool = False, fail: str | None = None) -> None:
+        self.reverse = reverse
+        self.fail = fail
+        self.calls = 0
+        self.budgets: list[float] = []
+
+    def order(self, query, texts, *, timeout, purpose, request_id=None, run_id=None):
+        self.calls += 1
+        self.budgets.append(timeout)
+        if self.fail == "spend_cap":
+            raise LlmError("llm_spend_cap")
+        if self.fail == "unparseable":
+            raise RerankError("llm_rerank_unparseable")
+        if self.fail == "server_error":
+            raise LlmError("llm_server_error", retryable=True)
+        order = list(range(len(texts)))
+        return ListwiseResult(order=order[::-1] if self.reverse else order,
+                              ranked_by_model=len(texts), cost_usd=0.0012,
+                              served_model="fake-model", cached=False)
+
+
+@pytest.fixture
+def service_factory(corpus):
+    def make(listwise):
+        timeouts = {"llm"} if listwise is not None and listwise.fail == "timeout" else set()
+        return _service(corpus, listwise=listwise, runner=ScriptedRunner(timeouts))
+
+    return make
+
+
+def _deep(limit: int = 50) -> SearchRequest:
+    return SearchRequest(query=QUERY, mode="hybrid_rerank_llm", filters=PaperFilters(),
+                         limit=limit)
+
+
+def test_the_llm_reorders_the_reranked_head_without_changing_its_members(service_factory):
+    service = service_factory(listwise=FakeListwise(reverse=True))
+    request = _deep()
+    plain = service.rank(request.model_copy(update={"mode": "hybrid_rerank"}))
+    deep = service.rank(request)
+    assert [pid for pid, _ in deep.ordering.items] == [pid for pid, _ in plain.ordering.items][::-1]
+    assert not deep.ordering.warnings
+    assert all("llm_rank" in deep.ordering.scores[pid] for pid, _ in deep.ordering.items)
+    ranks = [deep.ordering.scores[pid]["llm_rank"] for pid, _ in deep.ordering.items]
+    assert ranks == list(range(1, len(ranks) + 1))
+    stage = deep.trace.stages["llm"]
+    assert stage["ranked_by_model"] == len(ranks) and stage["cost_usd"] == 0.0012
+    assert stage["served_model"] == "fake-model" and stage["cached"] is False
+
+
+@pytest.mark.parametrize("failure, warning", [
+    ("spend_cap", "llm_spend_cap"),
+    ("unparseable", "llm_rerank_unparseable"),
+    ("timeout", "llm_rerank_timeout"),
+    ("server_error", "llm_rerank_failed"),
+])
+def test_an_llm_failure_serves_the_cross_encoder_order_and_says_why(
+    service_factory, failure, warning
+):
+    service = service_factory(listwise=FakeListwise(fail=failure))
+    request = _deep()
+    plain = service.rank(request.model_copy(update={"mode": "hybrid_rerank"}))
+    deep = service.rank(request)
+    assert deep.ordering.items == plain.ordering.items
+    assert warning in deep.ordering.warnings
+
+
+def test_without_a_configured_llm_the_mode_degrades_rather_than_failing(service_factory):
+    deep = service_factory(listwise=None).rank(
+        SearchRequest(query="graph", mode="hybrid_rerank_llm", filters=PaperFilters()))
+    assert "llm_rerank_unavailable" in deep.ordering.warnings and deep.ordering.items
+
+
+def test_the_llm_has_its_own_budget_beyond_the_three_second_total(service_factory):
+    listwise = FakeListwise(reverse=True)
+    service_factory(listwise=listwise).rank(_deep())
+    assert CONFIG.total_seconds < listwise.budgets[0] <= CONFIG.llm_rerank_seconds
+
+
+def test_warm_up_never_calls_the_llm(corpus, service_factory):
+    listwise = FakeListwise()
+    service_factory(listwise=listwise).warm(capture_release(corpus.engine))
+    assert listwise.calls == 0
+
+
+def test_the_llm_mode_has_its_own_cache_identity(service_factory):
+    service = service_factory(listwise=FakeListwise())
+    assert service.identity("hybrid_rerank_llm")["listwise"] == "fake/listwise@v1"
+    assert "listwise" not in service.identity("hybrid_rerank")
+    plain = service.identity("hybrid_rerank")
+    assert {key: service.identity("hybrid_rerank_llm")[key] for key in plain} == plain

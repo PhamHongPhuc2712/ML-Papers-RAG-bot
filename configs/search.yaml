@@ -29,6 +29,10 @@ deadlines_seconds:
   rerank: 1.5
   # The whole request, after which the service falls back or fails, typed.
   total: 3.0
+  # Opt-in deep search (hybrid_rerank_llm) only. The stages above keep the 3 s total;
+  # the hosted LLM then gets its own budget, inside a deep-search total (p95 <= 20 s).
+  llm_rerank: 20.0
+  llm_total: 25.0
 
 # A model error — not a timeout — is retried at most this often, and only while
 # the total deadline still has room for it.

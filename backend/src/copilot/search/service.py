@@ -13,6 +13,11 @@ explicitly rather than failing it (spec §7):
 * both failing is a typed, retryable error — never an empty page that looks
   like "no results".
 
+``hybrid_rerank_llm`` is opt-in deep search: after the cross-encoder, a hosted
+LLM reorders the reranked head listwise, under its own deadline. It can only
+reorder; any failure keeps the cross-encoder's order, with a warning that says
+why, and without a configured LLM the mode degrades rather than failing.
+
 Stage timings, per-stage candidates and scores, and the model revisions go into
 a ``SearchTrace`` kept beside the response for offline analysis; the scores are
 ranking signals and the response never presents them as probabilities.
@@ -35,6 +40,7 @@ import yaml
 from sqlalchemy import Engine, text
 
 from ..contracts import (
+    ListwiseResult,
     PaperFilters,
     PaperSummary,
     RankedPaper,
@@ -70,6 +76,9 @@ class SearchConfig:
     rerank_retries: int = 1
     cache_depth: int = 200
     cache_ttl_seconds: int = 600
+    # Deep search only: the LLM's own budget, and the whole request's.
+    llm_rerank_seconds: float = 20.0
+    llm_total_seconds: float = 25.0
 
 
 def load_search_config(path: str | Path) -> SearchConfig:
@@ -85,6 +94,8 @@ def load_search_config(path: str | Path) -> SearchConfig:
         rerank_retries=int(raw.get("rerank_retries", 1)),
         cache_depth=int((raw.get("cache") or {}).get("depth", 200)),
         cache_ttl_seconds=int((raw.get("cache") or {}).get("ttl_seconds", 600)),
+        llm_rerank_seconds=float(deadlines.get("llm_rerank", 20.0)),
+        llm_total_seconds=float(deadlines.get("llm_total", 25.0)),
     )
 
 
@@ -94,6 +105,23 @@ class CandidateRetriever(Protocol):
     def search(
         self, query: str, filters: PaperFilters | None, limit: int, release_id: str
     ) -> list[tuple[str, float]]: ...
+
+
+class ListwiseReranker(Protocol):
+    """A hosted LLM that orders a head of candidates; it never adds or drops one."""
+
+    identity: str
+
+    def order(
+        self,
+        query: str,
+        texts: Sequence[str],
+        *,
+        timeout: float,
+        purpose: str,
+        request_id: UUID | None = None,
+        run_id: str | None = None,
+    ) -> ListwiseResult: ...
 
 
 @dataclass
@@ -126,7 +154,8 @@ class ThreadedStageRunner:
     its answer could no longer be used.
     """
 
-    LANES: Mapping[str, int] = {"lexical": 4, "dense": 1, "rerank": 1}
+    # The LLM is remote: concurrent deep searches must not queue behind one another.
+    LANES: Mapping[str, int] = {"lexical": 4, "dense": 1, "rerank": 1, "llm": 8}
 
     def __init__(self, lanes: Mapping[str, int] | None = None) -> None:
         self._sizes = dict(self.LANES if lanes is None else lanes)
@@ -304,6 +333,15 @@ _MODE_BRANCHES = {
     "dense": ("dense",),
     "hybrid": ("lexical", "dense"),
     "hybrid_rerank": ("lexical", "dense"),
+    "hybrid_rerank_llm": ("lexical", "dense"),
+}
+_RERANKED = ("hybrid_rerank", "hybrid_rerank_llm")
+# LlmError and RerankError codes the deep-search stage names; any other is a failure.
+_LLM_WARNINGS = {
+    TIMEOUT: "llm_rerank_timeout",
+    "llm_timeout": "llm_rerank_timeout",
+    "llm_spend_cap": "llm_spend_cap",
+    "llm_rerank_unparseable": "llm_rerank_unparseable",
 }
 
 
@@ -339,12 +377,14 @@ class SearchService:
         papers: PaperSource | None = None,
         capture: Callable[[], ReleaseRecord | None] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        listwise: ListwiseReranker | None = None,
     ) -> None:
         if engine is None and (papers is None or capture is None):
             # Without a database, metadata and the release must both come from the caller.
             raise ValueError("engine_required")
         self._branches: dict[str, CandidateRetriever] = {"lexical": lexical, "dense": dense}
         self._reranker = reranker
+        self._listwise = listwise
         self._config = config
         self._runner = runner or ThreadedStageRunner()
         self._papers: PaperSource = papers or PaperStore(cast(Engine, engine))
@@ -371,9 +411,11 @@ class SearchService:
         }
         if len(branches) > 1:
             identity["rrf_k"] = config.rrf_k
-        if mode == "hybrid_rerank":
+        if mode in _RERANKED:
             identity["reranker"] = str(getattr(self._reranker, "identity", "none"))
             identity["rerank_depth"] = config.rerank_depth
+        if mode == "hybrid_rerank_llm":
+            identity["listwise"] = str(getattr(self._listwise, "identity", "none"))
         return identity
 
     def warm(self, release: ReleaseRecord) -> dict[str, str]:
@@ -451,6 +493,8 @@ class SearchService:
                 "reranker": str(getattr(self._reranker, "identity", "none")),
             },
         )
+        if request.mode == "hybrid_rerank_llm":
+            trace.models["listwise"] = str(getattr(self._listwise, "identity", "none"))
         config = self._config
 
         def remaining() -> float:
@@ -500,8 +544,16 @@ class SearchService:
             trace.stages["fusion"] = {"k": config.rrf_k, "candidates": ordered}
 
         rows: dict[str, PaperRow] = {}
-        if request.mode == "hybrid_rerank":
+        if request.mode in _RERANKED:
             ordered = self._rerank(request.query, ordered, scores, trace, remaining, rows)
+        if request.mode == "hybrid_rerank_llm":
+
+            def deep_remaining() -> float:
+                return config.llm_total_seconds - (self._clock() - started)
+
+            ordered = self._llm_rerank(
+                request.query, ordered, scores, trace, deep_remaining, rows, request_id
+            )
         ordered = ordered[: config.cache_depth]
         trace.seconds = self._clock() - started
         ordering = Ordering(
@@ -637,3 +689,75 @@ class SearchService:
         trace.stages["rerank"] = {"errors": errors}
         trace.warnings.append(_warning("rerank", errors[-1]))
         return head
+
+    def _llm_rerank(
+        self,
+        query: str,
+        head: list[tuple[str, float]],
+        scores: dict[str, dict[str, float]],
+        trace: SearchTrace,
+        remaining: Callable[[], float],
+        rows: dict[str, PaperRow],
+        request_id: UUID,
+    ) -> list[tuple[str, float]]:
+        """Let the hosted LLM reorder the reranked head; on any failure keep it as it is.
+
+        Scores become ordinal (head size minus position, higher is better): the
+        LLM gives an order, not a calibrated score.
+        """
+
+        listwise = self._listwise
+        if not head:
+            return head
+        if listwise is None:
+            trace.warnings.append("llm_rerank_unavailable")
+            return head
+        self._hydrate([paper_id for paper_id, _ in head], rows, trace)
+        if any(paper_id not in rows for paper_id, _ in head):
+            if "metadata_missing" not in trace.warnings:
+                trace.warnings.append("metadata_missing")
+            head = [pair for pair in head if pair[0] in rows]
+        texts = [rows[paper_id].text for paper_id, _ in head]
+        budget = min(self._config.llm_rerank_seconds, remaining())
+        if budget <= 0:
+            trace.stages["llm"] = {"error": TIMEOUT}
+            trace.warnings.append("llm_rerank_timeout")
+            return head
+        order = partial(
+            listwise.order,
+            query,
+            texts,
+            timeout=budget,
+            purpose="search",
+            request_id=request_id,
+        )
+        outcome = self._runner.run({"llm": (order, budget)})["llm"]
+        result = outcome.value
+        if outcome.error is not None or not isinstance(result, ListwiseResult):
+            error = outcome.error or "llm_result_invalid"
+            trace.stages["llm"] = {"seconds": round(outcome.seconds, 4), "error": error}
+            trace.warnings.append(_LLM_WARNINGS.get(error, "llm_rerank_failed"))
+            return head
+        if sorted(result.order) != list(range(len(head))):
+            # The reranker promises a permutation; anything else is not used.
+            trace.stages["llm"] = {
+                "seconds": round(outcome.seconds, 4),
+                "error": "not_a_permutation",
+            }
+            trace.warnings.append("llm_rerank_failed")
+            return head
+        ordered = [
+            (head[index][0], float(len(head) - position))
+            for position, index in enumerate(result.order)
+        ]
+        for position, (paper_id, _) in enumerate(ordered, 1):
+            scores.setdefault(paper_id, {})["llm_rank"] = float(position)
+        trace.stages["llm"] = {
+            "seconds": round(outcome.seconds, 4),
+            "ranked_by_model": result.ranked_by_model,
+            "cost_usd": result.cost_usd,
+            "served_model": result.served_model,
+            "cached": result.cached,
+            "candidates": ordered,
+        }
+        return ordered

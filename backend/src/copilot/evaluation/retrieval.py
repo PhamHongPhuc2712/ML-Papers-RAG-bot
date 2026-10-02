@@ -191,10 +191,25 @@ def search_config_for(variant: Variant, base: SearchConfig) -> SearchConfig:
     return config
 
 
-def search_digest(config: SearchConfig) -> str:
+# Deadlines only the opt-in LLM mode reads (LLM reranking plan, L4). Every other mode's
+# recorded settings and digest leave them out, so adding them changed no recorded run.
+DEEP_SEARCH_FIELDS = ("llm_rerank_seconds", "llm_total_seconds")
+
+
+def search_values(config: SearchConfig, mode: str | None) -> dict[str, Any]:
+    """The settings a mode reads; ``None`` is the shared file, without deep-search fields."""
+
+    values = asdict(config)
+    if mode != "hybrid_rerank_llm":
+        for name in DEEP_SEARCH_FIELDS:
+            values.pop(name, None)
+    return values
+
+
+def search_digest(config: SearchConfig, mode: str | None) -> str:
     """What a variant searched under, as one digest: equal only if every knob was."""
 
-    values = json.dumps(asdict(config), sort_keys=True, separators=(",", ":"))
+    values = json.dumps(search_values(config, mode), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(values.encode()).hexdigest()
 
 
@@ -1162,9 +1177,9 @@ def run_retrieval(
                 "baseline": variant.baseline,
                 "changes": variant.changes,
                 # What this variant searched under, so two that differ never pass as equal.
-                "search": asdict(configs[variant.name]),
+                "search": search_values(configs[variant.name], variant.mode),
                 "search_overrides": dict(variant.search),
-                "search_sha256": search_digest(configs[variant.name]),
+                "search_sha256": search_digest(configs[variant.name], variant.mode),
                 "warmup_seconds": warmups[variant.name],
                 "warmup_queries": {"split": warm_split, "count": len(warm_queries)},
             }
@@ -1238,7 +1253,7 @@ def build_manifest(
         "search": {
             "path": str(experiment.search),
             "config_sha256": _file_sha256(experiment.search),
-            "values": search_config.__dict__,
+            "values": search_values(search_config, None),
         },
         "variants": dict(variants),
         "seed": experiment.seed,

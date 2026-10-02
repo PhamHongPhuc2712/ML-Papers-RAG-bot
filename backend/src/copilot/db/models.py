@@ -511,7 +511,7 @@ class SearchOrdering(Base):
         ForeignKey("corpus_releases.id", ondelete="CASCADE", name="fk_search_orderings_release"),
         nullable=False,
     )
-    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

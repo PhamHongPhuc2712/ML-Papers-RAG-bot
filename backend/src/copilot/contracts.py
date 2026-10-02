@@ -44,7 +44,8 @@ class PaperFilters(ContractModel):
 class SearchRequest(ContractModel):
     # Spec §10: 1-2,000 characters and 1-50 results, checked before anything is served.
     query: str = Field(min_length=1, max_length=2000)
-    mode: Literal["bm25", "dense", "hybrid", "hybrid_rerank"]
+    # hybrid_rerank_llm is opt-in deep search: a hosted LLM reorders the reranked head.
+    mode: Literal["bm25", "dense", "hybrid", "hybrid_rerank", "hybrid_rerank_llm"]
     filters: PaperFilters
     limit: int = Field(default=20, ge=1, le=50)
     cursor: str | None = None

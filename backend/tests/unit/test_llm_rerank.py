@@ -98,3 +98,31 @@ def test_the_reranker_lets_failures_through_for_the_service_to_handle():
     with pytest.raises(LlmError, match="llm_server_error"):
         LlmListwiseReranker(_client(status=500), PROMPT).order(
             "q", ["a", "b"], timeout=5.0, purpose="search")
+
+
+def test_the_api_builds_the_llm_reranker_only_when_fully_configured(monkeypatch, tmp_path):
+    from copilot.config import Settings
+    from copilot.search.api import default_listwise
+
+    for name in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY", "LLM_DAILY_SPEND_CAP_USD",
+                 "LLM_RERANK_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    engine = object()  # never touched: building makes no call and no query
+
+    def settings(**values):
+        return Settings(_env_file=None, data_dir=str(tmp_path), **values)
+
+    assert default_listwise(settings(), engine) is None
+    unconfigured = (
+        {"llm_rerank_model": "openai-gpt-6-luna"},
+        {"llm_rerank_model": "openai-gpt-6-luna", "llm_daily_spend_cap_usd": "3"},
+        {"llm_rerank_model": "openai-gpt-6-luna", "openai_api_key": "sk-test-x"},
+        {"llm_rerank_model": "no-such-model", "openai_api_key": "sk-test-x",
+         "llm_daily_spend_cap_usd": "3"},
+    )
+    for values in unconfigured:
+        assert default_listwise(settings(**values), engine) is None
+    built = default_listwise(settings(llm_rerank_model="openai-gpt-6-luna",
+                                      openai_api_key="sk-test-x",
+                                      llm_daily_spend_cap_usd="3"), engine)
+    assert built is not None and built.identity.startswith("openai-gpt-6-luna=gpt-6-luna#")
