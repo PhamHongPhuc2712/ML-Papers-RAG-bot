@@ -2,10 +2,10 @@
 
 Date: 2026-10-01
 Task: P2.6 of the retrieval plan (urgent, before the locked test split and before P3.1)
-Status: **in progress.** Step 1, the offline analysis, is done. The harness can now run the
-step 2 ceiling and the step 3 depth-100 ablation, and the depth-100 rule is written. The
-ceiling run is pending an idle GPU, and the depth-100 runs have not started. The locked
-test split has **not** been run.
+Status: **in progress.** Steps 1–3 are done. Step 1 is the offline analysis. Step 2 is the
+ceiling run. Step 3, the depth-100 rerank, was pre-registered in `a18a991` and is not
+promoted on validation. Step 4 (first-stage recall), the GPU-sharing policy and the final
+E3 re-run remain. The locked test split has **not** been run.
 Host: WSL2 Linux, 12 cores / 23 GB RAM, RTX 3080 Laptop 16 GB.
 
 ## What changed in the harness
@@ -103,19 +103,66 @@ Gold rank bands and the query ids behind every miss, per slice, are in
 
 ## Step 2 — the ceilings
 
-Pending: `configs/experiments/e3-candidates.yaml` (hybrid only, development, pools of 100,
-200 and 300 per branch, rankings kept 100 deep). It waits for an idle GPU. Another
-project's training jobs were using the GPU when it was due.
+Run `e3-candidates-development-20261002T084151Z`, code `1467e20`, clean. The GPU was 0% busy
+before the run and used only by our own dense encoding during it (p50 33%, max 54%). The
+only other process listed, pid 27, was present and idle beforehand. Hybrid only, no
+reranker, the 359 development queries, rankings kept 100 deep.
 
-## Step 3 — rerank depth 100
+| Pool per branch | Recall@10 | Recall@50 | Recall@100 | nDCG@10 | Gold in top 100 | Pooled, beyond 100 | Not in pool | p95 |
+|---|---|---|---|---|---|---|---|---|
+| 100 (shipped) | 0.597 | 0.784 | 0.828 | 0.474 | 82.8 | 3.2 | 14.0 | 57 ms |
+| 200 | 0.605 | 0.784 | 0.843 | 0.478 | 84.3 | 4.3 | 11.5 | 40 ms |
+| 300 | 0.609 | 0.799 | 0.840 | 0.481 | 84.0 | 7.1 | 9.0 | 46 ms |
 
-Pre-registered in `configs/experiments/e3-rerank-depth.yaml`: depth 100 with a 2.5 s rerank
-deadline, against the shipped depth 50 at 1.5 s. It is promoted only if:
+- **The 100-candidate row reproduces E3's recorded hybrid run to the third decimal.** That
+  is Recall@10 0.597, Recall@50 0.784 and nDCG@10 0.474. Today's LLM-mode changes left the
+  existing modes as they were.
+- **A deeper rerank is the cheap lever.** At the shipped pool, 82.8% of gold papers sit in
+  the fused top 100, against 78.4% in the top 50 the reranker sees today. Reranking 100 can
+  reach 4.4 more points of gold.
+- **A bigger pool finds gold the fusion then buries.** Tripling the pool cuts never-pooled
+  gold from 14.0% to 9.0%. But most of what it adds lands past fused rank 100: the pooled
+  share beyond 100 grows from 3.2% to 7.1%. Each added paper comes from deep in one branch
+  only, so RRF ranks it low. Combined with a depth-100 rerank, a 200 pool adds at most 1.5
+  points (84.3% against 82.8%).
+- **What remains is a model problem.** At pool 300, 9.0% of gold papers are in neither
+  branch's top 300. They are mostly broad and citation-derived queries: with pool 100,
+  broad queries miss 24.6% of their gold from the pool and `inline_acl` 21.0%. A larger
+  pool does not reach them; a stronger first-stage model (P2.6 step 4) might.
+
+Development only: a diagnostic, never a choice. `reports/retrieval/e3-candidates/gaps.md`
+has the slices and gold rank bands.
+
+## Step 3 — rerank depth 100: not promoted
+
+Pre-registered in `configs/experiments/e3-rerank-depth.yaml` and committed in `a18a991`
+before either run: depth 100 with a 2.5 s rerank deadline, against the shipped depth 50 at
+1.5 s. It is promoted only if:
 - the paired nDCG@10 interval lies wholly above zero;
 - the end-to-end p95 is ≤ 3 s;
 - neither variant degrades a single query (`require_undegraded`).
 
-The rule must be committed before the validation run. Not run yet.
+Runs `e3-rerank-depth-development-20261002T084328Z` and
+`e3-rerank-depth-validation-20261002T085409Z` were both clean. The GPU was idle beforehand;
+no rerank timed out and no query degraded.
+
+| Paired vs depth 50 | Development (359) | Validation (120) |
+|---|---|---|
+| nDCG@10 | −0.006 [−0.014, +0.002], 6 wins / 32 losses | **−0.001 [−0.009, +0.008]**, 1 / 4 |
+| Recall@10 | −0.013 [−0.036, +0.008] | +0.000 [−0.025, +0.025] |
+| Recall@50 | +0.023 [+0.003, +0.045] | +0.033 [−0.008, +0.075] |
+| Recall@100 | +0.044 [+0.024, +0.065], 17 / 0 | +0.042 [+0.008, +0.083], 5 / 0 |
+| End-to-end p95 | 750 → 1,220 ms | 851 → 1,308 ms |
+
+**Decision: the rerank depth stays at 50.** The gain is not supported, while the run fits
+the 3 s budget and has no degraded query. Reranking 100 hands the cross-encoder the 4.4
+points of gold that the cut at 50 had dropped. But it also brings in distractors it ranks
+above them, so the top 10 does not improve. At the top of the page the cross-encoder, not
+the depth, is now the limit. `reports/retrieval/e3-rerank-depth/report.md` has the full
+tables. Spec §7's "rerank at most 50" stands unchanged.
+
+For the LLM reranking plan, the wider head is still a live option. An LLM variant may set
+its own rerank depth. At 100, it would see 4.2–4.4 more points of gold than at 50.
 
 ## Commands and results
 
