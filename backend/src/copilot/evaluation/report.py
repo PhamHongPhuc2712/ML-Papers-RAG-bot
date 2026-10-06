@@ -194,6 +194,7 @@ def _facet_table(variants: Mapping[str, Any], facet: str, label: str) -> list[st
 def _decision(decision: Mapping[str, Any]) -> list[str]:
     rules = decision["rules"]
     strict = bool(rules.get("require_undegraded"))
+    guards = list(rules.get("guards") or [])
     lines = [
         "",
         "### Decision",
@@ -206,21 +207,39 @@ def _decision(decision: Mapping[str, Any]) -> list[str]:
             " A candidate with any degraded query is never chosen (`require_undegraded`)."
             if strict
             else ""
+        )
+        + (
+            " Guards: a step is promoted only if "
+            + " and ".join(
+                f"its `{guard['metric']}` interval rules out losing more than "
+                f"{guard.get('max_drop', rules.get('max_drop', 0.03))}"
+                for guard in guards
+            )
+            + "."
+            if guards
+            else ""
         ),
         "",
         "| Step | Difference [interval] | p95 s | Gain supported | Fits budget | "
         + ("Degraded | " if strict else "")
+        + ("Guards | " if guards else "")
         + "Promoted |",
-        "|---|---|---|---|---|" + ("---|" if strict else "") + "---|",
+        "|---|---|---|---|---|" + ("---|" if strict else "") + ("---|" if guards else "") + "---|",
     ]
     for step in decision["steps"]:
         item = step["comparison"]
+        guard_cell = "; ".join(
+            f"`{check['metric']}` {_signed(check['comparison']['low'])} "
+            f"{'ok' if check['holds'] else '**fails**'}"
+            for check in step.get("guards", [])
+        )
         lines.append(
             f"| `{step['from']}` → `{step['to']}` | {_signed(item['difference'])} "
             f"[{_signed(item['low'])}, {_signed(item['high'])}] | {step['p95_seconds']:.2f} | "
             f"{'yes' if step['gain_supported'] else 'no'} | "
             f"{'yes' if step['fits_budget'] else 'no'} | "
             + (f"{step.get('degraded', 0)} | " if strict else "")
+            + (f"{guard_cell} | " if guards else "")
             + f"{'**yes**' if step['promoted'] else 'no'} |"
         )
     if decision["ablations"]:

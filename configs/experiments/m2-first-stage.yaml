@@ -1,0 +1,86 @@
+# P2.6, step 4, on our own corpus: find candidates through the chunk collection as well
+# as through titles and abstracts (E4's chunk-level retrieval, shared with this task).
+# LitSearch's corpus is packaged as title and abstract, so this lever exists only here.
+#
+# A paper found through its chunks is scored by its best evidence chunk (references are
+# excluded, or every paper citing the gold one would match its title). `chunks` replaces
+# both branches' collection; `both` fuses each branch's paper list with its chunk list by
+# RRF before the two branches are fused. The reranker, where present, is unchanged and
+# still scores titles and abstracts.
+#
+#   eval retrieval --config configs/experiments/m2-first-stage.yaml --split development \
+#     --out reports/retrieval/m2-first-stage
+#   eval gaps --run reports/retrieval/m2-first-stage --focus hybrid_rerank_both
+#   eval retrieval --config configs/experiments/m2-first-stage.yaml --split validation \
+#     --out reports/retrieval/m2-first-stage
+#
+# Development diagnosed (2026-10-06, run m2-first-stage-development-*): fusing paper and
+# chunk candidates put 7.3 more points of gold into the reranked top 50, with the paired
+# interval wholly above zero, and moved the top 10 by an amount the 150 queries could not
+# confirm. The rule below was written after that run and before any validation number
+# existed, and is committed before the validation run.
+schema_version: 1
+name: m2-first-stage
+
+dataset:
+  path: data/fixtures/retrieval
+  query_text: benchmarks/litsearch-dataset/queries.jsonl
+  slice: in_domain
+
+corpus:
+  release: m2-20260924T095724Z
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  # As shipped: must reproduce P2.5's development hybrid_rerank.
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+  - name: bm25_chunks
+    mode: bm25
+    candidates: chunks
+    changes: BM25 over evidence chunks, best chunk per paper
+  - name: dense_chunks
+    mode: dense
+    candidates: chunks
+    changes: dense over evidence chunks, best chunk per paper
+  # Deliberately no `baseline` on either candidate: that would also test them under the
+  # non-inferiority rule meant for cheaper ablations, and both cost more than the shipped
+  # first stage (two more Qdrant queries per request).
+  - name: hybrid_rerank_chunks
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: both branches over evidence chunks instead of titles and abstracts
+  - name: hybrid_rerank_both
+    mode: hybrid_rerank
+    candidates: both
+    changes: each branch fuses its paper list with its chunk list (RRF) before fusion
+
+decision:
+  # Pre-registered (P2.6 step 4). A first stage is judged by what it puts in front of
+  # the reranker, so the primary metric is Recall@50: the reranked head, which is also
+  # everything a page can show. The top of the page is guarded: a step is promoted only
+  # if its paired Recall@50 interval lies wholly above zero, its nDCG@10 interval rules
+  # out losing more than 0.03, its end-to-end p95 fits the 3 s budget, and neither side
+  # degraded a single query. Steps climb in cost order; `chunks` is tried before `both`
+  # because it issues the same number of Qdrant queries as the shipped stage per branch
+  # while `both` issues two.
+  primary: recall@50
+  order: [hybrid_rerank, hybrid_rerank_chunks, hybrid_rerank_both]
+  guards:
+    - {metric: ndcg@10, max_drop: 0.03}
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
+  require_undegraded: true

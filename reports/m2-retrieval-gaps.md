@@ -164,6 +164,138 @@ tables. Spec §7's "rerank at most 50" stands unchanged.
 For the LLM reranking plan, the wider head is still a live option. An LLM variant may set
 its own rerank depth. At 100, it would see 4.2–4.4 more points of gold than at 50.
 
+## Step 4 — first-stage recall
+
+### The misses, read one by one (offline)
+
+The 48 gold papers that `hybrid` never pooled on E3 development (every query whose
+`candidate_recall` is 0 in the recorded run) were read beside their queries, with the
+query text from `DATA_DIR` and the gold's title and abstract from the `litsearch-v1`
+snapshot. Nothing of either is reproduced here. A one-off script also counted, for every
+gold paper of the split, the share of the query's content words (stop words removed, the
+P2.1 tokenizer) that occur in the gold's title and abstract.
+
+| Gold papers, `hybrid`, E3 development | n | Query words found in the gold text, median |
+|---|---|---|
+| In the returned top 50 | 297 | 0.41 |
+| Pooled but cut at 50 | 40 | 0.24 |
+| Never pooled | 48 | 0.18 |
+
+Of the never-pooled golds, 98% share under half of the query's content words with the
+gold's title and abstract, against 67% of the found ones. Reading them, four kinds:
+
+1. **The query describes something only the body says** — a hyperparameter recipe, a
+   binarization step, an evaluation protocol, a tool, a component the paper adds to a
+   baseline. The abstract names none of it. This is the largest group, and it is the
+   citation-derived (`inline_*`) sets almost entirely: the query paraphrases the citing
+   sentence, and the citing sentence cites the paper for a detail. On LitSearch's corpus,
+   which is title and abstract only, no first stage over that text can find these; on our
+   corpus the body is indexed, which is what the chunk-level variants below test.
+2. **The gold is a general paper cited for a side point** — a sentence-embedding paper for
+   a question about matching to a knowledge base, an alignment model for a question about
+   simultaneous translation, a retrieval model for a question about distillation. The
+   query and the gold are both reasonable; the label is the loose part. No ranking fixes
+   these, and they are a reason the judged-coverage caveat matters.
+3. **Vocabulary mismatch on a findable paper** — the query says in plain words what the
+   title says in the paper's own terms (a safety-constrained world model, iterative
+   prompting for ambiguous questions, a Pareto-frontier result the query calls mutual
+   learning). These are the author-written misses, and the ones a stronger dense model
+   is for. BGE-M3 trails GritLM-7B by 5–16 points at LitSearch's cutoffs (step 1), and
+   nothing cheaper than a stronger model addresses this group.
+4. **Empty gold text.** Two never-pooled golds have no title and no abstract in LitSearch's
+   `corpus_clean`, and a third has no title. They are unfindable by any system over that
+   corpus and should be read as a floor on every published number too.
+
+### A larger pool, and how deep the misses are (E3, development)
+
+Run `e3-first-stage-development-20261006T060217Z`, clean: GPU idle beforehand (p50 0%,
+1,257 MiB held by an idle Windows-side process, as in every clean run before), no other
+compute process during it, 0 degraded and 0 failed queries. Config
+`configs/experiments/e3-first-stage.yaml`; development only, no decision block.
+
+| Variant | Recall@10 | Recall@50 | nDCG@10 | MRR@10 | Gold in pool | p95 |
+|---|---|---|---|---|---|---|
+| `hybrid_rerank` (shipped) | 0.694 | 0.784 | 0.556 | 0.517 | 86.0% | 755 ms |
+| `hybrid_rerank_pool300` | 0.680 | 0.799 | 0.550 | 0.513 | 91.0% | 758 ms |
+| `bm25_deep1000` | 0.547 | 0.678 | 0.411 | 0.373 | 88.4% | 11 ms |
+| `dense_deep1000` | 0.579 | 0.727 | 0.440 | 0.401 | 89.9% | 61 ms |
+
+- **The shipped row reproduces E3's recorded development run** (nDCG@10 0.556; gold
+  returned / cut / never pooled 78.4 / 7.6 / 14.0, to the decimal), after the chunk-level
+  code and the candidate-source field were added. Nothing moved for the paper-level path.
+- **A 300-per-branch pool is not a lever, by the same mechanism as depth 100.** Paired
+  against the shipped stack: nDCG@10 −0.006 [−0.016, +0.003] with 8 wins and 16 losses,
+  Recall@10 −0.014 [−0.033, +0.003], Recall@50 +0.015 [−0.006, +0.036]. The pool holds
+  5 more points of gold (91.0% against 86.0%), the reranked top 50 gains 1.5, and the
+  top 10 loses a little: the extra candidates come from deep in one branch, RRF ranks
+  them low, and the few that reach the reranker displace as much as they add. It costs
+  nothing in latency (p95 758 against 755 ms), so it is not promoted on latency grounds
+  either; it is simply not better. No validation run is owed to a change that loses on
+  development.
+- **Reranking far deeper would not reach the rest.** Run alone to 1,000 candidates, BM25
+  holds 88.4% of gold papers somewhere in its list and dense 89.9%. Against the 100-deep
+  union's 86.0%, ten times the depth in either branch recovers at most 4 points, and
+  10–12% of gold papers are beyond rank 1,000 of a branch. Those are the queries read in
+  the section above: the paper's text does not say what the query says. On this corpus
+  they are a model problem, not a depth problem.
+
+### Candidates through chunks, on our corpus (development)
+
+The lever the misses point at exists only on our corpus, whose chunk collection holds
+every paper's body. A paper found through its chunks is scored by its best evidence
+chunk (Qdrant's grouped query over `paper_chunks_<release>`, references excluded);
+`chunks` replaces both branches' collection, `both` fuses each branch's paper list with
+its chunk list by RRF before the branches are fused. The reranker is unchanged and still
+scores titles and abstracts. This is also E4's chunk-level retrieval on the in-domain
+slice, shared with that task as its plan asks.
+
+Run `m2-first-stage-development-20261006T062016Z`, clean: GPU idle beforehand (p50 0%),
+only the idle Windows-side process seen during it, 0 degraded queries. A first attempt
+(`...-20261006T061147Z`, set aside) produced the same three reranked rows to the third
+decimal. Config `configs/experiments/m2-first-stage.yaml`; in-domain development, 150
+queries.
+
+| Variant | Recall@10 | Recall@50 | nDCG@10 | MRR@10 | Gold in pool | p95 |
+|---|---|---|---|---|---|---|
+| `hybrid_rerank` (shipped) | 0.740 | 0.807 | 0.585 | 0.536 | 90.0% | 621 ms |
+| `hybrid_rerank_chunks` | 0.773 | 0.840 | 0.606 | 0.553 | 91.3% | 640 ms |
+| `hybrid_rerank_both` | 0.767 | **0.880** | 0.597 | 0.543 | 92.7% | 638 ms |
+| `bm25_chunks` (branch alone) | 0.667 | 0.800 | 0.517 | 0.470 | 85.3% | 180 ms |
+| `dense_chunks` (branch alone) | 0.573 | 0.720 | 0.432 | 0.387 | 79.3% | 337 ms |
+
+Paired against the shipped stack, 95% intervals over query families:
+
+| Candidate | nDCG@10 | Recall@10 | Recall@50 |
+|---|---|---|---|
+| `hybrid_rerank_both` | +0.012 [−0.006, +0.032], 12 / 9 | +0.027 [+0.000, +0.060] | **+0.073 [+0.027, +0.127]**, 13 wins / 2 losses |
+| `hybrid_rerank_chunks` | +0.020 [−0.006, +0.046], 24 / 10 | +0.033 [−0.007, +0.080] | +0.033 [−0.020, +0.093] |
+
+- **This is the first lever that moves first-stage recall.** With `both`, gold papers
+  returned in the top 50 rise from 80.7% to 88.0%; never-pooled gold falls from 10.0% to
+  7.3% and gold cut at 50 from 9.3% to 4.7%. The slice that lost most to the depth-50 cut
+  gains most: `manual_iclr` goes from 66.7% to 81.5% returned. Recall@50 is also what a
+  page can show, since `hybrid_rerank` serves only its reranked head.
+- **The top 10 moves less, and 150 queries cannot confirm it.** Both candidates improve
+  nDCG@10 and MRR@10 with more wins than losses, and both intervals include zero.
+- **It costs 17–19 ms at p95** (two more Qdrant queries per request), nothing against the
+  3 s budget. Alone, the dense chunk branch timed out at its 1 s branch deadline on 2 of
+  150 queries (the first attempt: 2 dense and 1 BM25); inside the hybrid modes no query
+  degraded in either attempt. A branch over 3.4 M on-disk vectors sits closer to its
+  deadline than one over 86k in RAM, and the diagnostic reports that rather than hiding it.
+- **`bm25_chunks` alone nearly matches the shipped hybrid at Recall@50** (0.800 against
+  0.807): a paper's body says most of what its abstract says and more. `dense_chunks`
+  alone is the weakest branch, as it was at paper level.
+
+**Pre-registered rule, written after this run and before any validation number.** The
+`decision` block in `m2-first-stage.yaml`, committed before the validation run: primary
+metric Recall@50, because a first stage is judged by what it puts in front of the
+reranker and what the page can show; steps `hybrid_rerank` → `hybrid_rerank_chunks` →
+`hybrid_rerank_both` in cost order; a step is promoted only if its paired Recall@50
+interval lies wholly above zero, its nDCG@10 interval rules out a loss beyond 0.03 (a
+*guard*, a new opt-in rule in the harness, so the top of the page is checked by the
+machine rather than by prose), its p95 fits 3 s, and neither side degraded a query. The
+52 in-domain validation queries are few, and the rule was chosen knowing that.
+
 ## Commands and results
 
 ```text

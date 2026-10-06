@@ -1,0 +1,719 @@
+{
+  "comparisons": {
+    "hybrid_rerank_pool300_vs_hybrid_rerank": {
+      "baseline": "hybrid_rerank",
+      "candidate": "hybrid_rerank_pool300",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.5168877393111376,
+          "candidate": 0.5132124065968077,
+          "difference": -0.0036753327143299293,
+          "high": 0.0023921718176592812,
+          "losses": 15,
+          "low": -0.012008030463810404,
+          "metric": "mrr@10",
+          "ties": 336,
+          "wins": 8
+        },
+        "ndcg@10": {
+          "baseline": 0.5563354289628233,
+          "candidate": 0.5504256098686917,
+          "difference": -0.005909819094131485,
+          "high": 0.002573178180702385,
+          "losses": 16,
+          "low": -0.016326020908344382,
+          "metric": "ndcg@10",
+          "ties": 335,
+          "wins": 8
+        },
+        "recall@10": {
+          "baseline": 0.6942432683379759,
+          "candidate": 0.6803156917363046,
+          "difference": -0.013927576601671309,
+          "high": 0.002785515320334262,
+          "losses": 9,
+          "low": -0.033426183844011144,
+          "metric": "recall@10",
+          "ties": 346,
+          "wins": 4
+        },
+        "recall@50": {
+          "baseline": 0.7839368616527391,
+          "candidate": 0.7992571959145776,
+          "difference": 0.01532033426183844,
+          "high": 0.036211699164345405,
+          "losses": 5,
+          "low": -0.005571030640668524,
+          "metric": "recall@50",
+          "ties": 343,
+          "wins": 11
+        }
+      }
+    }
+  },
+  "manifest": {
+    "bootstrap": {
+      "confidence": 0.95,
+      "resamples": 1000,
+      "seed": 42,
+      "unit": "query family"
+    },
+    "code": {
+      "diff_sha256": "bcb03c2596af6a044ffbed4da20d5568091e41ac065152374941ee1e522645e8",
+      "dirty": true,
+      "git_sha": "eaf4bb450c374a4667240fef297a747f0684d1ad"
+    },
+    "corpus": {
+      "chunker_version": "none: packaged title and abstract",
+      "manifest_sha256": "5246fa7a9aa70c8691b3f35141beaa84332cce02cd2908492cea2126940bca24",
+      "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "papers": "snapshot",
+      "parser_version": "none: packaged title and abstract",
+      "release_id": "litsearch-v1",
+      "releases": {
+        "litsearch-v1": {
+          "bm25_vocabulary_sha256": "08267a516392200e6ba5fe8d6da4898f9d5d0c654a4041ed1c1abd5c18ddb137",
+          "dense_dimensions": 1024,
+          "dense_vector_bytes": 262893568,
+          "manifest_sha256": "5246fa7a9aa70c8691b3f35141beaa84332cce02cd2908492cea2126940bca24",
+          "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+          "paper_collection": "dev_paper_abstracts_litsearch-v1",
+          "points": 64183
+        }
+      }
+    },
+    "cost": {
+      "metered_usd": 0.0,
+      "note": "self-hosted models and services; no priced model call is made"
+    },
+    "created_at": "2026-10-06T06:02:19.839742+00:00",
+    "dataset": {
+      "digest": "dfcb643e87b52cdc74d109d2614b07537d3912dfae99b5c88d71ee0433dee7d7",
+      "labels": "corpusid",
+      "limited_to": null,
+      "path": "data/fixtures/retrieval",
+      "queries": 359,
+      "slice": "all",
+      "sources": [
+        "litsearch@9573fb284a1026c998df47024b888a163f0f0e25"
+      ],
+      "split": "development"
+    },
+    "experiment": {
+      "config_sha256": "2fc4d39aa72bb247e7fd53d667060ec5c36f13f068a3b11c338d0650b1ca37ef",
+      "name": "e3-first-stage",
+      "path": "configs/experiments/e3-first-stage.yaml"
+    },
+    "hardware": {
+      "cores": 12,
+      "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cuda": "13.0",
+      "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+      "ram_gb": 25.2,
+      "torch": "2.14.0+cu130"
+    },
+    "locked_test": false,
+    "run_id": "e3-first-stage-development-20261006T060219Z",
+    "search": {
+      "config_sha256": "d7cd7b9e8b3aa79f452bd180a1f9958bd9791a117986c2ea72d9f87f1793aead",
+      "path": "configs/search.yaml",
+      "values": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      }
+    },
+    "seed": 42,
+    "timing": {
+      "gpu": {
+        "available": true,
+        "before_run": {
+          "available": true,
+          "busy": false,
+          "memory_mib": 1257,
+          "samples": 5,
+          "utilization_percent_p50": 0.0
+        },
+        "compute_processes_seen": [
+          "25"
+        ],
+        "memory_mib": {
+          "max": 5121,
+          "min": 3627
+        },
+        "samples": 423,
+        "utilization_percent": {
+          "max": 100,
+          "p50": 97.0
+        }
+      },
+      "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+    },
+    "variants": {
+      "bm25_deep1000": {
+        "baseline": null,
+        "candidates": "papers",
+        "changes": "candidates 100 -> 1,000, to measure how deep the misses are",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "bm25",
+        "release_id": "litsearch-v1",
+        "reranker": "none",
+        "reranker_precision": null,
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 1000,
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "candidates_per_branch": 1000
+        },
+        "search_sha256": "c6e87a33d05604b8aeb92cda1484a8aa37253ccae6d11a506dddb3fec04e6dff",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 0.289
+      },
+      "dense_deep1000": {
+        "baseline": null,
+        "candidates": "papers",
+        "changes": "candidates 100 -> 1,000, to measure how deep the misses are",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "dense",
+        "release_id": "litsearch-v1",
+        "reranker": "none",
+        "reranker_precision": null,
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 1000,
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "candidates_per_branch": 1000
+        },
+        "search_sha256": "c6e87a33d05604b8aeb92cda1484a8aa37253ccae6d11a506dddb3fec04e6dff",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 0.546
+      },
+      "hybrid_rerank": {
+        "baseline": null,
+        "candidates": "papers",
+        "changes": null,
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "litsearch-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {},
+        "search_sha256": "e5f8f61af4ca815008716bebd3b30eb4581937373760d72dbf9f529c89ba9ab3",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 18.212
+      },
+      "hybrid_rerank_pool300": {
+        "baseline": "hybrid_rerank",
+        "candidates": "papers",
+        "changes": "candidates per branch 100 -> 300, rerank depth 50 unchanged",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "litsearch-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 300,
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "candidates_per_branch": 300
+        },
+        "search_sha256": "6040478be2dace55bbe515cde7377fe55580083a697a0f1cef641ac01714082f",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 5.621
+      }
+    }
+  },
+  "variants": {
+    "bm25_deep1000": {
+      "summary": {
+        "by_query_set": {
+          "inline_acl": {
+            "mrr@10": 0.2986750067258542,
+            "ndcg@10": 0.32827400148225566,
+            "queries": 59,
+            "recall@10": 0.4700564971751412,
+            "recall@50": 0.668361581920904
+          },
+          "inline_nonacl": {
+            "mrr@10": 0.25834899749373436,
+            "ndcg@10": 0.300603955969578,
+            "queries": 152,
+            "recall@10": 0.4440789473684211,
+            "recall@50": 0.5789473684210527
+          },
+          "manual_acl": {
+            "mrr@10": 0.5034775558969108,
+            "ndcg@10": 0.5444633049103931,
+            "queries": 93,
+            "recall@10": 0.6774193548387096,
+            "recall@50": 0.7634408602150538
+          },
+          "manual_iclr": {
+            "mrr@10": 0.5475252525252525,
+            "ndcg@10": 0.5814419119370874,
+            "queries": 55,
+            "recall@10": 0.6909090909090909,
+            "recall@50": 0.8181818181818182
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.23603020496224378,
+            "ndcg@10": 0.2707429202748596,
+            "queries": 103,
+            "recall@10": 0.3906148867313916,
+            "recall@50": 0.5284789644012945
+          },
+          "1": {
+            "mrr@10": 0.42780102926587305,
+            "ndcg@10": 0.46792124656142486,
+            "queries": 256,
+            "recall@10": 0.609375,
+            "recall@50": 0.73828125
+          }
+        },
+        "candidate_recall": 0.8843082636954505,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.05766016713091921,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.014317548746518107,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 16.0,
+          "p50_ms": 8.7,
+          "p95_ms": 10.8
+        },
+        "mrr@10": {
+          "high": 0.41757218021841985,
+          "low": 0.3299596266083035,
+          "mean": 0.37278043064951144
+        },
+        "ndcg@10": {
+          "high": 0.45662834704661853,
+          "low": 0.36819329963057473,
+          "mean": 0.41134919194438796
+        },
+        "queries": 359,
+        "recall@10": {
+          "high": 0.5972214484679665,
+          "low": 0.4949814298978645,
+          "mean": 0.54661095636026
+        },
+        "recall@50": {
+          "high": 0.7256267409470752,
+          "low": 0.6295241411327763,
+          "mean": 0.6780872794800371
+        },
+        "rerank_pool_recall": null,
+        "stages": {
+          "lexical": {
+            "max_ms": 15.2,
+            "p50_ms": 8.0,
+            "p95_ms": 10.0
+          }
+        }
+      }
+    },
+    "dense_deep1000": {
+      "summary": {
+        "by_query_set": {
+          "inline_acl": {
+            "mrr@10": 0.37436104385256924,
+            "ndcg@10": 0.39579725710081365,
+            "queries": 59,
+            "recall@10": 0.5259887005649717,
+            "recall@50": 0.6293785310734463
+          },
+          "inline_nonacl": {
+            "mrr@10": 0.3989766081871345,
+            "ndcg@10": 0.4362550412131144,
+            "queries": 152,
+            "recall@10": 0.5657894736842105,
+            "recall@50": 0.743421052631579
+          },
+          "manual_acl": {
+            "mrr@10": 0.40402372418501453,
+            "ndcg@10": 0.4677335492277531,
+            "queries": 93,
+            "recall@10": 0.6774193548387096,
+            "recall@50": 0.7741935483870968
+          },
+          "manual_iclr": {
+            "mrr@10": 0.42878787878787883,
+            "ndcg@10": 0.4482663412337689,
+            "queries": 55,
+            "recall@10": 0.509090909090909,
+            "recall@50": 0.7090909090909091
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.3021652026506395,
+            "ndcg@10": 0.3414146718538665,
+            "queries": 103,
+            "recall@10": 0.505177993527508,
+            "recall@50": 0.6080906148867314
+          },
+          "1": {
+            "mrr@10": 0.4404932415674603,
+            "ndcg@10": 0.47910532061887295,
+            "queries": 256,
+            "recall@10": 0.609375,
+            "recall@50": 0.775390625
+          }
+        },
+        "candidate_recall": 0.8987929433611884,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.06044568245125347,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.015376044568245125,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 136.9,
+          "p50_ms": 33.7,
+          "p95_ms": 60.9
+        },
+        "mrr@10": {
+          "high": 0.44344715811115537,
+          "low": 0.35307965247380285,
+          "mean": 0.4008058097890967
+        },
+        "ndcg@10": {
+          "high": 0.4808912486132506,
+          "low": 0.3928266421111962,
+          "mean": 0.439600761223899
+        },
+        "queries": 359,
+        "recall@10": {
+          "high": 0.6276717734447539,
+          "low": 0.5260886722376974,
+          "mean": 0.5794800371402042
+        },
+        "recall@50": {
+          "high": 0.7725208913649027,
+          "low": 0.6813300835654597,
+          "mean": 0.7273909006499536
+        },
+        "rerank_pool_recall": null,
+        "stages": {
+          "dense": {
+            "max_ms": 134.0,
+            "p50_ms": 32.9,
+            "p95_ms": 59.9
+          }
+        }
+      }
+    },
+    "hybrid_rerank": {
+      "summary": {
+        "by_query_set": {
+          "inline_acl": {
+            "mrr@10": 0.46680790960451973,
+            "ndcg@10": 0.4743090475227774,
+            "queries": 59,
+            "recall@10": 0.5548022598870057,
+            "recall@50": 0.6598870056497176
+          },
+          "inline_nonacl": {
+            "mrr@10": 0.457093253968254,
+            "ndcg@10": 0.4995309552724832,
+            "queries": 152,
+            "recall@10": 0.6414473684210527,
+            "recall@50": 0.7664473684210527
+          },
+          "manual_acl": {
+            "mrr@10": 0.5840331114524663,
+            "ndcg@10": 0.6374772979195371,
+            "queries": 93,
+            "recall@10": 0.8064516129032258,
+            "recall@50": 0.8494623655913979
+          },
+          "manual_iclr": {
+            "mrr@10": 0.6223232323232323,
+            "ndcg@10": 0.664110750652278,
+            "queries": 55,
+            "recall@10": 0.8,
+            "recall@50": 0.8545454545454545
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.3923524425951611,
+            "ndcg@10": 0.4216992548884108,
+            "queries": 103,
+            "recall@10": 0.5313915857605178,
+            "recall@50": 0.6546925566343043
+          },
+          "1": {
+            "mrr@10": 0.5669937375992063,
+            "ndcg@10": 0.6105054521255752,
+            "queries": 256,
+            "recall@10": 0.759765625,
+            "recall@50": 0.8359375
+          }
+        },
+        "candidate_recall": 0.859702878365831,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07242339832869081,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016545961002785513,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1240.8,
+          "p50_ms": 494.5,
+          "p95_ms": 755.2
+        },
+        "mrr@10": {
+          "high": 0.5629391884423222,
+          "low": 0.46824946389883715,
+          "mean": 0.5168877393111376
+        },
+        "ndcg@10": {
+          "high": 0.6003333709885103,
+          "low": 0.5111698242747712,
+          "mean": 0.5563354289628233
+        },
+        "queries": 359,
+        "recall@10": {
+          "high": 0.7409679665738161,
+          "low": 0.6493848653667595,
+          "mean": 0.6942432683379759
+        },
+        "recall@50": {
+          "high": 0.8264623955431755,
+          "low": 0.7432636954503249,
+          "mean": 0.7839368616527391
+        },
+        "rerank_pool_recall": 0.7839368616527391,
+        "stages": {
+          "dense": {
+            "max_ms": 715.5,
+            "p50_ms": 27.4,
+            "p95_ms": 57.5
+          },
+          "hydrate": {
+            "max_ms": 1.2,
+            "p50_ms": 0.1,
+            "p95_ms": 0.1
+          },
+          "lexical": {
+            "max_ms": 714.5,
+            "p50_ms": 7.3,
+            "p95_ms": 14.3
+          },
+          "rerank": {
+            "max_ms": 1053.5,
+            "p50_ms": 463.3,
+            "p95_ms": 727.0
+          }
+        }
+      }
+    },
+    "hybrid_rerank_pool300": {
+      "summary": {
+        "by_query_set": {
+          "inline_acl": {
+            "mrr@10": 0.4682203389830508,
+            "ndcg@10": 0.47475512136984377,
+            "queries": 59,
+            "recall@10": 0.5548022598870057,
+            "recall@50": 0.6768361581920904
+          },
+          "inline_nonacl": {
+            "mrr@10": 0.44871553884711785,
+            "ndcg@10": 0.48878111528369067,
+            "queries": 152,
+            "recall@10": 0.6217105263157895,
+            "recall@50": 0.7828947368421053
+          },
+          "manual_acl": {
+            "mrr@10": 0.5811486601809183,
+            "ndcg@10": 0.6305567140928374,
+            "queries": 93,
+            "recall@10": 0.7849462365591398,
+            "recall@50": 0.8494623655913979
+          },
+          "manual_iclr": {
+            "mrr@10": 0.6248484848484849,
+            "ndcg@10": 0.6664679608779036,
+            "queries": 55,
+            "recall@10": 0.8,
+            "recall@50": 0.8909090909090909
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.39073431961781474,
+            "ndcg@10": 0.41819097220737406,
+            "queries": 103,
+            "recall@10": 0.5216828478964401,
+            "recall@50": 0.6401294498381878
+          },
+          "1": {
+            "mrr@10": 0.5624906994047618,
+            "ndcg@10": 0.6036293898652376,
+            "queries": 256,
+            "recall@10": 0.744140625,
+            "recall@50": 0.86328125
+          }
+        },
+        "candidate_recall": 0.9103992571959145,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07103064066852367,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016880222841225628,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 889.1,
+          "p50_ms": 507.3,
+          "p95_ms": 757.6
+        },
+        "mrr@10": {
+          "high": 0.5594693980191892,
+          "low": 0.4640111144272008,
+          "mean": 0.5132124065968077
+        },
+        "ndcg@10": {
+          "high": 0.5947018621827892,
+          "low": 0.5044647216943597,
+          "mean": 0.5504256098686917
+        },
+        "queries": 359,
+        "recall@10": {
+          "high": 0.7267479108635096,
+          "low": 0.6349048282265554,
+          "mean": 0.6803156917363046
+        },
+        "recall@50": {
+          "high": 0.8373305478180131,
+          "low": 0.7586815227483752,
+          "mean": 0.7992571959145776
+        },
+        "rerank_pool_recall": 0.7992571959145776,
+        "stages": {
+          "dense": {
+            "max_ms": 68.5,
+            "p50_ms": 27.1,
+            "p95_ms": 40.3
+          },
+          "hydrate": {
+            "max_ms": 0.3,
+            "p50_ms": 0.1,
+            "p95_ms": 0.1
+          },
+          "lexical": {
+            "max_ms": 15.4,
+            "p50_ms": 7.2,
+            "p95_ms": 9.8
+          },
+          "rerank": {
+            "max_ms": 863.9,
+            "p50_ms": 475.6,
+            "p95_ms": 731.4
+          }
+        }
+      }
+    }
+  }
+}

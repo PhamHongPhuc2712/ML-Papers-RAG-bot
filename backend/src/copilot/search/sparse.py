@@ -16,17 +16,32 @@ from sqlalchemy import Engine
 
 from ..contracts import PaperFilters
 from ..corpus.releases import ReleaseRecord, load_release
-from .index import PAPERS, SPARSE, IndexBuildError, qdrant_filter
+from .chunks import evidence_filter, paper_groups
+from .index import CHUNKS, PAPERS, SPARSE, IndexBuildError, qdrant_filter
 from .lexical import BM25Vocabulary
 
 
 class SparseRetriever:
-    """BM25 over a release's paper or chunk collection."""
+    """BM25 over a release's paper or chunk collection.
 
-    def __init__(self, engine: Engine, client: QdrantClient, *, kind: str = PAPERS) -> None:
+    With ``group_papers`` the chunk collection answers with papers: each paper's
+    best evidence chunk stands for it (P2.6 step 4).
+    """
+
+    def __init__(
+        self,
+        engine: Engine,
+        client: QdrantClient,
+        *,
+        kind: str = PAPERS,
+        group_papers: bool = False,
+    ) -> None:
+        if group_papers and kind != CHUNKS:
+            raise IndexBuildError("group_papers_requires_chunks", kind)
         self._engine = engine
         self._client = client
         self._kind = kind
+        self._group_papers = group_papers
         self._releases: dict[str, tuple[ReleaseRecord, BM25Vocabulary]] = {}
 
     def _release(self, release_id: str) -> tuple[ReleaseRecord, BM25Vocabulary]:
@@ -53,9 +68,19 @@ class SparseRetriever:
         if not encoded.indices:
             # No query term occurs in this corpus: BM25 scores every document 0.
             return []
+        vector = models.SparseVector(indices=list(encoded.indices), values=list(encoded.values))
+        if self._group_papers:
+            return paper_groups(
+                self._client,
+                release.collection(self._kind),
+                query=vector,
+                using=SPARSE,
+                query_filter=evidence_filter(filters),
+                limit=limit,
+            )
         hits = self._client.query_points(
             release.collection(self._kind),
-            query=models.SparseVector(indices=list(encoded.indices), values=list(encoded.values)),
+            query=vector,
             using=SPARSE,
             query_filter=qdrant_filter(filters),
             limit=limit,

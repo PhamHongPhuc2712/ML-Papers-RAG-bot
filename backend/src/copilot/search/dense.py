@@ -15,11 +15,16 @@ from sqlalchemy import Engine
 from ..contracts import PaperFilters
 from ..corpus.releases import ReleaseRecord, load_release
 from ..models.embeddings import VectorModel, validate_vectors
-from .index import DENSE, PAPERS, IndexBuildError, qdrant_filter
+from .chunks import evidence_filter, paper_groups
+from .index import CHUNKS, DENSE, PAPERS, IndexBuildError, qdrant_filter
 
 
 class DenseRetriever:
-    """Nearest neighbours by cosine over a release's paper or chunk collection."""
+    """Nearest neighbours by cosine over a release's paper or chunk collection.
+
+    With ``group_papers`` the chunk collection answers with papers: each paper's
+    best evidence chunk stands for it (P2.6 step 4).
+    """
 
     def __init__(
         self,
@@ -29,12 +34,16 @@ class DenseRetriever:
         *,
         kind: str = PAPERS,
         max_tokens: int | None = None,
+        group_papers: bool = False,
     ) -> None:
+        if group_papers and kind != CHUNKS:
+            raise IndexBuildError("group_papers_requires_chunks", kind)
         self._engine = engine
         self._client = client
         self._model = model
         self._kind = kind
         self._max_tokens = max_tokens
+        self._group_papers = group_papers
         # A release's collection pair and model never change after staging.
         self._releases: dict[str, ReleaseRecord] = {}
 
@@ -59,9 +68,19 @@ class DenseRetriever:
         prefix = str(getattr(self._model, "query_prefix", "") or "")
         encoded = self._model.encode_array([prefix + query], max_tokens=self._max_tokens)
         validate_vectors(encoded.vectors, self._model.dimensions)
+        vector = [float(value) for value in encoded.vectors[0]]
+        if self._group_papers:
+            return paper_groups(
+                self._client,
+                release.collection(self._kind),
+                query=vector,
+                using=DENSE,
+                query_filter=evidence_filter(filters),
+                limit=limit,
+            )
         hits = self._client.query_points(
             release.collection(self._kind),
-            query=[float(value) for value in encoded.vectors[0]],
+            query=vector,
             using=DENSE,
             query_filter=qdrant_filter(filters),
             limit=limit,

@@ -585,3 +585,29 @@ def test_the_guard_sums_every_llm_variant_in_a_run(
         _run_llm(path, bench, test_settings, tmp_path / "out", models, max_spend=0.12,
                  cache=tmp_path / "cache")
     assert len(models.llm_calls) == 4 + 2 and not (tmp_path / "out").exists()
+
+
+def test_a_chunk_level_variant_is_refused_when_the_release_has_no_chunk_collection(
+    bench, test_settings, tmp_path
+):
+    """P2.6 step 4: LitSearch's release holds titles and abstracts only."""
+
+    config = yaml.safe_load(bench.config.read_text())
+    config["variants"] = [
+        {"name": "hybrid", "mode": "hybrid"},
+        {"name": "hybrid_chunks", "mode": "hybrid", "candidates": "chunks"},
+    ]
+    config["decision"]["order"] = ["hybrid"]
+    path = tmp_path / "chunks.yaml"
+    path.write_text(yaml.safe_dump(config))
+    with pytest.raises(ExperimentError, match="chunks_not_built"):
+        run_retrieval(
+            path,
+            "development",
+            tmp_path / "out",
+            data_dir=bench.data_dir,
+            database_url=test_settings.database_url,
+            qdrant_url=test_settings.qdrant_url,
+            models=FixtureModels(),
+        )
+    assert not (tmp_path / "out").exists()

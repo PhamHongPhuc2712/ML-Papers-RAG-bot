@@ -1,0 +1,63 @@
+# P2.6, step 4: first-stage recall on E3's corpus and queries, development only.
+#
+# Two questions the ceiling run (e3-candidates) left open. (1) The reranker's head: does a
+# 300-per-branch pool, which puts 1.5 more points of gold inside the fused top 50, reach
+# the top 10 once the cross-encoder sees it? (2) How deep are the misses: each branch is
+# also run alone to 1,000 candidates, so `candidate_recall` is the share of gold papers
+# within a branch's top 1,000 — what any re-ranking of that branch could at most reach.
+#
+#   eval retrieval --config configs/experiments/e3-first-stage.yaml --split development \
+#     --out reports/retrieval/e3-first-stage
+#   eval gaps --run reports/retrieval/e3-first-stage --focus hybrid_rerank_pool300
+#
+# Development only: a diagnostic, never a choice. There is deliberately no `decision`
+# block. Any change it suggests is promoted only through its own pre-registered rule on
+# validation.
+schema_version: 1
+name: e3-first-stage
+
+dataset:
+  path: data/fixtures/retrieval
+  query_text: benchmarks/litsearch-dataset/queries.jsonl
+  slice: all
+  labels: corpusid
+
+corpus:
+  release: litsearch-v1
+  papers: snapshot
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  # As shipped: must reproduce E3's development hybrid_rerank.
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+  - name: hybrid_rerank_pool300
+    mode: hybrid_rerank
+    baseline: hybrid_rerank
+    changes: candidates per branch 100 -> 300, rerank depth 50 unchanged
+    search:
+      candidates: {per_branch: 300}
+  # Each branch alone, 1,000 deep: how far down the gold papers the pool misses sit.
+  - name: bm25_deep1000
+    mode: bm25
+    changes: candidates 100 -> 1,000, to measure how deep the misses are
+    search:
+      candidates: {per_branch: 1000}
+  - name: dense_deep1000
+    mode: dense
+    changes: candidates 100 -> 1,000, to measure how deep the misses are
+    search:
+      candidates: {per_branch: 1000}

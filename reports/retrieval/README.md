@@ -39,7 +39,17 @@ in a `search:` block shaped like `configs/search.yaml`. Each variant's effective
 their digest are in the manifest (`variants.<name>.search`, `search_sha256`), and `eval
 compare` lists any variant whose settings differ between the two runs. A decision block may
 set `require_undegraded: true`; a step is then promoted only if neither side degraded a
-single query.
+single query. It may also list `guards`, each a metric with a `max_drop`: a step is promoted
+only if every guard's paired interval rules out losing more than that, so a rule whose
+primary is a recall metric cannot promote a candidate that loses the top of the page.
+
+A variant may also say where its first stage finds candidates with `candidates:` (P2.6
+step 4): `papers`, the paper collection as shipped; `chunks`, the release's chunk collection
+with each paper scored by its best evidence chunk (references excluded); or `both`, each
+branch's RRF of its paper list and its chunk list. A source other than `papers` is recorded
+in the variant's search settings as `candidates_source` and changes its digest, and a run
+naming one is refused before anything loads when the release has no chunk collection
+(`chunks_not_built`). The reranker is unchanged: it still scores titles and abstracts.
 
 A `hybrid_rerank_llm` variant names the hosted model it uses with `llm:`, a key in
 `configs/llm.yaml`; no other mode may. Such a run needs `--max-spend-usd`. It is refused before

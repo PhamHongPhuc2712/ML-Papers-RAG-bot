@@ -541,3 +541,129 @@ def test_a_comparison_says_when_a_variant_s_llm_moved():
         _metrics_doc(_manifest(), 0.70, 0.60), _metrics_doc(_manifest(run_id="r"), 0.70, 0.60)
     )
     assert plain["llm_changed"] == []
+
+
+# --- Candidate source (P2.6 step 4) --------------------------------------------------------
+
+
+def test_a_variant_may_find_its_candidates_through_chunks(tmp_path):
+    path = _config_with(
+        tmp_path,
+        [
+            {"name": "hybrid_chunks", "mode": "hybrid", "candidates": "chunks"},
+            {"name": "hybrid_both", "mode": "hybrid_rerank", "candidates": "both"},
+        ],
+    )
+    by_name = {variant.name: variant for variant in load_experiment(path).variants}
+    assert by_name["hybrid"].candidates == "papers"
+    assert by_name["hybrid_chunks"].candidates == "chunks"
+    assert by_name["hybrid_both"].candidates == "both"
+
+
+def test_a_candidate_source_outside_the_three_is_refused(tmp_path):
+    path = _config_with(tmp_path, [{"name": "odd", "mode": "hybrid", "candidates": "sections"}])
+    with pytest.raises(ExperimentError, match="odd.candidates"):
+        load_experiment(path)
+
+
+def test_the_shipped_candidate_source_leaves_every_recorded_digest_unchanged():
+    from copilot.evaluation.retrieval import search_digest, search_values
+    from copilot.search.service import SearchConfig
+
+    base = SearchConfig()
+    assert search_values(base, "hybrid") == search_values(base, "hybrid", "papers")
+    assert "candidates_source" not in search_values(base, "hybrid")
+    assert search_digest(base, "hybrid") == search_digest(base, "hybrid", "papers")
+    # Another source is part of what was searched: recorded, and its own digest.
+    assert search_values(base, "hybrid", "chunks")["candidates_source"] == "chunks"
+    digests = {search_digest(base, "hybrid", source) for source in ("papers", "chunks", "both")}
+    assert len(digests) == 3
+
+
+# --- Guards on a decision step (P2.6 step 4) ------------------------------------------------
+
+
+def _mixed_results(name, primary, guarded):
+    """Per-family rows where recall@50 is ``primary`` and ndcg@10 is ``guarded``."""
+
+    return [
+        _result(name, f"f{i:02d}", {**_zeros(p), "ndcg@10": g})
+        for i, (p, g) in enumerate(zip(primary, guarded, strict=True))
+    ]
+
+
+def test_a_guard_blocks_a_recall_gain_that_loses_the_top_of_the_page():
+    from dataclasses import replace
+
+    n = 40
+    rules = {
+        "primary": "recall@50",
+        "order": ["hybrid", "hybrid_rerank"],
+        "guards": [{"metric": "ndcg@10", "max_drop": 0.03}],
+    }
+    experiment = replace(smoke_experiment(SMOKE), decision=rules)
+    base = _mixed_results("hybrid", [0.6] * n, [0.5] * n)
+    # Clearly more recall, clearly worse nDCG: the guard must refuse it.
+    worse_top = _mixed_results("hybrid_rerank", [0.8] * n, [0.4] * n)
+    summaries = _summaries(
+        {"hybrid": base, "hybrid_rerank": worse_top},
+        {
+            "hybrid": 0.5,
+            "hybrid_rerank": 0.6,
+        },
+    )
+    decision = decide(
+        "validation", {"hybrid": base, "hybrid_rerank": worse_top}, summaries, experiment
+    )
+    step = decision["steps"][0]
+    assert step["gain_supported"] is True
+    assert step["guards"][0]["metric"] == "ndcg@10"
+    assert step["guards"][0]["holds"] is False
+    assert (step["guards_hold"], step["promoted"]) == (False, False)
+    assert decision["chosen"]["variant"] == "hybrid"
+    # The same recall gain with the top of the page held within the guard is promoted.
+    held_top = _mixed_results(
+        "hybrid_rerank", [0.8] * n, [0.5 + (0.01 if i % 2 else -0.01) for i in range(n)]
+    )
+    decision = decide(
+        "validation", {"hybrid": base, "hybrid_rerank": held_top}, summaries, experiment
+    )
+    assert decision["steps"][0]["guards_hold"] is True
+    assert decision["chosen"]["variant"] == "hybrid_rerank"
+    # Without guards the rule decides exactly as before.
+    lenient = replace(experiment, decision={k: v for k, v in rules.items() if k != "guards"})
+    decision = decide(
+        "validation", {"hybrid": base, "hybrid_rerank": worse_top}, summaries, lenient
+    )
+    assert decision["steps"][0]["guards"] == []
+    assert decision["chosen"]["variant"] == "hybrid_rerank"
+
+
+@pytest.mark.parametrize(
+    "guards",
+    [[{"metric": "precision@5"}], [{"metric": "ndcg@10", "max_drop": 0}], ["ndcg@10"]],
+)
+def test_a_guard_must_name_a_measured_metric_and_a_positive_drop(tmp_path, guards):
+    import yaml
+
+    raw = yaml.safe_load(EXPERIMENT.read_text(encoding="utf-8"))
+    raw["decision"]["guards"] = guards
+    path = tmp_path / "guarded.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(ExperimentError, match="decision.guards"):
+        load_experiment(path)
+
+
+def test_the_first_stage_config_pre_registers_a_guarded_recall_rule():
+    experiment = load_experiment(ROOT / "configs" / "experiments" / "m2-first-stage.yaml")
+    assert experiment.decision["primary"] == "recall@50"
+    assert experiment.decision["order"] == [
+        "hybrid_rerank",
+        "hybrid_rerank_chunks",
+        "hybrid_rerank_both",
+    ]
+    assert experiment.decision["guards"] == [{"metric": "ndcg@10", "max_drop": 0.03}]
+    assert experiment.decision["require_undegraded"] is True
+    by_name = {variant.name: variant for variant in experiment.variants}
+    assert by_name["hybrid_rerank_both"].candidates == "both"
+    assert by_name["hybrid_rerank_both"].baseline is None

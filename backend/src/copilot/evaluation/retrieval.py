@@ -64,6 +64,10 @@ LISTWISE_PROMPT = Path("prompts/rerank/listwise-v1.yaml")
 PREFLIGHT_CHARS_PER_WORD = 7
 WARMUP_QUERIES = 10
 SLICES = ("in_domain", "all")
+# Where a variant's first stage finds candidates (P2.6 step 4): the paper collection,
+# the chunk collection collapsed to each paper's best evidence chunk, or each branch's
+# RRF of both. "papers" is the service as shipped and leaves every recorded run as it was.
+CANDIDATE_SOURCES = ("papers", "chunks", "both")
 # Which id a label names: our corpus's paper id (matched by E1), or a LitSearch
 # corpusid scored against a ``litsearch-v1`` release built from LitSearch's corpus.
 LABELS = ("paper_id", "corpusid")
@@ -118,6 +122,8 @@ class Variant:
     search: tuple[tuple[str, float], ...] = ()
     # The configs/llm.yaml model key behind a hybrid_rerank_llm variant, and only one.
     llm: str | None = None
+    # One of CANDIDATE_SOURCES: what both branches search.
+    candidates: str = "papers"
 
 
 @dataclass(frozen=True)
@@ -209,20 +215,31 @@ def search_config_for(variant: Variant, base: SearchConfig) -> SearchConfig:
 DEEP_SEARCH_FIELDS = ("llm_rerank_seconds", "llm_total_seconds")
 
 
-def search_values(config: SearchConfig, mode: str | None) -> dict[str, Any]:
-    """The settings a mode reads; ``None`` is the shared file, without deep-search fields."""
+def search_values(
+    config: SearchConfig, mode: str | None, candidates: str = "papers"
+) -> dict[str, Any]:
+    """The settings a mode reads; ``None`` is the shared file, without deep-search fields.
+
+    A candidate source other than the paper collection is part of what was searched,
+    so it is recorded here; the shipped source adds nothing, and every run recorded
+    before it existed still reads as the same search.
+    """
 
     values = asdict(config)
     if mode != "hybrid_rerank_llm":
         for name in DEEP_SEARCH_FIELDS:
             values.pop(name, None)
+    if candidates != "papers":
+        values["candidates_source"] = candidates
     return values
 
 
-def search_digest(config: SearchConfig, mode: str | None) -> str:
+def search_digest(config: SearchConfig, mode: str | None, candidates: str = "papers") -> str:
     """What a variant searched under, as one digest: equal only if every knob was."""
 
-    values = json.dumps(search_values(config, mode), sort_keys=True, separators=(",", ":"))
+    values = json.dumps(
+        search_values(config, mode, candidates), sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(values.encode()).hexdigest()
 
 
@@ -327,6 +344,7 @@ def load_experiment(path: str | Path) -> Experiment:
                     str(item["name"]), str(item["mode"]), item.get("search")
                 ),
                 llm=None if item.get("llm") is None else str(item["llm"]),
+                candidates=str(item.get("candidates") or "papers"),
             )
             for item in raw["variants"]
         )
@@ -368,6 +386,11 @@ def load_experiment(path: str | Path) -> Experiment:
             )
         if variant.llm is not None and variant.llm not in _llm_models():
             raise ExperimentError("experiment_invalid", f"{variant.name}.llm {variant.llm} unknown")
+        if variant.candidates not in CANDIDATE_SOURCES:
+            raise ExperimentError(
+                "experiment_invalid",
+                f"{variant.name}.candidates must be one of {', '.join(CANDIDATE_SOURCES)}",
+            )
     if experiment.slice not in SLICES:
         raise ExperimentError("experiment_invalid", "dataset.slice")
     if experiment.labels not in LABELS:
@@ -376,6 +399,13 @@ def load_experiment(path: str | Path) -> Experiment:
         raise ExperimentError("experiment_invalid", "corpus.papers")
     if max(experiment.recall_at + experiment.ndcg_at + experiment.mrr_at) > experiment.depth:
         raise ExperimentError("experiment_invalid", "a cutoff exceeds metrics.depth")
+    known = set(metric_names(experiment))
+    for guard in experiment.decision.get("guards") or []:
+        if not isinstance(guard, Mapping) or guard.get("metric") not in known:
+            raise ExperimentError("experiment_invalid", "decision.guards: unknown metric")
+        drop = guard.get("max_drop", experiment.decision.get("max_drop", 0.03))
+        if isinstance(drop, bool) or not isinstance(drop, int | float) or drop <= 0:
+            raise ExperimentError("experiment_invalid", "decision.guards: max_drop")
     return experiment
 
 
@@ -838,6 +868,25 @@ def decide(
     def clean(name: str) -> bool:
         return not require_clean or degraded(name) == 0
 
+    # Opt-in (P2.6 step 4): a step whose primary is a recall metric must also not lose
+    # the top of the page. Each guard is a metric whose paired interval must rule out a
+    # drop beyond its ``max_drop``; a step is promoted only if every guard holds.
+    def guard_checks(base: str, name: str) -> list[dict[str, Any]]:
+        checks = []
+        for guard in rules.get("guards") or []:
+            metric = str(guard["metric"])
+            drop = float(guard.get("max_drop", max_drop))
+            comparison = paired(results[base], results[name], metric, experiment)
+            checks.append(
+                {
+                    "metric": metric,
+                    "max_drop": drop,
+                    "comparison": comparison,
+                    "holds": comparison["low"] > -drop,
+                }
+            )
+        return checks
+
     current = order[0]
     steps = []
     for name in order[1:]:
@@ -846,6 +895,8 @@ def decide(
         fits = p95(name) <= budget
         # Both sides: a degraded baseline would flatter the candidate's gain.
         both_clean = clean(current) and clean(name)
+        guards = guard_checks(current, name)
+        guarded = all(check["holds"] for check in guards)
         steps.append(
             {
                 "from": current,
@@ -856,10 +907,12 @@ def decide(
                 "fits_budget": fits,
                 "degraded": degraded(name),
                 "clean": both_clean,
-                "promoted": better and fits and both_clean,
+                "guards": guards,
+                "guards_hold": guarded,
+                "promoted": better and fits and both_clean and guarded,
             }
         )
-        if better and fits and both_clean:
+        if better and fits and both_clean and guarded:
             current = name
     ablations = []
     for variant in experiment.variants:
@@ -1206,7 +1259,9 @@ def run_retrieval(
 
     from ..corpus.releases import load_release
     from ..db.session import make_engine
+    from ..search.chunks import UnionRetriever
     from ..search.dense import DenseRetriever
+    from ..search.index import CHUNKS
     from ..search.service import load_search_config
     from ..search.sparse import SparseRetriever
 
@@ -1255,6 +1310,18 @@ def run_retrieval(
         for name in {experiment.release_for(v) for v in experiment.variants}
     }
     facts = {name: _release_facts(record, client) for name, record in releases.items()}
+    for variant in experiment.variants:
+        # A chunk-level first stage needs the release's chunk collection to have been
+        # built; a release with only its paper collection cannot answer through chunks.
+        build = releases[experiment.release_for(variant)].counts.get(CHUNKS)
+        if variant.candidates != "papers" and not (
+            isinstance(build, Mapping) and build.get("points")
+        ):
+            raise ExperimentError(
+                "chunks_not_built",
+                f"{variant.name}: release {experiment.release_for(variant)} has no chunk "
+                "collection to find candidates in",
+            )
     papers = (
         {name: snapshot_papers(record) for name, record in releases.items()}
         if experiment.papers == "snapshot"
@@ -1304,10 +1371,23 @@ def run_retrieval(
                     factory.listwise(variant.llm, ledger, cache),
                     f"{run_id}.{variant.name}.{uuid4().hex[:8]}",
                 )
+            lexical: Any = SparseRetriever(engine, client)
+            dense: Any = DenseRetriever(engine, client, embedder, max_tokens=max_tokens)
+            if variant.candidates != "papers":
+                chunk_lexical = SparseRetriever(engine, client, kind=CHUNKS, group_papers=True)
+                chunk_dense = DenseRetriever(
+                    engine, client, embedder, kind=CHUNKS, max_tokens=max_tokens, group_papers=True
+                )
+                if variant.candidates == "chunks":
+                    lexical, dense = chunk_lexical, chunk_dense
+                else:
+                    k = configs[variant.name].rrf_k
+                    lexical = UnionRetriever((lexical, chunk_lexical), k=k)
+                    dense = UnionRetriever((dense, chunk_dense), k=k)
             service = SearchService(
                 engine=engine,
-                lexical=SparseRetriever(engine, client),
-                dense=DenseRetriever(engine, client, embedder, max_tokens=max_tokens),
+                lexical=lexical,
+                dense=dense,
                 reranker=reranker,
                 config=configs[variant.name],
                 papers=papers.get(release.id),
@@ -1351,9 +1431,12 @@ def run_retrieval(
                 "baseline": variant.baseline,
                 "changes": variant.changes,
                 # What this variant searched under, so two that differ never pass as equal.
-                "search": search_values(configs[variant.name], variant.mode),
+                "search": search_values(configs[variant.name], variant.mode, variant.candidates),
                 "search_overrides": dict(variant.search),
-                "search_sha256": search_digest(configs[variant.name], variant.mode),
+                "search_sha256": search_digest(
+                    configs[variant.name], variant.mode, variant.candidates
+                ),
+                "candidates": variant.candidates,
                 "warmup_seconds": warmups[variant.name],
                 "warmup_queries": {"split": warm_split, "count": len(warm_queries)},
             }
