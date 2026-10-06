@@ -1,11 +1,15 @@
 # P2.6 evidence — the retrieval gaps E3 and P2.5 exposed
 
-Date: 2026-10-01
+Date: 2026-10-01, completed 2026-10-06
 Task: P2.6 of the retrieval plan (urgent, before the locked test split and before P3.1)
-Status: **in progress.** Steps 1–3 are done. Step 1 is the offline analysis. Step 2 is the
-ceiling run. Step 3, the depth-100 rerank, was pre-registered in `a18a991` and is not
-promoted on validation. Step 4 (first-stage recall), the GPU-sharing policy and the final
-E3 re-run remain. The locked test split has **not** been run.
+Status: **done.** Step 1 is the offline analysis. Step 2 is the ceiling run. Step 3, the
+depth-100 rerank, was pre-registered in `a18a991` and not promoted. Step 4 read the misses,
+ruled out a larger pool, and found the one lever that moves first-stage recall on our
+corpus: candidates found through the chunk collection, pre-registered in `8654f22` and
+**promoted on validation** (Recall@50 +0.135 [+0.058, +0.231], nDCG@10 +0.060 [+0.025,
++0.097]). It is adopted as `candidates.source: chunks` in `configs/search.yaml`, with spec
+§7 amended. The GPU policy is recorded, and the final E3 validation re-run reproduces the
+recorded E3 to four decimals. The locked test split has **not** been run.
 Host: WSL2 Linux, 12 cores / 23 GB RAM, RTX 3080 Laptop 16 GB.
 
 ## What changed in the harness
@@ -16,6 +20,8 @@ Host: WSL2 Linux, 12 cores / 23 GB RAM, RTX 3080 Laptop 16 GB.
 | A variant may override `candidates.per_branch` (any mode), `rerank.depth` and `deadlines_seconds.rerank` (`hybrid_rerank` only); anything else is refused when the config loads. Every variant's effective settings and their digest go in the manifest | `evaluation/retrieval.py` | The plan's prerequisite for steps 2–4 |
 | `eval compare` lists variants whose search settings differ between the two runs | `evaluation/regression.py` | Runs that searched differently are never compared as equal |
 | `require_undegraded` decision rule, opt-in: a step is promoted only if neither side degraded a query | `evaluation/retrieval.py`, `evaluation/report.py` | Encodes "any rerank timeout on a clean GPU sets the run aside" |
+| Candidates through chunks: both retrievers take `group_papers` over the chunk collection (Qdrant's grouped query, each paper scored by its best evidence chunk, references excluded) and `UnionRetriever` fuses a paper list with a chunk list by RRF; `candidates.source` in `configs/search.yaml`; a variant's `candidates:` field, resolved and recorded per variant, in its search digest when not `papers`; refused when the release has no chunk collection | `search/chunks.py`, `search/dense.py`, `search/sparse.py`, `search/service.py`, `search/api.py`, `evaluation/retrieval.py` | Step 4's lever on our corpus, then its adoption |
+| `guards` in a decision rule, opt-in: a step is promoted only if every guard metric's paired interval rules out a drop beyond its `max_drop` | `evaluation/retrieval.py`, `evaluation/report.py` | A first-stage rule whose primary is recall must not promote a candidate that loses the top of the page |
 
 **Deviation:** the plan's file list names `evaluation/retrieval.py` and the eval-runner
 integration test only. The offline analysis got its own module and a unit test file,
@@ -296,6 +302,100 @@ interval lies wholly above zero, its nDCG@10 interval rules out a loss beyond 0.
 machine rather than by prose), its p95 fits 3 s, and neither side degraded a query. The
 52 in-domain validation queries are few, and the rule was chosen knowing that.
 
+### Validation: the rule promotes `hybrid_rerank_chunks`
+
+Run `m2-first-stage-validation-20261006T062929Z`, clean: GPU idle beforehand, only the
+idle Windows-side process seen, 0 failed and 0 degraded queries. The rule was committed in
+`8654f22` before this run existed. In-domain validation, 52 queries.
+
+| Variant | Recall@10 | Recall@50 | nDCG@10 | MRR@10 | Gold in pool | p95 |
+|---|---|---|---|---|---|---|
+| `hybrid_rerank` (paper level, as shipped) | 0.635 | 0.769 | 0.516 | 0.477 | 84.6% | 699 ms |
+| `hybrid_rerank_chunks` | **0.712** | **0.904** | **0.576** | **0.535** | 96.2% | 597 ms |
+| `hybrid_rerank_both` | 0.615 | 0.846 | 0.514 | 0.481 | 94.2% | 684 ms |
+| `bm25_chunks` (branch alone) | 0.615 | 0.885 | 0.506 | 0.469 | 92.3% | 101 ms |
+| `dense_chunks` (branch alone) | 0.538 | 0.788 | 0.440 | 0.409 | 82.7% | 164 ms |
+
+| Step | Recall@50 (primary) | Guard: nDCG@10 interval low | p95 | Promoted |
+|---|---|---|---|---|
+| `hybrid_rerank` → `hybrid_rerank_chunks` | **+0.135 [+0.058, +0.231]**, 7 wins / 0 losses | +0.025 (holds; the gain is +0.060 [+0.025, +0.097], 10 / 1) | 0.60 s | **yes** |
+| `hybrid_rerank_chunks` → `hybrid_rerank_both` | −0.058 [−0.135, +0.000], 0 / 3 | −0.101 (fails; −0.062 [−0.101, −0.026], 0 / 11) | 0.68 s | no |
+
+**Decision: both branches search the chunk collection.** `hybrid_rerank_chunks` is chosen;
+`both` is not promoted over it. Where the gold paper is lost under the chosen stage, on
+validation: returned in the top 50 76.9% → 92.3%, cut at 50 7.7% → 1.9%, never pooled
+15.4% → 5.8% (`reports/retrieval/m2-first-stage/gaps.md`). On validation every metric
+cleared zero, which 150 development queries had not managed for the top 10; the
+intervals are wide (52 queries), and the ordering of `chunks` against `both` reversed
+between the splits, so the rule chose between them on evidence the splits do not agree
+on. What both splits agree on is the step that matters: chunk-level candidates beat
+title-and-abstract candidates on Recall@50 with intervals above zero on both, and never
+lose the top of the page.
+
+Observations recorded for later tasks, not decisions: `dense` alone through chunks is
+weaker than `dense` alone over abstracts on development (Recall@50 0.720 against 0.767),
+so the single-branch `dense` mode gets a worse first stage than before while the served
+default improves; and the dense chunk branch alone touched its 1 s deadline on 1–2 of 150
+development queries, never inside the hybrid modes and never on validation.
+
+**Adopted** (spec §7 amended in the same commit): `candidates.source: chunks` in
+`configs/search.yaml`, read by the search service and the API; the cache identity names
+the source, so no ordering cached under the paper collection is reused; a release
+without a chunk collection — LitSearch's — stays at paper level, and the harness records
+the resolved source per variant. P2.5's two BGE-small variants name `candidates: papers`
+explicitly, because that release holds a paper collection only. P2.5's in-domain slice was
+re-measured under the final configuration by this very run and its development
+counterpart (`hybrid_rerank` there is the previous configuration, `hybrid_rerank_chunks`
+the new one), so no separate re-run of `retrieval.yaml` is owed.
+
+## GPU contention policy
+
+**Option (a), no code.** Evaluation runs and demos happen only on an otherwise idle GPU.
+Every run samples the GPU for 5 s before loading a model and records
+`timing.gpu.before_run.busy`, lists the compute processes seen, and counts degraded
+queries; a run that was busy beforehand, shared the GPU with another compute process, or
+degraded a query is set aside and redone. The search API already returns `warnings`
+(`rerank_timeout` and the rest) on every page, so a contended demo is visible rather than
+silently worse. Recorded in the tracker on 2026-10-05, when another project's
+cross-encoder training held 16 of 16 GB for over five hours and the step-4 runs waited;
+two further runs of its pipeline interrupted the first attempt, which was set aside.
+
+## Final E3 validation, under the final configuration
+
+LitSearch's release has no chunk collection, so its final configuration is the paper-level
+stack E3 chose, and this re-run is the reproduction check the plan asks for. Run
+`e3-litsearch-validation-20261006T064454Z` (`reports/retrieval/e3-final/`), clean: GPU
+idle beforehand, only the idle Windows-side process seen, 0 failed and 0 degraded
+queries. A first attempt lost one BM25 query to a 1.25 s branch timeout and was set aside.
+
+| Variant | Recall@10 | Recall@50 | nDCG@10 | MRR@10 | p95 |
+|---|---|---|---|---|---|
+| `bm25` | 0.4986 | 0.6486 | 0.3598 | 0.3188 | 7 ms |
+| `dense` | 0.5264 | 0.6250 | 0.3854 | 0.3408 | 65 ms |
+| `hybrid` | 0.5361 | 0.6958 | 0.4148 | 0.3774 | 34 ms |
+| `hybrid_rerank` | 0.5917 | 0.6958 | 0.4688 | 0.4339 | 815 ms |
+
+`eval compare` against the recorded E3 validation run: every gated metric of every variant
+equal to four decimals, `search_changed` empty. The pre-registered rule decides as it did:
+hybrid over BM25 +0.055 [+0.001, +0.104], reranking over hybrid +0.054 [+0.007, +0.101],
+rerank-stage p95 782 ms. The gap table, regenerated from this run:
+
+| Run | Queries | Returned in top 50 | In pool, cut at 50 | Not in pool |
+|---|---|---|---|---|
+| E3 validation, `hybrid_rerank` (paper level; LitSearch has no chunks) | 120 | 69.6 | 9.2 | 21.2 |
+| Our corpus, validation, `hybrid_rerank` paper level (P2.5's configuration) | 52 | 76.9 | 7.7 | 15.4 |
+| Our corpus, validation, `hybrid_rerank` through chunks (**adopted**) | 52 | **92.3** | **1.9** | **5.8** |
+| Our corpus, development, paper level | 150 | 80.7 | 9.3 | 10.0 |
+| Our corpus, development, through chunks | 150 | 84.0 | 7.3 | 8.7 |
+
+On LitSearch's corpus the three gaps the plan opened stand where steps 1–3 left them: the
+first stage misses 21% of gold on validation and no depth or pool reaches it, so the
+remaining lever there is a stronger embedding model (GritLM-7B trails us by 5–16 points
+the other way), which is M6 work. On our corpus, where the body of every paper is
+indexed, the first-stage miss falls from 15.4% to 5.8% and the depth-50 cut from 7.7% to
+1.9% on validation. The locked test split has not been run; it waits for the user's
+go-ahead, on an idle GPU, once, under this configuration.
+
 ## Commands and results
 
 ```text
@@ -309,3 +409,31 @@ uv run --project backend mypy --config-file backend/pyproject.toml backend/src  
 uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/e3-litsearch
 uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/pilot
 ```
+
+Step 4 and the close of the task (2026-10-05 and 2026-10-06), every measured run behind
+an idle-GPU gate (four consecutive samples at or under 20% utilization, under 2.5 GB used,
+no Linux compute process) and judged afterwards by its manifest:
+
+```text
+uv run --env-file .env.test --project backend pytest backend/tests -q           -> 573 passed
+uv run --project backend pytest backend/tests -m "not integration" -q           -> 391 passed
+uv run --project backend python -m copilot.cli eval smoke                       -> passed, reproducible
+uv run --project backend ruff check backend                                     -> All checks passed
+uv run --project backend mypy --config-file backend/pyproject.toml backend/src  -> no issues in 58 files
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/e3-first-stage.yaml --split development --out reports/retrieval/e3-first-stage
+uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/e3-first-stage --focus hybrid_rerank_pool300
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/m2-first-stage.yaml --split development --out reports/retrieval/m2-first-stage
+git commit 8654f22   (the pre-registered rule, before the validation run)
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/m2-first-stage.yaml --split validation --out reports/retrieval/m2-first-stage
+uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/m2-first-stage --focus hybrid_rerank_both
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/e3-litsearch.yaml --split validation --out reports/retrieval/e3-final
+uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/e3-final
+uv run --project backend python -m copilot.cli eval compare --baseline reports/retrieval/e3-litsearch/validation/metrics.json --candidate reports/retrieval/e3-final/validation/metrics.json
+```
+
+Set aside, not reported: the first m2-first-stage development attempt (2 dense-chunk and
+1 BM25-chunk branch timeouts; its three reranked rows equal the kept run's), one
+e3-first-stage attempt stopped after another project's job took the GPU mid-run, and the
+first e3-final attempt (one BM25 branch timeout). The full suite on 2026-10-05 had one
+transient failure in the readiness health test under host load; it passed three times in
+a row on rerun and in the final 573.

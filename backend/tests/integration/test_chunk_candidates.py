@@ -131,8 +131,10 @@ def _experiment(root: Path, corpus) -> tuple[Path, Path]:
                 "metrics": {"recall_at": [10], "ndcg_at": [10], "mrr_at": [10], "depth": 10},
                 "bootstrap": {"resamples": 100, "seed": 42, "confidence": 0.95},
                 "variants": [
-                    {"name": "hybrid", "mode": "hybrid"},
+                    {"name": "hybrid", "mode": "hybrid", "candidates": "papers"},
                     {"name": "hybrid_chunks", "mode": "hybrid", "candidates": "chunks"},
+                    # No source named: follows configs/search.yaml, which says chunks.
+                    {"name": "hybrid_default", "mode": "hybrid"},
                     {"name": "hybrid_rerank_both", "mode": "hybrid_rerank", "candidates": "both"},
                 ],
                 "decision": {"primary": "ndcg@10", "order": ["hybrid"]},
@@ -160,6 +162,9 @@ def test_a_run_records_each_variant_s_candidate_source_and_finds_gold_through_ch
     assert "candidates_source" not in variants["hybrid"]["search"]
     assert variants["hybrid_chunks"]["search"]["candidates_source"] == "chunks"
     assert variants["hybrid_rerank_both"]["search"]["candidates_source"] == "both"
+    # Unset, a variant follows the shared file; the manifest records what it resolved to.
+    assert variants["hybrid_default"]["candidates"] == "chunks"
+    assert variants["hybrid_default"]["search_sha256"] == variants["hybrid_chunks"]["search_sha256"]
     # The source is part of what was searched: three sources, three digests.
     assert len({entry["search_sha256"] for entry in variants.values()}) == 3
     rows = pq.read_table(tmp_path / "out" / "development" / "per_query.parquet").to_pylist()
@@ -168,3 +173,50 @@ def test_a_run_records_each_variant_s_candidate_source_and_finds_gold_through_ch
         assert row["candidate_recall"] == 1.0
         assert row["ranked"][0] == row["relevant"][0], (row["variant"], row["query_id"])
         assert set(row["ranked"]) <= set(corpus.ids.values())
+
+
+def test_the_api_builds_its_branches_from_the_configured_source(
+    corpus, test_settings, tmp_path, monkeypatch
+):
+    """configs/search.yaml says `chunks`: a mock-mode service finds papers through them."""
+
+    import yaml
+
+    from copilot.config import Settings
+    from copilot.contracts import PaperFilters, SearchRequest
+    from copilot.search.api import default_search_service
+
+    shipped = yaml.safe_load(Path("configs/search.yaml").read_text(encoding="utf-8"))
+    assert shipped["candidates"]["source"] == "chunks"
+    settings = Settings(
+        database_url=test_settings.database_url,
+        qdrant_url=test_settings.qdrant_url,
+        qdrant_collection_prefix=test_settings.qdrant_collection_prefix,
+        data_dir=test_settings.data_dir,
+        model_mode="mock",
+    )
+    service = default_search_service(settings, corpus.engine, corpus.client)
+    try:
+        assert service.config.candidates_source == "chunks"
+        assert service.identity("hybrid")["candidates_source"] == "chunks"
+        request = SearchRequest(
+            query="Message passing on molecular graphs.",
+            mode="hybrid",
+            filters=PaperFilters(),
+            limit=5,
+        )
+        ranking = service.rank(request)
+        assert ranking.ordering.items[0][0] == corpus.ids["Graph neural networks for molecules"]
+        assert {paper_id for paper_id, _ in ranking.ordering.items} <= set(corpus.ids.values())
+    finally:
+        service.close()
+    # At paper level the identity carries no source, so orderings cached before this
+    # decision never collide with the new ones.
+    plain = tmp_path / "papers.yaml"
+    shipped["candidates"]["source"] = "papers"
+    plain.write_text(yaml.safe_dump(shipped), encoding="utf-8")
+    service = default_search_service(settings, corpus.engine, corpus.client, search_path=plain)
+    try:
+        assert "candidates_source" not in service.identity("hybrid")
+    finally:
+        service.close()

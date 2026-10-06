@@ -284,18 +284,21 @@ def default_search_service(
     """
 
     from ..models.embeddings import FixtureEmbedding, load_embedding_spec
-    from .dense import DenseRetriever
+    from .chunks import dense_branch, lexical_branch
     from .rerank import FixtureReranker, load_reranker_spec
-    from .sparse import SparseRetriever
 
     config = load_search_config(search_path)
-    lexical = SparseRetriever(engine, client)
+    # Both branches read the configured candidate source (spec §7): the chunk
+    # collection, each paper scored by its best evidence chunk, as decided in P2.6.
+    lexical = lexical_branch(engine, client, source=config.candidates_source, k=config.rrf_k)
     dense: CandidateRetriever
     if settings.model_mode == "mock" or settings.mock_mode:
         return SearchService(
             engine=engine,
             lexical=lexical,
-            dense=DenseRetriever(engine, client, FixtureEmbedding()),
+            dense=dense_branch(
+                engine, client, FixtureEmbedding(), source=config.candidates_source, k=config.rrf_k
+            ),
             reranker=FixtureReranker(),
             config=config,
         )
@@ -303,11 +306,13 @@ def default_search_service(
         from ..models.embeddings import TransformerEmbedding
 
         spec = load_embedding_spec(models_path)
-        dense = DenseRetriever(
+        dense = dense_branch(
             engine,
             client,
             TransformerEmbedding(spec, settings.data_dir),
+            source=config.candidates_source,
             max_tokens=spec.max_tokens["papers"],
+            k=config.rrf_k,
         )
     except Exception as error:  # noqa: BLE001 - any load failure degrades, typed
         logger.warning("embedding model unavailable; dense search will degrade", exc_info=error)

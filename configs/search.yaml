@@ -6,6 +6,15 @@ schema_version: 1
 candidates:
   # Per branch, BM25 and dense, with identical filters.
   per_branch: 100
+  # Where both branches look (P2.6 step 4, decided 2026-10-06): `papers` is the
+  # title-and-abstract collection; `chunks` is the chunk collection, each paper
+  # scored by its best evidence chunk (references excluded); `both` fuses each
+  # branch's paper list with its chunk list by RRF. `chunks` was promoted on the
+  # in-domain validation split by a pre-registered rule: Recall@50 +0.135
+  # [+0.058, +0.231] over `papers`, nDCG@10 +0.060 [+0.025, +0.097], p95 597 ms
+  # (reports/m2-retrieval-gaps.md). A release with no chunk collection, such as a
+  # packaged benchmark corpus, can only be searched at paper level.
+  source: chunks
 
 fusion:
   # RRF constant: sum(1/(k + rank)) over one-based ranks, computed in our code.

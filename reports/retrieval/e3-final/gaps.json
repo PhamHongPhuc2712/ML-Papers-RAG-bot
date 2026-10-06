@@ -1,0 +1,946 @@
+{
+  "combined": {
+    "litsearch_cutoffs": {
+      "bm25": {
+        "author broad R@20": {
+          "high": 0.75,
+          "low": 0.0,
+          "mean": 0.25,
+          "queries": 4
+        },
+        "author specific R@20": {
+          "high": 0.8444444444444444,
+          "low": 0.6,
+          "mean": 0.7333333333333333,
+          "queries": 45
+        },
+        "author specific R@5": {
+          "high": 0.7555555555555555,
+          "low": 0.4888888888888889,
+          "mean": 0.6222222222222222,
+          "queries": 45
+        },
+        "inline broad R@20": {
+          "high": 0.631578947368421,
+          "low": 0.21052631578947367,
+          "mean": 0.41228070175438597,
+          "queries": 19
+        },
+        "inline specific R@20": {
+          "high": 0.6442307692307693,
+          "low": 0.38461538461538464,
+          "mean": 0.5192307692307693,
+          "queries": 52
+        },
+        "inline specific R@5": {
+          "high": 0.49038461538461536,
+          "low": 0.22115384615384615,
+          "mean": 0.3557692307692308,
+          "queries": 52
+        }
+      },
+      "dense": {
+        "author broad R@20": {
+          "high": 0.75,
+          "low": 0.0,
+          "mean": 0.25,
+          "queries": 4
+        },
+        "author specific R@20": {
+          "high": 0.8222222222222222,
+          "low": 0.5333333333333333,
+          "mean": 0.6888888888888889,
+          "queries": 45
+        },
+        "author specific R@5": {
+          "high": 0.7333333333333333,
+          "low": 0.4666666666666667,
+          "mean": 0.6,
+          "queries": 45
+        },
+        "inline broad R@20": {
+          "high": 0.6842105263157895,
+          "low": 0.23684210526315788,
+          "mean": 0.4473684210526316,
+          "queries": 19
+        },
+        "inline specific R@20": {
+          "high": 0.6538461538461539,
+          "low": 0.38461538461538464,
+          "mean": 0.5192307692307693,
+          "queries": 52
+        },
+        "inline specific R@5": {
+          "high": 0.5581730769230765,
+          "low": 0.28846153846153844,
+          "mean": 0.4230769230769231,
+          "queries": 52
+        }
+      },
+      "hybrid": {
+        "author broad R@20": {
+          "high": 0.75,
+          "low": 0.0,
+          "mean": 0.25,
+          "queries": 4
+        },
+        "author specific R@20": {
+          "high": 0.8222222222222222,
+          "low": 0.5777777777777777,
+          "mean": 0.7111111111111111,
+          "queries": 45
+        },
+        "author specific R@5": {
+          "high": 0.7777777777777778,
+          "low": 0.5111111111111111,
+          "mean": 0.6444444444444445,
+          "queries": 45
+        },
+        "inline broad R@20": {
+          "high": 0.5703947368421051,
+          "low": 0.15789473684210525,
+          "mean": 0.35964912280701755,
+          "queries": 19
+        },
+        "inline specific R@20": {
+          "high": 0.7115384615384616,
+          "low": 0.4423076923076923,
+          "mean": 0.5769230769230769,
+          "queries": 52
+        },
+        "inline specific R@5": {
+          "high": 0.5769230769230769,
+          "low": 0.3076923076923077,
+          "mean": 0.4423076923076923,
+          "queries": 52
+        }
+      },
+      "hybrid_rerank": {
+        "author broad R@20": {
+          "high": 0.75,
+          "low": 0.0,
+          "mean": 0.25,
+          "queries": 4
+        },
+        "author specific R@20": {
+          "high": 0.9111111111111111,
+          "low": 0.6888888888888889,
+          "mean": 0.8,
+          "queries": 45
+        },
+        "author specific R@5": {
+          "high": 0.7777777777777778,
+          "low": 0.5111111111111111,
+          "mean": 0.6444444444444445,
+          "queries": 45
+        },
+        "inline broad R@20": {
+          "high": 0.631578947368421,
+          "low": 0.2017543859649123,
+          "mean": 0.41228070175438597,
+          "queries": 19
+        },
+        "inline specific R@20": {
+          "high": 0.7596153846153846,
+          "low": 0.49038461538461536,
+          "mean": 0.625,
+          "queries": 52
+        },
+        "inline specific R@5": {
+          "high": 0.6153846153846154,
+          "low": 0.33629807692307717,
+          "mean": 0.47115384615384615,
+          "queries": 52
+        }
+      }
+    },
+    "queries": 120
+  },
+  "comparable_to_published": true,
+  "depth": 50,
+  "focus": "hybrid_rerank",
+  "published": {
+    "cells": [
+      "inline broad R@20",
+      "inline specific R@5",
+      "inline specific R@20",
+      "author broad R@20",
+      "author specific R@5",
+      "author specific R@20"
+    ],
+    "rows": {
+      "BM25": [
+        37.4,
+        38.5,
+        55.8,
+        48.6,
+        62.6,
+        73.5
+      ],
+      "E5-large-v2": [
+        55.8,
+        50.4,
+        63.9,
+        54.3,
+        62.6,
+        75.8
+      ],
+      "GPT-4o one-hop (w/ BM25)": [
+        62.0,
+        64.1,
+        71.6,
+        74.3,
+        73.5,
+        77.7
+      ],
+      "GPT-4o one-hop (w/ GritLM)": [
+        72.9,
+        70.3,
+        78.4,
+        74.3,
+        84.4,
+        87.2
+      ],
+      "GPT-4o reranking (w/ BM25)": [
+        54.9,
+        60.0,
+        67.5,
+        77.1,
+        76.8,
+        82.9
+      ],
+      "GPT-4o reranking (w/ GritLM)": [
+        74.7,
+        73.2,
+        79.9,
+        77.1,
+        85.8,
+        92.4
+      ],
+      "GTR-T5-large": [
+        45.7,
+        38.5,
+        51.5,
+        37.1,
+        40.8,
+        55.9
+      ],
+      "GritLM-7B": [
+        69.7,
+        67.7,
+        77.9,
+        74.3,
+        82.5,
+        89.1
+      ],
+      "Instructor-XL": [
+        56.3,
+        48.9,
+        60.0,
+        57.1,
+        55.9,
+        70.1
+      ]
+    },
+    "source": "arXiv 2407.18940v2, Table 3"
+  },
+  "run": "reports/retrieval/e3-final",
+  "splits": {
+    "validation": {
+      "gold_ranks": {
+        "bm25": {
+          "all": {
+            "1": 27,
+            "11-20": 10,
+            "2-5": 26,
+            "21-50": 10,
+            "6-10": 8,
+            "absent": 51
+          },
+          "query_set": {
+            "inline_acl": {
+              "1": 4,
+              "11-20": 2,
+              "2-5": 3,
+              "21-50": 2,
+              "6-10": 2,
+              "absent": 17
+            },
+            "inline_nonacl": {
+              "1": 8,
+              "11-20": 7,
+              "2-5": 9,
+              "21-50": 4,
+              "6-10": 2,
+              "absent": 23
+            },
+            "manual_acl": {
+              "1": 8,
+              "11-20": 1,
+              "2-5": 8,
+              "21-50": 3,
+              "6-10": 2,
+              "absent": 9
+            },
+            "manual_iclr": {
+              "1": 7,
+              "11-20": 0,
+              "2-5": 6,
+              "21-50": 1,
+              "6-10": 2,
+              "absent": 2
+            }
+          },
+          "specificity": {
+            "broad": {
+              "1": 4,
+              "11-20": 3,
+              "2-5": 2,
+              "21-50": 2,
+              "6-10": 1,
+              "absent": 18
+            },
+            "specific": {
+              "1": 23,
+              "11-20": 7,
+              "2-5": 24,
+              "21-50": 8,
+              "6-10": 7,
+              "absent": 33
+            }
+          }
+        },
+        "dense": {
+          "all": {
+            "1": 29,
+            "11-20": 5,
+            "2-5": 29,
+            "21-50": 8,
+            "6-10": 7,
+            "absent": 54
+          },
+          "query_set": {
+            "inline_acl": {
+              "1": 3,
+              "11-20": 1,
+              "2-5": 5,
+              "21-50": 1,
+              "6-10": 2,
+              "absent": 18
+            },
+            "inline_nonacl": {
+              "1": 12,
+              "11-20": 1,
+              "2-5": 10,
+              "21-50": 5,
+              "6-10": 4,
+              "absent": 21
+            },
+            "manual_acl": {
+              "1": 5,
+              "11-20": 2,
+              "2-5": 9,
+              "21-50": 1,
+              "6-10": 1,
+              "absent": 13
+            },
+            "manual_iclr": {
+              "1": 9,
+              "11-20": 1,
+              "2-5": 5,
+              "21-50": 1,
+              "6-10": 0,
+              "absent": 2
+            }
+          },
+          "specificity": {
+            "broad": {
+              "1": 4,
+              "11-20": 1,
+              "2-5": 5,
+              "21-50": 2,
+              "6-10": 2,
+              "absent": 16
+            },
+            "specific": {
+              "1": 25,
+              "11-20": 4,
+              "2-5": 24,
+              "21-50": 6,
+              "6-10": 5,
+              "absent": 38
+            }
+          }
+        },
+        "hybrid": {
+          "all": {
+            "1": 35,
+            "11-20": 6,
+            "2-5": 26,
+            "21-50": 16,
+            "6-10": 5,
+            "absent": 44
+          },
+          "query_set": {
+            "inline_acl": {
+              "1": 4,
+              "11-20": 0,
+              "2-5": 5,
+              "21-50": 5,
+              "6-10": 1,
+              "absent": 15
+            },
+            "inline_nonacl": {
+              "1": 12,
+              "11-20": 4,
+              "2-5": 10,
+              "21-50": 5,
+              "6-10": 3,
+              "absent": 19
+            },
+            "manual_acl": {
+              "1": 8,
+              "11-20": 2,
+              "2-5": 8,
+              "21-50": 3,
+              "6-10": 1,
+              "absent": 9
+            },
+            "manual_iclr": {
+              "1": 11,
+              "11-20": 0,
+              "2-5": 3,
+              "21-50": 3,
+              "6-10": 0,
+              "absent": 1
+            }
+          },
+          "specificity": {
+            "broad": {
+              "1": 6,
+              "11-20": 0,
+              "2-5": 3,
+              "21-50": 6,
+              "6-10": 0,
+              "absent": 15
+            },
+            "specific": {
+              "1": 29,
+              "11-20": 6,
+              "2-5": 23,
+              "21-50": 10,
+              "6-10": 5,
+              "absent": 29
+            }
+          }
+        },
+        "hybrid_rerank": {
+          "all": {
+            "1": 43,
+            "11-20": 8,
+            "2-5": 20,
+            "21-50": 8,
+            "6-10": 9,
+            "absent": 44
+          },
+          "query_set": {
+            "inline_acl": {
+              "1": 5,
+              "11-20": 3,
+              "2-5": 3,
+              "21-50": 2,
+              "6-10": 2,
+              "absent": 15
+            },
+            "inline_nonacl": {
+              "1": 18,
+              "11-20": 3,
+              "2-5": 7,
+              "21-50": 4,
+              "6-10": 2,
+              "absent": 19
+            },
+            "manual_acl": {
+              "1": 12,
+              "11-20": 1,
+              "2-5": 4,
+              "21-50": 1,
+              "6-10": 4,
+              "absent": 9
+            },
+            "manual_iclr": {
+              "1": 8,
+              "11-20": 1,
+              "2-5": 6,
+              "21-50": 1,
+              "6-10": 1,
+              "absent": 1
+            }
+          },
+          "specificity": {
+            "broad": {
+              "1": 5,
+              "11-20": 1,
+              "2-5": 4,
+              "21-50": 5,
+              "6-10": 0,
+              "absent": 15
+            },
+            "specific": {
+              "1": 38,
+              "11-20": 7,
+              "2-5": 16,
+              "21-50": 3,
+              "6-10": 9,
+              "absent": 29
+            }
+          }
+        }
+      },
+      "litsearch_cutoffs": {
+        "bm25": {
+          "author broad R@20": {
+            "high": 0.75,
+            "low": 0.0,
+            "mean": 0.25,
+            "queries": 4
+          },
+          "author specific R@20": {
+            "high": 0.8444444444444444,
+            "low": 0.6,
+            "mean": 0.7333333333333333,
+            "queries": 45
+          },
+          "author specific R@5": {
+            "high": 0.7555555555555555,
+            "low": 0.4888888888888889,
+            "mean": 0.6222222222222222,
+            "queries": 45
+          },
+          "inline broad R@20": {
+            "high": 0.631578947368421,
+            "low": 0.21052631578947367,
+            "mean": 0.41228070175438597,
+            "queries": 19
+          },
+          "inline specific R@20": {
+            "high": 0.6442307692307693,
+            "low": 0.38461538461538464,
+            "mean": 0.5192307692307693,
+            "queries": 52
+          },
+          "inline specific R@5": {
+            "high": 0.49038461538461536,
+            "low": 0.22115384615384615,
+            "mean": 0.3557692307692308,
+            "queries": 52
+          }
+        },
+        "dense": {
+          "author broad R@20": {
+            "high": 0.75,
+            "low": 0.0,
+            "mean": 0.25,
+            "queries": 4
+          },
+          "author specific R@20": {
+            "high": 0.8222222222222222,
+            "low": 0.5333333333333333,
+            "mean": 0.6888888888888889,
+            "queries": 45
+          },
+          "author specific R@5": {
+            "high": 0.7333333333333333,
+            "low": 0.4666666666666667,
+            "mean": 0.6,
+            "queries": 45
+          },
+          "inline broad R@20": {
+            "high": 0.6842105263157895,
+            "low": 0.23684210526315788,
+            "mean": 0.4473684210526316,
+            "queries": 19
+          },
+          "inline specific R@20": {
+            "high": 0.6538461538461539,
+            "low": 0.38461538461538464,
+            "mean": 0.5192307692307693,
+            "queries": 52
+          },
+          "inline specific R@5": {
+            "high": 0.5581730769230765,
+            "low": 0.28846153846153844,
+            "mean": 0.4230769230769231,
+            "queries": 52
+          }
+        },
+        "hybrid": {
+          "author broad R@20": {
+            "high": 0.75,
+            "low": 0.0,
+            "mean": 0.25,
+            "queries": 4
+          },
+          "author specific R@20": {
+            "high": 0.8222222222222222,
+            "low": 0.5777777777777777,
+            "mean": 0.7111111111111111,
+            "queries": 45
+          },
+          "author specific R@5": {
+            "high": 0.7777777777777778,
+            "low": 0.5111111111111111,
+            "mean": 0.6444444444444445,
+            "queries": 45
+          },
+          "inline broad R@20": {
+            "high": 0.5703947368421051,
+            "low": 0.15789473684210525,
+            "mean": 0.35964912280701755,
+            "queries": 19
+          },
+          "inline specific R@20": {
+            "high": 0.7115384615384616,
+            "low": 0.4423076923076923,
+            "mean": 0.5769230769230769,
+            "queries": 52
+          },
+          "inline specific R@5": {
+            "high": 0.5769230769230769,
+            "low": 0.3076923076923077,
+            "mean": 0.4423076923076923,
+            "queries": 52
+          }
+        },
+        "hybrid_rerank": {
+          "author broad R@20": {
+            "high": 0.75,
+            "low": 0.0,
+            "mean": 0.25,
+            "queries": 4
+          },
+          "author specific R@20": {
+            "high": 0.9111111111111111,
+            "low": 0.6888888888888889,
+            "mean": 0.8,
+            "queries": 45
+          },
+          "author specific R@5": {
+            "high": 0.7777777777777778,
+            "low": 0.5111111111111111,
+            "mean": 0.6444444444444445,
+            "queries": 45
+          },
+          "inline broad R@20": {
+            "high": 0.631578947368421,
+            "low": 0.2017543859649123,
+            "mean": 0.41228070175438597,
+            "queries": 19
+          },
+          "inline specific R@20": {
+            "high": 0.7596153846153846,
+            "low": 0.49038461538461536,
+            "mean": 0.625,
+            "queries": 52
+          },
+          "inline specific R@5": {
+            "high": 0.6153846153846154,
+            "low": 0.33629807692307717,
+            "mean": 0.47115384615384615,
+            "queries": 52
+          }
+        }
+      },
+      "misses": {
+        "hybrid_rerank": {
+          "inline_acl / broad": {
+            "beyond_depth": [],
+            "not_in_pool": [
+              "litsearch-0018",
+              "litsearch-0030"
+            ],
+            "queries": 7
+          },
+          "inline_acl / specific": {
+            "beyond_depth": [
+              "litsearch-0035",
+              "litsearch-0063",
+              "litsearch-0079",
+              "litsearch-0093"
+            ],
+            "not_in_pool": [
+              "litsearch-0013",
+              "litsearch-0041",
+              "litsearch-0062",
+              "litsearch-0063",
+              "litsearch-0074"
+            ],
+            "queries": 13
+          },
+          "inline_nonacl / broad": {
+            "beyond_depth": [
+              "litsearch-0145",
+              "litsearch-0224"
+            ],
+            "not_in_pool": [
+              "litsearch-0136",
+              "litsearch-0167",
+              "litsearch-0185",
+              "litsearch-0228",
+              "litsearch-0328"
+            ],
+            "queries": 12
+          },
+          "inline_nonacl / specific": {
+            "beyond_depth": [
+              "litsearch-0109",
+              "litsearch-0157"
+            ],
+            "not_in_pool": [
+              "litsearch-0111",
+              "litsearch-0124",
+              "litsearch-0155",
+              "litsearch-0162",
+              "litsearch-0168",
+              "litsearch-0208",
+              "litsearch-0214",
+              "litsearch-0221",
+              "litsearch-0308",
+              "litsearch-0311"
+            ],
+            "queries": 39
+          },
+          "manual_acl / broad": {
+            "beyond_depth": [],
+            "not_in_pool": [
+              "litsearch-0369"
+            ],
+            "queries": 3
+          },
+          "manual_acl / specific": {
+            "beyond_depth": [
+              "litsearch-0380",
+              "litsearch-0429",
+              "litsearch-0504"
+            ],
+            "not_in_pool": [
+              "litsearch-0352",
+              "litsearch-0389",
+              "litsearch-0431",
+              "litsearch-0433",
+              "litsearch-0451"
+            ],
+            "queries": 28
+          },
+          "manual_iclr / broad": {
+            "beyond_depth": [
+              "litsearch-0543"
+            ],
+            "not_in_pool": [],
+            "queries": 1
+          },
+          "manual_iclr / specific": {
+            "beyond_depth": [],
+            "not_in_pool": [],
+            "queries": 17
+          }
+        }
+      },
+      "queries": 120,
+      "stage_losses": {
+        "bm25": {
+          "all": {
+            "beyond_depth": 0.041666666666666664,
+            "not_in_pool": 0.3097222222222223,
+            "queries": 120,
+            "within_depth": 0.648611111111111
+          },
+          "query_set": {
+            "inline_acl": {
+              "beyond_depth": 0.05,
+              "not_in_pool": 0.4083333333333334,
+              "queries": 20,
+              "within_depth": 0.5416666666666666
+            },
+            "inline_nonacl": {
+              "beyond_depth": 0.058823529411764705,
+              "not_in_pool": 0.37254901960784315,
+              "queries": 51,
+              "within_depth": 0.5686274509803921
+            },
+            "manual_acl": {
+              "beyond_depth": 0.0,
+              "not_in_pool": 0.2903225806451613,
+              "queries": 31,
+              "within_depth": 0.7096774193548387
+            },
+            "manual_iclr": {
+              "beyond_depth": 0.05555555555555555,
+              "not_in_pool": 0.05555555555555555,
+              "queries": 18,
+              "within_depth": 0.8888888888888888
+            }
+          },
+          "specificity": {
+            "broad": {
+              "beyond_depth": 0.08695652173913043,
+              "not_in_pool": 0.44202898550724645,
+              "queries": 23,
+              "within_depth": 0.4710144927536231
+            },
+            "specific": {
+              "beyond_depth": 0.030927835051546393,
+              "not_in_pool": 0.27835051546391754,
+              "queries": 97,
+              "within_depth": 0.6907216494845361
+            }
+          }
+        },
+        "dense": {
+          "all": {
+            "beyond_depth": 0.06666666666666667,
+            "not_in_pool": 0.30833333333333335,
+            "queries": 120,
+            "within_depth": 0.625
+          },
+          "query_set": {
+            "inline_acl": {
+              "beyond_depth": 0.1,
+              "not_in_pool": 0.4,
+              "queries": 20,
+              "within_depth": 0.5
+            },
+            "inline_nonacl": {
+              "beyond_depth": 0.0392156862745098,
+              "not_in_pool": 0.35294117647058826,
+              "queries": 51,
+              "within_depth": 0.6078431372549019
+            },
+            "manual_acl": {
+              "beyond_depth": 0.12903225806451613,
+              "not_in_pool": 0.2903225806451613,
+              "queries": 31,
+              "within_depth": 0.5806451612903226
+            },
+            "manual_iclr": {
+              "beyond_depth": 0.0,
+              "not_in_pool": 0.1111111111111111,
+              "queries": 18,
+              "within_depth": 0.8888888888888888
+            }
+          },
+          "specificity": {
+            "broad": {
+              "beyond_depth": 0.043478260869565216,
+              "not_in_pool": 0.45652173913043476,
+              "queries": 23,
+              "within_depth": 0.5
+            },
+            "specific": {
+              "beyond_depth": 0.07216494845360824,
+              "not_in_pool": 0.27319587628865977,
+              "queries": 97,
+              "within_depth": 0.654639175257732
+            }
+          }
+        },
+        "hybrid": {
+          "all": {
+            "beyond_depth": 0.09166666666666666,
+            "not_in_pool": 0.2125,
+            "queries": 120,
+            "within_depth": 0.6958333333333333
+          },
+          "query_set": {
+            "inline_acl": {
+              "beyond_depth": 0.15,
+              "not_in_pool": 0.275,
+              "queries": 20,
+              "within_depth": 0.575
+            },
+            "inline_nonacl": {
+              "beyond_depth": 0.0784313725490196,
+              "not_in_pool": 0.27450980392156865,
+              "queries": 51,
+              "within_depth": 0.6470588235294118
+            },
+            "manual_acl": {
+              "beyond_depth": 0.0967741935483871,
+              "not_in_pool": 0.1935483870967742,
+              "queries": 31,
+              "within_depth": 0.7096774193548387
+            },
+            "manual_iclr": {
+              "beyond_depth": 0.05555555555555555,
+              "not_in_pool": 0.0,
+              "queries": 18,
+              "within_depth": 0.9444444444444444
+            }
+          },
+          "specificity": {
+            "broad": {
+              "beyond_depth": 0.13043478260869565,
+              "not_in_pool": 0.32608695652173914,
+              "queries": 23,
+              "within_depth": 0.5434782608695652
+            },
+            "specific": {
+              "beyond_depth": 0.08247422680412371,
+              "not_in_pool": 0.18556701030927836,
+              "queries": 97,
+              "within_depth": 0.7319587628865979
+            }
+          }
+        },
+        "hybrid_rerank": {
+          "all": {
+            "beyond_depth": 0.09166666666666666,
+            "not_in_pool": 0.2125,
+            "queries": 120,
+            "within_depth": 0.6958333333333333
+          },
+          "query_set": {
+            "inline_acl": {
+              "beyond_depth": 0.15,
+              "not_in_pool": 0.275,
+              "queries": 20,
+              "within_depth": 0.575
+            },
+            "inline_nonacl": {
+              "beyond_depth": 0.0784313725490196,
+              "not_in_pool": 0.27450980392156865,
+              "queries": 51,
+              "within_depth": 0.6470588235294118
+            },
+            "manual_acl": {
+              "beyond_depth": 0.0967741935483871,
+              "not_in_pool": 0.1935483870967742,
+              "queries": 31,
+              "within_depth": 0.7096774193548387
+            },
+            "manual_iclr": {
+              "beyond_depth": 0.05555555555555555,
+              "not_in_pool": 0.0,
+              "queries": 18,
+              "within_depth": 0.9444444444444444
+            }
+          },
+          "specificity": {
+            "broad": {
+              "beyond_depth": 0.13043478260869565,
+              "not_in_pool": 0.32608695652173914,
+              "queries": 23,
+              "within_depth": 0.5434782608695652
+            },
+            "specific": {
+              "beyond_depth": 0.08247422680412371,
+              "not_in_pool": 0.18556701030927836,
+              "queries": 97,
+              "within_depth": 0.7319587628865979
+            }
+          }
+        }
+      }
+    }
+  }
+}

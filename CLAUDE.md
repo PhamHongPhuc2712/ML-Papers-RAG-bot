@@ -26,14 +26,17 @@ network. `llm spend [--day | --run]` reports calls, tokens and cost. An evaluati
 LLM variant needs `eval retrieval ... --max-spend-usd N`. It is refused when its worst case
 exceeds N and stopped once its ledger spend does.
 
-**URGENT — fix first: P2.6** (retrieval plan, added 2026-10-01). E3 and P2.5 measured
-three gaps in `hybrid_rerank`:
-- the first stage misses the gold paper for 10–21% of queries;
-- the depth-50 rerank cut drops another 7.6–9.1 points;
-- reranking quality collapses on a shared GPU, with 17–51% timeouts.
-
-P2.6 comes before the locked test split and before P3.1. The locked test, run once with
-`--locked-test`, has **not** been run, and it waits for P2.6 and the user's go-ahead.
+**P2.6 is done (2026-10-06).** E3 and P2.5 had measured three gaps in `hybrid_rerank`:
+first-stage misses for 10–21% of queries, a depth-50 cut dropping 7.6–9.1 more points,
+and 17–51% rerank timeouts on a shared GPU. Outcome (`reports/m2-retrieval-gaps.md`): a
+larger pool and a deeper rerank are not levers; most misses describe what only a paper's
+body says; on our corpus, **candidates found through the chunk collection** (each paper
+scored by its best evidence chunk) were pre-registered and promoted on validation
+(Recall@50 +0.135 [+0.058, +0.231], nDCG@10 +0.060 [+0.025, +0.097], p95 597 ms) and are
+now `candidates.source: chunks` in `configs/search.yaml` (spec §7). LitSearch's release
+has no chunk collection and stays at paper level. GPU policy: evaluate and demo only on an
+idle GPU. The locked test, run once with `--locked-test`, has **not** been run and waits
+for the user's go-ahead; then P3.1.
 
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
 `[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU
@@ -195,10 +198,12 @@ uv run --env-file .env --project backend python -m copilot.cli corpus activate -
 uv run --env-file .env --project backend python -m copilot.cli search compare-precision --manifest SNAP/manifest.json
 ```
 
-Search service (P2.3): BM25 and dense candidates for one captured release, RRF in our
-code, cross-encoder rerank of at most 50, every stage under a deadline with explicit,
-typed fallbacks. Ranking parameters live in `configs/search.yaml`; the reranker is pinned
-in `configs/models.yaml` beside the embedder.
+Search service (P2.3, first stage revised by P2.6): BM25 and dense candidates for one
+captured release — since 2026-10-06 from the chunk collection, one hit per paper by its
+best evidence chunk (`candidates.source` in `configs/search.yaml`) — RRF in our code,
+cross-encoder rerank of at most 50, every stage under a deadline with explicit, typed
+fallbacks. Ranking parameters live in `configs/search.yaml`; the reranker is pinned in
+`configs/models.yaml` beside the embedder.
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli search pilot --query "contrastive learning for sentence embeddings"
@@ -240,7 +245,11 @@ uv run --env-file .env --project backend python -m copilot.cli eval retrieval --
 ```
 
 Every run samples the GPU for 5 s before loading a model and marks itself **contended**
-when another process kept it over 20% busy. Run timing evidence only on a free GPU.
+when another process kept it over 20% busy. Run timing evidence only on a free GPU: the
+recorded policy (2026-10-05) is to evaluate and demo only on an idle GPU, and a run that
+was busy beforehand, shared the GPU with another compute process or degraded a query is
+set aside and redone. A variant may name its candidate source (`candidates: papers |
+chunks | both`); unset, it follows `configs/search.yaml`, except over a snapshot corpus.
 
 ```bash
 uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head

@@ -41,6 +41,7 @@ from pydantic import ValidationError
 from ..contracts import ListwiseResult, PaperFilters, SearchRequest
 from ..corpus.releases import ReleaseRecord
 from ..search.service import (
+    CANDIDATE_SOURCES,
     Outcome,
     PaperRow,
     SearchConfig,
@@ -66,8 +67,9 @@ WARMUP_QUERIES = 10
 SLICES = ("in_domain", "all")
 # Where a variant's first stage finds candidates (P2.6 step 4): the paper collection,
 # the chunk collection collapsed to each paper's best evidence chunk, or each branch's
-# RRF of both. "papers" is the service as shipped and leaves every recorded run as it was.
-CANDIDATE_SOURCES = ("papers", "chunks", "both")
+# RRF of both (``CANDIDATE_SOURCES``). Unset, a variant follows the shared search
+# file, except over a packaged snapshot corpus, which has no chunks and stays at paper
+# level. "papers" records nothing extra, so every run recorded before it reads as it was.
 # Which id a label names: our corpus's paper id (matched by E1), or a LitSearch
 # corpusid scored against a ``litsearch-v1`` release built from LitSearch's corpus.
 LABELS = ("paper_id", "corpusid")
@@ -122,8 +124,9 @@ class Variant:
     search: tuple[tuple[str, float], ...] = ()
     # The configs/llm.yaml model key behind a hybrid_rerank_llm variant, and only one.
     llm: str | None = None
-    # One of CANDIDATE_SOURCES: what both branches search.
-    candidates: str = "papers"
+    # One of CANDIDATE_SOURCES, or None to follow the shared search file (see
+    # ``candidate_source``).
+    candidates: str | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +196,21 @@ def _search_overrides(name: str, mode: str, raw: object) -> tuple[tuple[str, flo
     return tuple(sorted(overrides.items()))
 
 
+def candidate_source(experiment: Experiment, variant: Variant, config: SearchConfig) -> str:
+    """What this variant's branches search: its own choice, else the shared file's.
+
+    A corpus whose papers come from a snapshot was never parsed, so it has no chunk
+    collection and is searched at paper level whatever the shared file says; the
+    resolved value is what the manifest records.
+    """
+
+    if variant.candidates is not None:
+        return variant.candidates
+    if experiment.papers == "snapshot":
+        return "papers"
+    return config.candidates_source
+
+
 def search_config_for(variant: Variant, base: SearchConfig) -> SearchConfig:
     """The search configuration one variant runs under: the shared file plus its overrides."""
 
@@ -229,6 +247,9 @@ def search_values(
     if mode != "hybrid_rerank_llm":
         for name in DEEP_SEARCH_FIELDS:
             values.pop(name, None)
+    # The file's own source is replaced by the resolved one, recorded only when it is
+    # not the paper collection.
+    values.pop("candidates_source", None)
     if candidates != "papers":
         values["candidates_source"] = candidates
     return values
@@ -344,7 +365,7 @@ def load_experiment(path: str | Path) -> Experiment:
                     str(item["name"]), str(item["mode"]), item.get("search")
                 ),
                 llm=None if item.get("llm") is None else str(item["llm"]),
-                candidates=str(item.get("candidates") or "papers"),
+                candidates=None if item.get("candidates") is None else str(item["candidates"]),
             )
             for item in raw["variants"]
         )
@@ -386,7 +407,7 @@ def load_experiment(path: str | Path) -> Experiment:
             )
         if variant.llm is not None and variant.llm not in _llm_models():
             raise ExperimentError("experiment_invalid", f"{variant.name}.llm {variant.llm} unknown")
-        if variant.candidates not in CANDIDATE_SOURCES:
+        if variant.candidates is not None and variant.candidates not in CANDIDATE_SOURCES:
             raise ExperimentError(
                 "experiment_invalid",
                 f"{variant.name}.candidates must be one of {', '.join(CANDIDATE_SOURCES)}",
@@ -1259,11 +1280,9 @@ def run_retrieval(
 
     from ..corpus.releases import load_release
     from ..db.session import make_engine
-    from ..search.chunks import UnionRetriever
-    from ..search.dense import DenseRetriever
+    from ..search.chunks import dense_branch, lexical_branch
     from ..search.index import CHUNKS
     from ..search.service import load_search_config
-    from ..search.sparse import SparseRetriever
 
     experiment = load_experiment(config)
     if split not in SPLITS:
@@ -1286,6 +1305,10 @@ def run_retrieval(
     search_config = load_search_config(experiment.search)
     configs = {
         variant.name: search_config_for(variant, search_config) for variant in experiment.variants
+    }
+    sources = {
+        variant.name: candidate_source(experiment, variant, configs[variant.name])
+        for variant in experiment.variants
     }
     llm_variants = [variant for variant in experiment.variants if variant.llm is not None]
     if llm_variants:
@@ -1314,7 +1337,7 @@ def run_retrieval(
         # A chunk-level first stage needs the release's chunk collection to have been
         # built; a release with only its paper collection cannot answer through chunks.
         build = releases[experiment.release_for(variant)].counts.get(CHUNKS)
-        if variant.candidates != "papers" and not (
+        if sources[variant.name] != "papers" and not (
             isinstance(build, Mapping) and build.get("points")
         ):
             raise ExperimentError(
@@ -1371,23 +1394,14 @@ def run_retrieval(
                     factory.listwise(variant.llm, ledger, cache),
                     f"{run_id}.{variant.name}.{uuid4().hex[:8]}",
                 )
-            lexical: Any = SparseRetriever(engine, client)
-            dense: Any = DenseRetriever(engine, client, embedder, max_tokens=max_tokens)
-            if variant.candidates != "papers":
-                chunk_lexical = SparseRetriever(engine, client, kind=CHUNKS, group_papers=True)
-                chunk_dense = DenseRetriever(
-                    engine, client, embedder, kind=CHUNKS, max_tokens=max_tokens, group_papers=True
-                )
-                if variant.candidates == "chunks":
-                    lexical, dense = chunk_lexical, chunk_dense
-                else:
-                    k = configs[variant.name].rrf_k
-                    lexical = UnionRetriever((lexical, chunk_lexical), k=k)
-                    dense = UnionRetriever((dense, chunk_dense), k=k)
+            source = sources[variant.name]
+            k = configs[variant.name].rrf_k
             service = SearchService(
                 engine=engine,
-                lexical=lexical,
-                dense=dense,
+                lexical=lexical_branch(engine, client, source=source, k=k),
+                dense=dense_branch(
+                    engine, client, embedder, source=source, max_tokens=max_tokens, k=k
+                ),
                 reranker=reranker,
                 config=configs[variant.name],
                 papers=papers.get(release.id),
@@ -1431,12 +1445,14 @@ def run_retrieval(
                 "baseline": variant.baseline,
                 "changes": variant.changes,
                 # What this variant searched under, so two that differ never pass as equal.
-                "search": search_values(configs[variant.name], variant.mode, variant.candidates),
+                "search": search_values(
+                    configs[variant.name], variant.mode, sources[variant.name]
+                ),
                 "search_overrides": dict(variant.search),
                 "search_sha256": search_digest(
-                    configs[variant.name], variant.mode, variant.candidates
+                    configs[variant.name], variant.mode, sources[variant.name]
                 ),
-                "candidates": variant.candidates,
+                "candidates": sources[variant.name],
                 "warmup_seconds": warmups[variant.name],
                 "warmup_queries": {"split": warm_split, "count": len(warm_queries)},
             }

@@ -68,6 +68,10 @@ class SearchUnavailable(RuntimeError):
 @dataclass(frozen=True)
 class SearchConfig:
     candidates_per_branch: int = 100
+    # Where both branches find candidates (P2.6, decided 2026-10-06): the paper
+    # collection, the chunk collection with each paper scored by its best evidence
+    # chunk, or each branch's RRF of both.
+    candidates_source: str = "papers"
     rrf_k: int = RRF_K
     rerank_depth: int = 50
     branch_seconds: float = 1.0
@@ -81,11 +85,18 @@ class SearchConfig:
     llm_total_seconds: float = 25.0
 
 
+CANDIDATE_SOURCES = ("papers", "chunks", "both")
+
+
 def load_search_config(path: str | Path) -> SearchConfig:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     deadlines = raw.get("deadlines_seconds") or {}
+    source = str((raw.get("candidates") or {}).get("source", "papers"))
+    if source not in CANDIDATE_SOURCES:
+        raise ValueError(f"candidates.source must be one of {', '.join(CANDIDATE_SOURCES)}")
     return SearchConfig(
         candidates_per_branch=int((raw.get("candidates") or {}).get("per_branch", 100)),
+        candidates_source=source,
         rrf_k=int((raw.get("fusion") or {}).get("rrf_k", RRF_K)),
         rerank_depth=int((raw.get("rerank") or {}).get("depth", 50)),
         branch_seconds=float(deadlines.get("branch", 1.0)),
@@ -409,6 +420,10 @@ class SearchService:
             "candidates": config.candidates_per_branch,
             "depth": config.cache_depth,
         }
+        if config.candidates_source != "papers":
+            # Found through another collection: an ordering cached under the paper
+            # collection is not this ordering.
+            identity["candidates_source"] = config.candidates_source
         if len(branches) > 1:
             identity["rrf_k"] = config.rrf_k
         if mode in _RERANKED:

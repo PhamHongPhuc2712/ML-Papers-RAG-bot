@@ -85,3 +85,47 @@ class UnionRetriever:
             for part in self._parts
         ]
         return rrf(rankings, self._k)[:limit]
+
+
+def lexical_branch(engine: Any, client: QdrantClient, *, source: str, k: int = RRF_K) -> Any:
+    """The BM25 branch for a candidate source (``configs/search.yaml``, ``candidates.source``)."""
+
+    from .index import CHUNKS
+    from .sparse import SparseRetriever
+
+    papers = SparseRetriever(engine, client)
+    if source == "papers":
+        return papers
+    chunks = SparseRetriever(engine, client, kind=CHUNKS, group_papers=True)
+    if source == "chunks":
+        return chunks
+    if source == "both":
+        return UnionRetriever((papers, chunks), k=k)
+    raise ValueError(f"unknown candidate source {source}")
+
+
+def dense_branch(
+    engine: Any,
+    client: QdrantClient,
+    model: Any,
+    *,
+    source: str,
+    max_tokens: int | None = None,
+    k: int = RRF_K,
+) -> Any:
+    """The dense branch for a candidate source; the query is encoded once per retriever."""
+
+    from .dense import DenseRetriever
+    from .index import CHUNKS
+
+    papers = DenseRetriever(engine, client, model, max_tokens=max_tokens)
+    if source == "papers":
+        return papers
+    chunks = DenseRetriever(
+        engine, client, model, kind=CHUNKS, max_tokens=max_tokens, group_papers=True
+    )
+    if source == "chunks":
+        return chunks
+    if source == "both":
+        return UnionRetriever((papers, chunks), k=k)
+    raise ValueError(f"unknown candidate source {source}")

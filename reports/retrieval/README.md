@@ -44,11 +44,15 @@ only if every guard's paired interval rules out losing more than that, so a rule
 primary is a recall metric cannot promote a candidate that loses the top of the page.
 
 A variant may also say where its first stage finds candidates with `candidates:` (P2.6
-step 4): `papers`, the paper collection as shipped; `chunks`, the release's chunk collection
-with each paper scored by its best evidence chunk (references excluded); or `both`, each
-branch's RRF of its paper list and its chunk list. A source other than `papers` is recorded
-in the variant's search settings as `candidates_source` and changes its digest, and a run
-naming one is refused before anything loads when the release has no chunk collection
+step 4): `papers`, the title-and-abstract collection; `chunks`, the release's chunk
+collection with each paper scored by its best evidence chunk (references excluded); or
+`both`, each branch's RRF of its paper list and its chunk list. Unset, a variant follows
+`candidates.source` in `configs/search.yaml` — `chunks` since 2026-10-06 — except over a
+`papers: snapshot` corpus, which was never chunked and stays at paper level. The resolved
+source is recorded per variant (`variants.<name>.candidates`); a source other than `papers`
+also appears in the variant's search settings as `candidates_source` and changes its digest,
+so runs recorded before the decision still read as the same search. A run naming `chunks` or
+`both` is refused before anything loads when the release has no chunk collection
 (`chunks_not_built`). The reranker is unchanged: it still scores titles and abstracts.
 
 A `hybrid_rerank_llm` variant names the hosted model it uses with `llm:`, a key in

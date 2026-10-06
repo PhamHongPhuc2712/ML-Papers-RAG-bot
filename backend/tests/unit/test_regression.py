@@ -554,10 +554,25 @@ def test_a_variant_may_find_its_candidates_through_chunks(tmp_path):
             {"name": "hybrid_both", "mode": "hybrid_rerank", "candidates": "both"},
         ],
     )
-    by_name = {variant.name: variant for variant in load_experiment(path).variants}
-    assert by_name["hybrid"].candidates == "papers"
+    experiment = load_experiment(path)
+    by_name = {variant.name: variant for variant in experiment.variants}
+    assert by_name["hybrid"].candidates is None
     assert by_name["hybrid_chunks"].candidates == "chunks"
     assert by_name["hybrid_both"].candidates == "both"
+    # Unset follows the shared file over our corpus, and stays at paper level over a
+    # packaged snapshot corpus, which was never chunked.
+    from dataclasses import replace
+
+    from copilot.evaluation.retrieval import candidate_source
+    from copilot.search.service import SearchConfig, load_search_config
+
+    shipped = load_search_config("configs/search.yaml")
+    assert shipped.candidates_source == "chunks"
+    assert candidate_source(experiment, by_name["hybrid"], shipped) == "chunks"
+    assert candidate_source(experiment, by_name["hybrid"], SearchConfig()) == "papers"
+    snapshot = replace(experiment, papers="snapshot")
+    assert candidate_source(snapshot, by_name["hybrid"], shipped) == "papers"
+    assert candidate_source(snapshot, by_name["hybrid_chunks"], shipped) == "chunks"
 
 
 def test_a_candidate_source_outside_the_three_is_refused(tmp_path):
@@ -667,3 +682,19 @@ def test_the_first_stage_config_pre_registers_a_guarded_recall_rule():
     by_name = {variant.name: variant for variant in experiment.variants}
     assert by_name["hybrid_rerank_both"].candidates == "both"
     assert by_name["hybrid_rerank_both"].baseline is None
+
+
+def test_the_search_file_names_its_candidate_source_and_refuses_an_unknown_one(tmp_path):
+    import yaml
+
+    from copilot.search.service import load_search_config
+
+    raw = yaml.safe_load(Path("configs/search.yaml").read_text(encoding="utf-8"))
+    raw["candidates"]["source"] = "sections"
+    path = tmp_path / "search.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="candidates.source"):
+        load_search_config(path)
+    del raw["candidates"]["source"]
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    assert load_search_config(path).candidates_source == "papers"

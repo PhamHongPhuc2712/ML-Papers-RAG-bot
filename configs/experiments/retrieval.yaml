@@ -54,18 +54,22 @@ variants:
     baseline: hybrid_rerank
     changes: reranker pair budget 1,024 -> 512 tokens (spec §7)
     pair_max_tokens: 512
+  # The BGE-small release holds a paper collection only, so these two search at paper
+  # level whatever configs/search.yaml's candidates.source says (P2.6 step 4).
   - name: dense_bge_small
     mode: dense
     baseline: dense
     changes: embedding BGE-M3 (1,024-d) -> BGE-small-en-v1.5 (384-d)
     models: configs/experiments/models-bge-small.yaml
     release: m2-20260924T095724Z-bge-small
+    candidates: papers
   - name: hybrid_rerank_bge_small
     mode: hybrid_rerank
     baseline: hybrid_rerank
     changes: embedding BGE-M3 (1,024-d) -> BGE-small-en-v1.5 (384-d)
     models: configs/experiments/models-bge-small.yaml
     release: m2-20260924T095724Z-bge-small
+    candidates: papers
 
 decision:
   # Written before any validation number was seen.

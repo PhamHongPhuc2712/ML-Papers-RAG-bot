@@ -45,9 +45,11 @@ bootstrap:
   confidence: 0.95
 
 variants:
-  # As shipped: must reproduce P2.5's development hybrid_rerank.
+  # The first stage P2.5 shipped, over titles and abstracts: must reproduce P2.5's
+  # development hybrid_rerank. Explicit, since configs/search.yaml now says `chunks`.
   - name: hybrid_rerank
     mode: hybrid_rerank
+    candidates: papers
   - name: bm25_chunks
     mode: bm25
     candidates: chunks
