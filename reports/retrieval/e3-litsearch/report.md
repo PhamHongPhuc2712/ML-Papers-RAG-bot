@@ -2,16 +2,16 @@
 
 Rendered by `eval report` from `reports/retrieval/e3-litsearch/<split>/metrics.json`; edit `analysis.md`, not this file. Per-query rows are in `<split>/per_query.parquet`, manifests in `<split>/manifest.json`.
 
-| | development | validation |
-|---|---|---|
-| Run | `e3-litsearch-development-20261001T055140Z` | `e3-litsearch-validation-20261001T055954Z` |
-| Code | `07ebd3ad89` + uncommitted `b13dd40568` | `07ebd3ad89` + uncommitted `3776bf8675` |
-| Corpus release | `litsearch-v1` | `litsearch-v1` |
-| Dataset | `dfcb643e87b5`, all | `dfcb643e87b5`, all |
-| Queries | 359 | 120 |
-| Hardware | NVIDIA GeForce RTX 3080 Laptop GPU; torch 2.14.0+cu130 | NVIDIA GeForce RTX 3080 Laptop GPU; torch 2.14.0+cu130 |
-| GPU during the run | util p50 83% / max 100%; memory 3744–5987 MiB; 1 GPU processes seen; before the run 0% busy | util p50 86% / max 100%; memory 3776–4794 MiB; 1 GPU processes seen; before the run 0% busy |
-| Locked test | no | no |
+| | development | validation | test |
+|---|---|---|---|
+| Run | `e3-litsearch-development-20261001T055140Z` | `e3-litsearch-validation-20261001T055954Z` | `e3-litsearch-test-20261006T091138Z` |
+| Code | `07ebd3ad89` + uncommitted `b13dd40568` | `07ebd3ad89` + uncommitted `3776bf8675` | `912497474e` + uncommitted `277805bcf4` |
+| Corpus release | `litsearch-v1` | `litsearch-v1` | `litsearch-v1` |
+| Dataset | `dfcb643e87b5`, all | `dfcb643e87b5`, all | `dfcb643e87b5`, all |
+| Queries | 359 | 120 | 118 |
+| Hardware | NVIDIA GeForce RTX 3080 Laptop GPU; torch 2.14.0+cu130 | NVIDIA GeForce RTX 3080 Laptop GPU; torch 2.14.0+cu130 | NVIDIA GeForce RTX 3080 Laptop GPU; torch 2.14.0+cu130 |
+| GPU during the run | util p50 83% / max 100%; memory 3744–5987 MiB; 1 GPU processes seen; before the run 0% busy | util p50 86% / max 100%; memory 3776–4794 MiB; 1 GPU processes seen; before the run 0% busy | util p50 97% / max 100%; memory 3813–5083 MiB; 1 GPU processes seen; before the run 0% busy |
+| Locked test | no | no | yes |
 
 Timing: Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed.
 
@@ -132,6 +132,58 @@ Pre-registered rules (`decision` in the config): primary metric `ndcg@10`; a cos
 | `hybrid` → `hybrid_rerank` | +0.054 [+0.007, +0.101] | 0.81 | yes | yes | **yes** |
 
 **Chosen on validation: `hybrid_rerank` (mode `hybrid_rerank`); ablations adopted: none.**
+
+## Test — 118 queries
+
+Mean over queries with a 95% bootstrap interval over query families. Failed queries score zero and stay in every denominator.
+
+| Variant | Recall@10 | Recall@50 | nDCG@10 | MRR@10 | Judged@10 | Candidate recall | Failures | Degraded |
+|---|---|---|---|---|---|---|---|---|
+| `bm25` | 0.555 [0.470, 0.644] | 0.674 [0.593, 0.763] | 0.411 [0.339, 0.490] | 0.367 [0.294, 0.447] | 0.058 | 0.742 | 0 | 0 |
+| `dense` | 0.551 [0.462, 0.644] | 0.746 [0.665, 0.822] | 0.406 [0.332, 0.484] | 0.367 [0.291, 0.448] | 0.058 | 0.822 | 0 | 0 |
+| `hybrid` | 0.640 [0.559, 0.720] | 0.805 [0.737, 0.873] | 0.478 [0.405, 0.554] | 0.436 [0.362, 0.512] | 0.066 | 0.898 | 0 | 0 |
+| `hybrid_rerank` | 0.682 [0.597, 0.763] | 0.805 [0.737, 0.873] | 0.550 [0.473, 0.621] | 0.516 [0.432, 0.589] | 0.070 | 0.898 | 0 | 0 |
+
+Latency of `rank()` in milliseconds; stage columns are p95.
+
+| Variant | p50 | p95 | max | lexical | dense | rerank | warm-up s |
+|---|---|---|---|---|---|---|---|
+| `bm25` | 6.1 | 18.1 | 48.3 | 17.6 | — | — | 5.973 |
+| `dense` | 28.0 | 60.9 | 98.3 | — | 60.6 | — | 2.419 |
+| `hybrid` | 29.3 | 42.1 | 52.3 | 8.2 | 41.4 | — | 0.54 |
+| `hybrid_rerank` | 520.6 | 810.3 | 1141.4 | 9.1 | 38.4 | 785.0 | 6.6 |
+
+nDCG@10 by query set:
+
+| Variant | inline_acl (n) | inline_nonacl (n) | manual_acl (n) | manual_iclr (n) |
+|---|---|---|---|---|
+| `bm25` | 0.221 (19) | 0.395 (50) | 0.434 (31) | 0.614 (18) |
+| `dense` | 0.275 (19) | 0.397 (50) | 0.433 (31) | 0.521 (18) |
+| `hybrid` | 0.373 (19) | 0.447 (50) | 0.498 (31) | 0.638 (18) |
+| `hybrid_rerank` | 0.384 (19) | 0.518 (50) | 0.625 (31) | 0.687 (18) |
+
+nDCG@10 by specificity:
+
+| Variant | 0 (n) | 1 (n) |
+|---|---|---|
+| `bm25` | 0.273 (29) | 0.456 (89) |
+| `dense` | 0.326 (29) | 0.432 (89) |
+| `hybrid` | 0.392 (29) | 0.506 (89) |
+| `hybrid_rerank` | 0.491 (29) | 0.569 (89) |
+
+Paired differences, candidate minus baseline, 95% interval over the same family resamples:
+
+| Candidate vs baseline | Metric | Baseline | Candidate | Difference [interval] | Wins / losses / ties |
+|---|---|---|---|---|---|
+| `dense` vs `bm25` | ndcg@10 | 0.411 | 0.406 | -0.005 [-0.077, +0.066] | 34 / 28 / 56 |
+| `dense` vs `bm25` | recall@50 | 0.674 | 0.746 | +0.072 [-0.030, +0.170] | 22 / 13 / 83 |
+| `dense` vs `bm25` | mrr@10 | 0.367 | 0.367 | -0.001 [-0.073, +0.070] | 34 / 28 / 56 |
+| `hybrid_rerank` vs `hybrid` | ndcg@10 | 0.478 | 0.550 | +0.072 [+0.011, +0.134] | 34 / 21 / 63 |
+| `hybrid_rerank` vs `hybrid` | recall@50 | 0.805 | 0.805 | +0.000 [+0.000, +0.000] | 0 / 0 / 118 |
+| `hybrid_rerank` vs `hybrid` | mrr@10 | 0.436 | 0.516 | +0.080 [+0.010, +0.149] | 34 / 21 / 63 |
+| `hybrid` vs `dense` | ndcg@10 | 0.406 | 0.478 | +0.072 [+0.018, +0.117] | 39 / 13 / 66 |
+| `hybrid` vs `dense` | recall@50 | 0.746 | 0.805 | +0.059 [-0.008, +0.127] | 11 / 4 / 103 |
+| `hybrid` vs `dense` | mrr@10 | 0.367 | 0.436 | +0.069 [+0.017, +0.114] | 39 / 13 / 66 |
 
 ## Analysis
 

@@ -8,10 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 isolated persistence harness, canonical paper identity with provenance, parser and
 chunker, durable job queue with source adapters, and immutable corpus snapshots with a
 coverage endpoint. `docs/superpowers/progress.md` is the live task and gate board — read
-it before assuming anything about status. M2 is under way: P2.1 (metrics, labels, exact
-BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded reranking,
-deadlines), P2.4 (the search API) and P2.5 (retrieval ablations) are done, and release
-`m2-20260924T095724Z` is **active** in Qdrant — 85,729 paper and 3,426,221 chunk points.
+it before assuming anything about status. M2's retrieval work is complete and **G2 passes**: P2.1 (metrics,
+labels, exact BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded
+reranking, deadlines), P2.4 (the search API), P2.5 (retrieval ablations) and P2.6 (the
+recall gaps) are done, and release `m2-20260924T095724Z` is **active** in Qdrant — 85,729
+paper and 3,426,221 chunk points.
 `copilot_v2` is migrated to `0006_search_ordering_mode`: the hosted-LLM spend ledger
 (`0005`), then a wider ordering mode for `hybrid_rerank_llm`. E3 (LitSearch's own corpus, the primary G2 evidence) selects
 `hybrid_rerank` under the pre-registered rule, superseding P2.5's underpowered "retain
@@ -35,8 +36,11 @@ scored by its best evidence chunk) were pre-registered and promoted on validatio
 (Recall@50 +0.135 [+0.058, +0.231], nDCG@10 +0.060 [+0.025, +0.097], p95 597 ms) and are
 now `candidates.source: chunks` in `configs/search.yaml` (spec §7). LitSearch's release
 has no chunk collection and stays at paper level. GPU policy: evaluate and demo only on an
-idle GPU. The locked test, run once with `--locked-test`, has **not** been run and waits
-for the user's go-ahead; then P3.1.
+idle GPU. **The locked test split was run once on 2026-10-06** with the user's go-ahead
+(`reports/m2-locked-test.md`): G2 is met and the M2 release is `hybrid_rerank` over
+chunk-level candidates. The test split is spent for this release. Open item: right after a
+cold start the chunk-level dense branch exceeds its 1 s deadline for about a dozen queries
+until Qdrant's page cache warms. Next: P3.1.
 
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
 `[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU

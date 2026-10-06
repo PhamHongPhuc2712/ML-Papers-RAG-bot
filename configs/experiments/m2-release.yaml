@@ -1,0 +1,49 @@
+# The locked test on our corpus, for the M2 release decision (G2). Scored once, with
+# --locked-test, on an idle GPU, with the user's go-ahead (given 2026-10-06). No decision
+# block: the test split never chooses; it records what the chosen configuration does.
+#
+#   eval retrieval --config configs/experiments/m2-release.yaml --split test --locked-test \
+#     --out reports/retrieval/m2-release
+#
+# The four baselines run under configs/search.yaml as shipped (candidates.source: chunks,
+# P2.6), and the previous first stage, titles and abstracts, is kept beside them for the
+# record. In-domain slice: the 48 test queries whose gold papers are in our corpus.
+schema_version: 1
+name: m2-release
+
+dataset:
+  path: data/fixtures/retrieval
+  query_text: benchmarks/litsearch-dataset/queries.jsonl
+  slice: in_domain
+
+corpus:
+  release: m2-20260924T095724Z
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: bm25
+    mode: bm25
+  - name: dense
+    mode: dense
+  - name: hybrid
+    mode: hybrid
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+  # P2.5's configuration, before P2.6: the same stack over titles and abstracts.
+  - name: hybrid_rerank_papers
+    mode: hybrid_rerank
+    candidates: papers
+    changes: the first stage before P2.6, titles and abstracts instead of chunks
