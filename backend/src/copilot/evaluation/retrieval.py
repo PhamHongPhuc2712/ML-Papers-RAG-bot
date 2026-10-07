@@ -49,7 +49,7 @@ from ..search.service import (
     SearchUnavailable,
     Stage,
 )
-from .datasets import SPLITS, Dataset, hydrate, read_dataset
+from .datasets import RETRIEVAL_SPLIT, SPLITS, Dataset, hydrate, read_dataset
 from .metrics import evaluate
 from .regression import validate_manifest
 
@@ -463,7 +463,7 @@ def select_queries(
 ) -> list[EvalQuery]:
     """A split's queries with their labels in our corpus, in query-id order."""
 
-    if split not in SPLITS:
+    if split not in (*SPLITS, RETRIEVAL_SPLIT):
         raise ExperimentError("unknown_split", split)
     assigned = {record.query_id: record for record in dataset.splits}
     from .litsearch import litsearch_paper_id
@@ -560,6 +560,10 @@ class QueryResult:
     warnings: list[str] = field(default_factory=list)
     failure: str | None = None
     specificity: int | None = None
+    # Branch name to the best chunk of the rank-1 paper, when candidates came through
+    # chunks and the branch tracked them (ORB plan, O3: did the hit land in the gold
+    # section?). Empty for paper-level candidates.
+    best_chunks: dict[str, str] = field(default_factory=dict)
 
     def row(self) -> dict[str, Any]:
         return {
@@ -577,6 +581,7 @@ class QueryResult:
             "stages": json.dumps(self.stages, sort_keys=True),
             "warnings": self.warnings,
             "failure": self.failure,
+            "best_chunks": json.dumps(self.best_chunks, sort_keys=True),
         }
 
 
@@ -587,7 +592,12 @@ def _recall(pool: Iterable[str], relevant: frozenset[str]) -> float | None:
 
 
 def _failed(
-    variant: Variant, query: EvalQuery, experiment: Experiment, seconds: float, code: str
+    variant: Variant,
+    query: EvalQuery,
+    experiment: Experiment,
+    seconds: float,
+    code: str,
+    detail: str = "",
 ) -> QueryResult:
     zeros: dict[str, Any] = {name: 0.0 for name in metric_names(experiment)}
     zeros.update({f"judged@{k}": None for k in cutoffs(experiment)})
@@ -602,6 +612,9 @@ def _failed(
         candidate_recall=0.0,
         rerank_pool_recall=0.0 if variant.mode in RERANKED else None,
         seconds=seconds,
+        # The failure's detail (each branch's error) travels as the row's only warning,
+        # so a failed query says why without a trace of its own.
+        warnings=[detail] if detail else [],
         failure=code,
         specificity=query.specificity,
     )
@@ -614,8 +627,13 @@ def run_query(
     release: ReleaseRecord,
     experiment: Experiment,
     clock: Callable[[], float] = time.monotonic,
+    trackers: Mapping[str, Any] | None = None,
 ) -> QueryResult:
-    """One query through the service; a failure is a scored zero, never an absence."""
+    """One query through the service; a failure is a scored zero, never an absence.
+
+    ``trackers`` names the branch retrievers that expose ``best_chunks``; the rank-1
+    paper's best chunk in each is recorded with the result.
+    """
 
     started = clock()
     try:
@@ -632,7 +650,7 @@ def run_query(
     try:
         ranking = service.rank(request, release=release)
     except SearchUnavailable as error:
-        return _failed(variant, query, experiment, clock() - started, error.code)
+        return _failed(variant, query, experiment, clock() - started, error.code, error.detail)
     seconds = clock() - started
     ranked = [paper_id for paper_id, _ in ranking.ordering.items[: experiment.depth]]
     stages = ranking.trace.stages
@@ -642,6 +660,12 @@ def run_query(
         for paper_id, _ in stages.get(branch, {}).get("candidates", [])
     }
     rerank = stages.get("rerank", {}).get("candidates")
+    best_chunks: dict[str, str] = {}
+    if ranked and trackers:
+        for branch, retriever in trackers.items():
+            found = getattr(retriever, "best_chunks", {}).get(ranked[0])
+            if found:
+                best_chunks[branch] = str(found)
     return QueryResult(
         variant=variant.name,
         query_id=query.query_id,
@@ -664,6 +688,7 @@ def run_query(
         },
         warnings=list(ranking.ordering.warnings),
         specificity=query.specificity,
+        best_chunks=best_chunks,
     )
 
 
@@ -1276,16 +1301,15 @@ def run_retrieval(
     writing nothing, once the ledger shows its real spend past it.
     """
 
-    from qdrant_client import QdrantClient
-
     from ..corpus.releases import load_release
     from ..db.session import make_engine
     from ..search.chunks import dense_branch, lexical_branch
+    from ..search.client import qdrant_client
     from ..search.index import CHUNKS
     from ..search.service import load_search_config
 
     experiment = load_experiment(config)
-    if split not in SPLITS:
+    if split not in (*SPLITS, RETRIEVAL_SPLIT):
         raise ExperimentError("unknown_split", split)
     if split == "test" and not locked_test:
         raise ExperimentError(
@@ -1297,9 +1321,15 @@ def run_retrieval(
     if not queries:
         raise ExperimentError("no_queries", split)
     # Warm-up queries come from another split, so no timed query is pre-cached,
-    # and never from test, which is read only when it is being scored.
-    warm_split = "validation" if split == "development" else "development"
-    warm_queries = load_queries(experiment, warm_split, data_dir)[:WARMUP_QUERIES]
+    # and never from test, which is read only when it is being scored. A benchmark
+    # read as one split has no other split: its warm-up takes the split's own last
+    # queries, which the manifest says, and its timing is a read, not a measurement.
+    if split == RETRIEVAL_SPLIT:
+        warm_split = RETRIEVAL_SPLIT
+        warm_queries = queries[-WARMUP_QUERIES:]
+    else:
+        warm_split = "validation" if split == "development" else "development"
+        warm_queries = load_queries(experiment, warm_split, data_dir)[:WARMUP_QUERIES]
     # Every variant's configuration is settled before anything loads, so an override
     # that cannot apply fails in seconds rather than after the models warm up.
     search_config = load_search_config(experiment.search)
@@ -1327,7 +1357,7 @@ def run_retrieval(
 
     before = gpu_before_run()
     engine = make_engine(database_url)
-    client = QdrantClient(url=qdrant_url, timeout=60)
+    client = qdrant_client(qdrant_url, timeout=60)
     releases = {
         name: load_release(engine, name)
         for name in {experiment.release_for(v) for v in experiment.variants}
@@ -1396,12 +1426,25 @@ def run_retrieval(
                 )
             source = sources[variant.name]
             k = configs[variant.name].rrf_k
+            lexical = lexical_branch(engine, client, source=source, k=k, track_best_chunks=True)
+            dense = dense_branch(
+                engine,
+                client,
+                embedder,
+                source=source,
+                max_tokens=max_tokens,
+                k=k,
+                track_best_chunks=True,
+            )
+            trackers = {
+                name: branch
+                for name, branch in (("lexical", lexical), ("dense", dense))
+                if hasattr(branch, "best_chunks")
+            }
             service = SearchService(
                 engine=engine,
-                lexical=lexical_branch(engine, client, source=source, k=k),
-                dense=dense_branch(
-                    engine, client, embedder, source=source, max_tokens=max_tokens, k=k
-                ),
+                lexical=lexical,
+                dense=dense,
                 reranker=reranker,
                 config=configs[variant.name],
                 papers=papers.get(release.id),
@@ -1417,7 +1460,11 @@ def run_retrieval(
                 warmups[variant.name] = round(time.monotonic() - started, 3)
                 rows: list[QueryResult] = []
                 for query in queries:
-                    rows.append(run_query(service, variant, query, release, experiment))
+                    rows.append(
+                        run_query(
+                            service, variant, query, release, experiment, trackers=trackers
+                        )
+                    )
                     if listwise is not None and ledger is not None and max_spend_usd is not None:
                         spent = sum(
                             ledger.run_spend(entry["llm"]["ledger_run_id"])

@@ -587,10 +587,9 @@ def run_build_index(
     import sys
     import time
 
-    from qdrant_client import QdrantClient
-
     from .corpus.releases import load_release
     from .models.embeddings import TransformerEmbedding, load_embedding_spec
+    from .search.client import qdrant_client
     from .search.index import build_index, load_index_config, wait_until_indexed
 
     default_url, default_prefix = _service_settings()
@@ -601,7 +600,7 @@ def run_build_index(
     config = load_index_config(models)
     model = TransformerEmbedding(spec, data_dir, device=device)
     # Upserts of a few hundred 1024-d points can outlast the client's 5 s default.
-    client = QdrantClient(url=url, timeout=300)
+    client = qdrant_client(url, timeout=300)
     engine = make_engine(database_url)
     last = [0.0]
 
@@ -656,14 +655,13 @@ def run_build_index(
 def _release_validation(
     release: str, *, models: Path, database_url: str, qdrant_url: str | None
 ) -> list[str]:
-    from qdrant_client import QdrantClient
-
     from .corpus.releases import load_release
     from .models.embeddings import load_embedding_spec
+    from .search.client import qdrant_client
     from .search.index import release_problems
 
     spec = load_embedding_spec(models)
-    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=300)
     engine = make_engine(database_url)
     try:
         return release_problems(
@@ -693,14 +691,13 @@ def run_activate(
 ) -> dict[str, object]:
     """Switch the serving pointer to an explicitly named, fully validated release."""
 
-    from qdrant_client import QdrantClient
-
     from .corpus.releases import activate_release, capture_release
     from .models.embeddings import load_embedding_spec
+    from .search.client import qdrant_client
     from .search.index import index_validator
 
     spec = load_embedding_spec(models)
-    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=300)
     engine = make_engine(database_url)
     try:
         previous = capture_release(engine)
@@ -724,11 +721,10 @@ def run_drop_index(
 
     import shutil
 
-    from qdrant_client import QdrantClient
-
     from .corpus.releases import drop_release
+    from .search.client import qdrant_client
 
-    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=300)
     engine = make_engine(database_url)
     try:
         record = drop_release(engine, release)
@@ -829,15 +825,14 @@ def run_compare_oracle(
     import statistics
     import time
 
-    from qdrant_client import QdrantClient
-
     from .corpus.releases import load_release
+    from .search.client import qdrant_client
     from .search.index import CANARY_SLACK, PAPERS, same_ranking, snapshot_papers
     from .search.lexical import BM25
     from .search.sparse import SparseRetriever
 
     engine = make_engine(database_url)
-    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=300)
     try:
         record = load_release(engine, release)
         build = record.counts[PAPERS]
@@ -915,9 +910,9 @@ def run_compare_reranker_precision(
     import time
 
     import numpy as np
-    from qdrant_client import QdrantClient
 
     from .corpus.releases import load_release
+    from .search.client import qdrant_client
     from .search.index import snapshot_papers
     from .search.rerank import CrossEncoderReranker, load_reranker_spec
     from .search.service import PaperStore
@@ -925,7 +920,7 @@ def run_compare_reranker_precision(
 
     spec = load_reranker_spec(models)
     engine = make_engine(database_url)
-    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=300)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=300)
     try:
         record = load_release(engine, release)
         titles = [
@@ -1033,10 +1028,9 @@ def run_search_pilot(
     import time
     from collections import Counter
 
-    from qdrant_client import QdrantClient
-
     from .contracts import PaperFilters, SearchRequest
     from .models.embeddings import TransformerEmbedding, load_embedding_spec
+    from .search.client import qdrant_client
     from .search.dense import DenseRetriever
     from .search.rerank import CrossEncoderReranker, load_reranker_spec
     from .search.service import (
@@ -1053,7 +1047,7 @@ def run_search_pilot(
         texts = texts[:limit_queries]
     embedding = load_embedding_spec(models)
     engine = make_engine(database_url)
-    client = QdrantClient(url=qdrant_url or _service_settings()[0], timeout=60)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=60)
     model = TransformerEmbedding(embedding, data_dir)
     reranker = CrossEncoderReranker(load_reranker_spec(models), data_dir)
     runner = ThreadedStageRunner()
@@ -1625,6 +1619,14 @@ def _parser() -> argparse.ArgumentParser:
     orb_load.add_argument("--limit", type=int, default=None)
     orb_load.add_argument("--delay", type=float, default=1.0, help="seconds between downloads")
     orb_load.add_argument("--data-dir", type=Path, default=None)
+    orb_sections = evaluation_commands.add_parser(
+        "orb-sections", help="score a recorded ORB run's rank-1 hits against the gold sections"
+    )
+    orb_sections.add_argument("--run", type=Path, required=True)
+    orb_sections.add_argument("--split", default="retrieval")
+    orb_sections.add_argument("--dataset", type=Path, default=Path("data/fixtures/orb"))
+    orb_sections.add_argument("--database-url", required=True, help="the copilot_orb database")
+    orb_sections.add_argument("--data-dir", type=Path, default=None)
     report = evaluation_commands.add_parser("report", help="re-render an experiment's report.md")
     report.add_argument("--out", type=Path, required=True)
     gaps = evaluation_commands.add_parser(
@@ -1635,7 +1637,7 @@ def _parser() -> argparse.ArgumentParser:
         "--split",
         action="append",
         default=None,
-        choices=["development", "validation"],
+        choices=["development", "validation", "retrieval"],
         help="repeatable; defaults to every recorded diagnostic split",
     )
     gaps.add_argument("--focus", default="hybrid_rerank", help="variant to break down by slice")
@@ -1739,6 +1741,22 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             delay=args.delay,
         )
+    elif args.command == "eval" and args.eval_command == "orb-sections":
+        from .evaluation.orb import OrbPaths
+        from .evaluation.sections import orb_sections as score_sections
+
+        engine = make_engine(args.database_url)
+        try:
+            written = score_sections(
+                args.run,
+                split=args.split,
+                dataset=args.dataset,
+                corpus_dir=OrbPaths(_data_dir(args.data_dir, parser) / "benchmarks" / "orb").corpus,
+                engine=engine,
+            )
+        finally:
+            engine.dispose()
+        result = {"report": str(written), "data": str(written.with_suffix(".json"))}
     elif args.command == "eval" and args.eval_command == "orb-dataset":
         result = run_orb_dataset(
             out=args.out,

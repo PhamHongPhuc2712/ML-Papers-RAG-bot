@@ -37,6 +37,7 @@ from ..config import Settings
 from ..contracts import ContractModel, PaperFilters, PaperSummary, SearchRequest, SearchResponse
 from ..corpus.releases import ReleaseRecord, capture_release
 from .cache import CursorError, OrderingCache, decode_cursor, encode_cursor, query_key, ranking_key
+from .client import qdrant_client
 from .index import CHUNKS, DENSE, PAPERS, IndexBuildError, collection_names, qdrant_filter
 from .service import (
     CandidateRetriever,
@@ -376,8 +377,8 @@ class SearchApi:
     def start(self) -> None:
         with self._lock:
             if self._client is None:
-                self._client = QdrantClient(
-                    url=self._settings.qdrant_url, api_key=self._settings.qdrant_api_key, timeout=10
+                self._client = qdrant_client(
+                    self._settings.qdrant_url, api_key=self._settings.qdrant_api_key, timeout=10
                 )
             if self._service is None:
                 self._service = default_search_service(

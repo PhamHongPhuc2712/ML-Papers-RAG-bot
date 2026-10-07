@@ -1,0 +1,608 @@
+{
+  "comparable_to_published": false,
+  "depth": 50,
+  "focus": "hybrid_rerank",
+  "run": "reports/retrieval/orb-text",
+  "splits": {
+    "retrieval": {
+      "gold_ranks": {
+        "bm25": {
+          "all": {
+            "1": 1730,
+            "11-20": 13,
+            "2-5": 113,
+            "21-50": 13,
+            "6-10": 20,
+            "absent": 25
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 818,
+              "11-20": 4,
+              "2-5": 48,
+              "21-50": 8,
+              "6-10": 6,
+              "absent": 9
+            },
+            "orb_extractive": {
+              "1": 912,
+              "11-20": 9,
+              "2-5": 65,
+              "21-50": 5,
+              "6-10": 14,
+              "absent": 16
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1730,
+              "11-20": 13,
+              "2-5": 113,
+              "21-50": 13,
+              "6-10": 20,
+              "absent": 25
+            }
+          }
+        },
+        "bm25_papers": {
+          "all": {
+            "1": 1110,
+            "11-20": 63,
+            "2-5": 226,
+            "21-50": 94,
+            "6-10": 98,
+            "absent": 323
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 651,
+              "11-20": 25,
+              "2-5": 67,
+              "21-50": 31,
+              "6-10": 36,
+              "absent": 83
+            },
+            "orb_extractive": {
+              "1": 459,
+              "11-20": 38,
+              "2-5": 159,
+              "21-50": 63,
+              "6-10": 62,
+              "absent": 240
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1110,
+              "11-20": 63,
+              "2-5": 226,
+              "21-50": 94,
+              "6-10": 98,
+              "absent": 323
+            }
+          }
+        },
+        "dense": {
+          "all": {
+            "1": 1641,
+            "11-20": 22,
+            "2-5": 159,
+            "21-50": 19,
+            "6-10": 34,
+            "absent": 39
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 799,
+              "11-20": 8,
+              "2-5": 61,
+              "21-50": 4,
+              "6-10": 9,
+              "absent": 12
+            },
+            "orb_extractive": {
+              "1": 842,
+              "11-20": 14,
+              "2-5": 98,
+              "21-50": 15,
+              "6-10": 25,
+              "absent": 27
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1641,
+              "11-20": 22,
+              "2-5": 159,
+              "21-50": 19,
+              "6-10": 34,
+              "absent": 39
+            }
+          }
+        },
+        "dense_papers": {
+          "all": {
+            "1": 1061,
+            "11-20": 90,
+            "2-5": 248,
+            "21-50": 106,
+            "6-10": 89,
+            "absent": 320
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 637,
+              "11-20": 31,
+              "2-5": 88,
+              "21-50": 25,
+              "6-10": 29,
+              "absent": 83
+            },
+            "orb_extractive": {
+              "1": 424,
+              "11-20": 59,
+              "2-5": 160,
+              "21-50": 81,
+              "6-10": 60,
+              "absent": 237
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1061,
+              "11-20": 90,
+              "2-5": 248,
+              "21-50": 106,
+              "6-10": 89,
+              "absent": 320
+            }
+          }
+        },
+        "hybrid": {
+          "all": {
+            "1": 1741,
+            "11-20": 15,
+            "2-5": 109,
+            "21-50": 11,
+            "6-10": 17,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 834,
+              "11-20": 6,
+              "2-5": 37,
+              "21-50": 5,
+              "6-10": 5,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 907,
+              "11-20": 9,
+              "2-5": 72,
+              "21-50": 6,
+              "6-10": 12,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1741,
+              "11-20": 15,
+              "2-5": 109,
+              "21-50": 11,
+              "6-10": 17,
+              "absent": 21
+            }
+          }
+        },
+        "hybrid_papers": {
+          "all": {
+            "1": 1171,
+            "11-20": 57,
+            "2-5": 250,
+            "21-50": 100,
+            "6-10": 80,
+            "absent": 256
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 668,
+              "11-20": 23,
+              "2-5": 92,
+              "21-50": 28,
+              "6-10": 22,
+              "absent": 60
+            },
+            "orb_extractive": {
+              "1": 503,
+              "11-20": 34,
+              "2-5": 158,
+              "21-50": 72,
+              "6-10": 58,
+              "absent": 196
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1171,
+              "11-20": 57,
+              "2-5": 250,
+              "21-50": 100,
+              "6-10": 80,
+              "absent": 256
+            }
+          }
+        },
+        "hybrid_rerank": {
+          "all": {
+            "1": 1268,
+            "11-20": 96,
+            "2-5": 257,
+            "21-50": 167,
+            "6-10": 105,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 711,
+              "11-20": 24,
+              "2-5": 84,
+              "21-50": 41,
+              "6-10": 27,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 557,
+              "11-20": 72,
+              "2-5": 173,
+              "21-50": 126,
+              "6-10": 78,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1268,
+              "11-20": 96,
+              "2-5": 257,
+              "21-50": 167,
+              "6-10": 105,
+              "absent": 21
+            }
+          }
+        },
+        "hybrid_rerank_papers": {
+          "all": {
+            "1": 1245,
+            "11-20": 53,
+            "2-5": 237,
+            "21-50": 47,
+            "6-10": 76,
+            "absent": 256
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 708,
+              "11-20": 13,
+              "2-5": 78,
+              "21-50": 12,
+              "6-10": 22,
+              "absent": 60
+            },
+            "orb_extractive": {
+              "1": 537,
+              "11-20": 40,
+              "2-5": 159,
+              "21-50": 35,
+              "6-10": 54,
+              "absent": 196
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1245,
+              "11-20": 53,
+              "2-5": 237,
+              "21-50": 47,
+              "6-10": 76,
+              "absent": 256
+            }
+          }
+        }
+      },
+      "litsearch_cutoffs": {
+        "bm25": {},
+        "bm25_papers": {},
+        "dense": {},
+        "dense_papers": {},
+        "hybrid": {},
+        "hybrid_papers": {},
+        "hybrid_rerank": {},
+        "hybrid_rerank_papers": {}
+      },
+      "misses": {
+        "hybrid_rerank": {
+          "orb_abstractive / specific": {
+            "beyond_depth": [
+              "d9653b7c-5ace-4aa4-ad81-39c3e739a67c",
+              "f6ed58d1-f346-4e32-b520-17dacd41dc42"
+            ],
+            "not_in_pool": [
+              "82aadc22-ff94-4eb7-b9c5-394dc2d18980",
+              "8431252b-a908-42eb-ae19-75e1c1d68245",
+              "e4aa5613-8f28-44a6-ac2a-4e3186c624e0",
+              "fc4d4614-1926-4824-b9da-cfdcc2d0132e"
+            ],
+            "queries": 893
+          },
+          "orb_extractive / specific": {
+            "beyond_depth": [
+              "01416eb6-2408-491e-a971-5647f51d7af8",
+              "57974a20-83f8-4a30-b935-ca111cc76f08",
+              "6e96f396-0181-4857-8121-7027e4d8baed",
+              "7f25612d-9419-4e0a-a89a-9a5a6638e2a6",
+              "8459f7cb-dc3a-4327-8195-98e269c487a6",
+              "91ef1af9-518c-4588-bdc6-5b8ec42095c8",
+              "c83b2de2-c2b8-4d33-aaab-a843bd1aa46b"
+            ],
+            "not_in_pool": [
+              "0ee1e0b4-ba87-4b4b-9eb3-ccae367efaca",
+              "2a20d5ac-d249-4bc8-8f83-4bdab8c800d1",
+              "51ca04bc-2c6e-439d-a36d-ffbd993e684e",
+              "579c73fa-0827-4d11-bca1-6b81e1da2c07",
+              "781eab48-5ba2-40ba-99e6-b00a46817d77",
+              "ad569d84-fb7b-430f-94f7-21a7e923f5bd",
+              "cf5e78d1-9121-41ad-93be-30b28c2253ac",
+              "d6ad1c29-0565-474a-af9b-a17b9622b852"
+            ],
+            "queries": 1021
+          }
+        }
+      },
+      "queries": 1914,
+      "stage_losses": {
+        "bm25": {
+          "all": {
+            "beyond_depth": 0.001567398119122257,
+            "not_in_pool": 0.011494252873563218,
+            "queries": 1914,
+            "within_depth": 0.9869383490073145
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.007838745800671893,
+              "queries": 893,
+              "within_depth": 0.9899216125419933
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0009794319294809011,
+              "not_in_pool": 0.014691478942213516,
+              "queries": 1021,
+              "within_depth": 0.9843290891283056
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.001567398119122257,
+              "not_in_pool": 0.011494252873563218,
+              "queries": 1914,
+              "within_depth": 0.9869383490073145
+            }
+          }
+        },
+        "bm25_papers": {
+          "all": {
+            "beyond_depth": 0.03239289446185998,
+            "not_in_pool": 0.13636363636363635,
+            "queries": 1914,
+            "within_depth": 0.8312434691745036
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.023516237402015677,
+              "not_in_pool": 0.06942889137737962,
+              "queries": 893,
+              "within_depth": 0.9070548712206047
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.040156709108716944,
+              "not_in_pool": 0.19490695396669933,
+              "queries": 1021,
+              "within_depth": 0.7649363369245837
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.03239289446185998,
+              "not_in_pool": 0.13636363636363635,
+              "queries": 1914,
+              "within_depth": 0.8312434691745036
+            }
+          }
+        },
+        "dense": {
+          "all": {
+            "beyond_depth": 0.007836990595611285,
+            "not_in_pool": 0.012539184952978056,
+            "queries": 1914,
+            "within_depth": 0.9796238244514106
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0033594624860022394,
+              "not_in_pool": 0.010078387458006719,
+              "queries": 893,
+              "within_depth": 0.986562150055991
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.011753183153770812,
+              "not_in_pool": 0.014691478942213516,
+              "queries": 1021,
+              "within_depth": 0.9735553379040157
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.007836990595611285,
+              "not_in_pool": 0.012539184952978056,
+              "queries": 1914,
+              "within_depth": 0.9796238244514106
+            }
+          }
+        },
+        "dense_papers": {
+          "all": {
+            "beyond_depth": 0.03918495297805643,
+            "not_in_pool": 0.12800417972831765,
+            "queries": 1914,
+            "within_depth": 0.832810867293626
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.019036954087346025,
+              "not_in_pool": 0.07390817469204927,
+              "queries": 893,
+              "within_depth": 0.9070548712206047
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.05680705190989226,
+              "not_in_pool": 0.17531831537708129,
+              "queries": 1021,
+              "within_depth": 0.7678746327130265
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.03918495297805643,
+              "not_in_pool": 0.12800417972831765,
+              "queries": 1914,
+              "within_depth": 0.832810867293626
+            }
+          }
+        },
+        "hybrid": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        },
+        "hybrid_papers": {
+          "all": {
+            "beyond_depth": 0.056948798328108674,
+            "not_in_pool": 0.0768025078369906,
+            "queries": 1914,
+            "within_depth": 0.8662486938349008
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.030235162374020158,
+              "not_in_pool": 0.036954087346024636,
+              "queries": 893,
+              "within_depth": 0.9328107502799552
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.08031341821743389,
+              "not_in_pool": 0.11165523996082272,
+              "queries": 1021,
+              "within_depth": 0.8080313418217434
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.056948798328108674,
+              "not_in_pool": 0.0768025078369906,
+              "queries": 1914,
+              "within_depth": 0.8662486938349008
+            }
+          }
+        },
+        "hybrid_rerank": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        },
+        "hybrid_rerank_papers": {
+          "all": {
+            "beyond_depth": 0.056948798328108674,
+            "not_in_pool": 0.0768025078369906,
+            "queries": 1914,
+            "within_depth": 0.8662486938349008
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.030235162374020158,
+              "not_in_pool": 0.036954087346024636,
+              "queries": 893,
+              "within_depth": 0.9328107502799552
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.08031341821743389,
+              "not_in_pool": 0.11165523996082272,
+              "queries": 1021,
+              "within_depth": 0.8080313418217434
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.056948798328108674,
+              "not_in_pool": 0.0768025078369906,
+              "queries": 1914,
+              "within_depth": 0.8662486938349008
+            }
+          }
+        }
+      }
+    }
+  }
+}

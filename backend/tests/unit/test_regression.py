@@ -203,6 +203,8 @@ def test_a_query_whose_search_fails_is_scored_zero_not_dropped():
     )
     assert result.failure == "candidates_unavailable"
     assert result.metrics["ndcg@10"] == 0.0 and result.metrics["judged@10"] is None
+    # Why it failed travels with the row: each branch's error, never silently dropped.
+    assert result.warnings == ["lexical:ConnectionError,dense:ConnectionError"]
 
 
 class _Papers:

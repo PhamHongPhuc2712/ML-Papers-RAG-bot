@@ -35,6 +35,7 @@ class SparseRetriever:
         *,
         kind: str = PAPERS,
         group_papers: bool = False,
+        track_best_chunks: bool = False,
     ) -> None:
         if group_papers and kind != CHUNKS:
             raise IndexBuildError("group_papers_requires_chunks", kind)
@@ -42,6 +43,10 @@ class SparseRetriever:
         self._client = client
         self._kind = kind
         self._group_papers = group_papers
+        # Diagnostic, opt-in and for one caller at a time: the last grouped search's
+        # best chunk per paper. The evaluation harness reads it; the API never does.
+        self._track_best_chunks = track_best_chunks
+        self.best_chunks: dict[str, str] = {}
         self._releases: dict[str, tuple[ReleaseRecord, BM25Vocabulary]] = {}
 
     def _release(self, release_id: str) -> tuple[ReleaseRecord, BM25Vocabulary]:
@@ -70,6 +75,8 @@ class SparseRetriever:
             return []
         vector = models.SparseVector(indices=list(encoded.indices), values=list(encoded.values))
         if self._group_papers:
+            if self._track_best_chunks:
+                self.best_chunks = {}
             return paper_groups(
                 self._client,
                 release.collection(self._kind),
@@ -77,6 +84,7 @@ class SparseRetriever:
                 using=SPARSE,
                 query_filter=evidence_filter(filters),
                 limit=limit,
+                best_chunks=self.best_chunks if self._track_best_chunks else None,
             )
         hits = self._client.query_points(
             release.collection(self._kind),

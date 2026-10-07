@@ -61,6 +61,7 @@ class SearchUnavailable(RuntimeError):
 
     def __init__(self, code: str, detail: str = "", *, retryable: bool = True) -> None:
         self.code = code
+        self.detail = detail
         self.retryable = retryable
         super().__init__(f"{code}:{detail}" if detail else code)
 
@@ -542,7 +543,12 @@ class SearchService:
                 trace.warnings.append(_warning(name, outcome.error))
         if not lists:
             trace.seconds = self._clock() - started
-            raise SearchUnavailable("candidates_unavailable", ",".join(trace.warnings))
+            # The detail names each branch's error code or exception class, so a run
+            # that lost queries to both branches can say why; the API never sends it.
+            raise SearchUnavailable(
+                "candidates_unavailable",
+                ",".join(f"{name}:{trace.stages[name].get('error')}" for name in branches),
+            )
 
         scores: dict[str, dict[str, float]] = {}
         for name, hits in lists.items():

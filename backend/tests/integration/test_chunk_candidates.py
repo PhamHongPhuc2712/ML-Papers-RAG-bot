@@ -173,6 +173,15 @@ def test_a_run_records_each_variant_s_candidate_source_and_finds_gold_through_ch
         assert row["candidate_recall"] == 1.0
         assert row["ranked"][0] == row["relevant"][0], (row["variant"], row["query_id"])
         assert set(row["ranked"]) <= set(corpus.ids.values())
+        # The rank-1 paper's best chunk per branch is recorded when candidates came
+        # through chunks (ORB plan, O3), and nothing is recorded at paper level.
+        best = json.loads(row["best_chunks"])
+        if row["variant"] in {"hybrid", "hybrid_rerank_both"}:
+            # Paper-level candidates have no chunk; a union branch is not tracked.
+            assert best == {}, row["variant"]
+        else:
+            assert set(best) <= {"lexical", "dense"} and best, row["variant"]
+            assert all(len(chunk_id) == 36 for chunk_id in best.values())
 
 
 def test_the_api_builds_its_branches_from_the_configured_source(

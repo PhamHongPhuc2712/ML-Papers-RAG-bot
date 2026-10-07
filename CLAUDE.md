@@ -83,6 +83,11 @@ Two gitignored env files at the repository root:
 - `.env.test` — only `DATA_DIR`, `TEST_DATABASE_URL`, `TEST_QDRANT_URL`,
   `TEST_QDRANT_COLLECTION_PREFIX`.
 
+**Open Qdrant clients through `search/client.py`** (`qdrant_client(url, timeout=…)`), never
+`QdrantClient(...)` directly: the library turns keep-alive off for `localhost`, and on this
+host a burst of thousands of one-request connections through Docker's port proxy ends in
+`Connection reset by peer` for 10–20 s (found 2026-10-07 on the ORB run).
+
 **Never pass `.env` to pytest.** `DATABASE_URL` in the process environment beats the
 conftest fixture's keyword arguments (pydantic aliases outrank init keywords) and the
 suite then targets the developer database.
@@ -246,6 +251,22 @@ scores by corpusid (`labels: corpusid`) and reads paper text from that snapshot
 uv run --env-file .env --project backend python -m copilot.cli eval litsearch-snapshot
 uv run --env-file .env --project backend python -m copilot.cli search build-index --manifest litsearch-v1/manifest.json --release litsearch-v1 --collections papers
 uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/e3-litsearch.yaml --split validation --out reports/retrieval/e3-litsearch
+```
+
+Open RAG Bench (ORB plan, O1–O3): Vectara's 1,000 arXiv papers and 1,914 text-only
+questions, pinned at `63f6b052` under `${DATA_DIR}/benchmarks/orb/` — **CC-BY-NC-4.0, so no
+question, answer, section or PDF text ever enters git, a report or an export**; the
+repository holds ids, labels and the frozen sample in `data/fixtures/orb/`. The papers go
+through our own pipeline into the separate database `copilot_orb` and the never-activated
+release `orb-v1` (both collections). Retrieval reads all 1,914 queries under the shipped
+configuration in the single `retrieval` split and never decides anything.
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli eval orb-fetch
+uv run --env-file .env --project backend python -m copilot.cli eval orb-load --database-url postgresql+psycopg://...copilot_orb
+uv run --env-file .env --project backend python -m copilot.cli eval orb-dataset --out data/fixtures/orb --database-url ...copilot_orb
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/orb-text-retrieval.yaml --split retrieval --database-url ...copilot_orb --out reports/retrieval/orb-text
+uv run --env-file .env --project backend python -m copilot.cli eval orb-sections --run reports/retrieval/orb-text --database-url ...copilot_orb
 ```
 
 Every run samples the GPU for 5 s before loading a model and marks itself **contended**

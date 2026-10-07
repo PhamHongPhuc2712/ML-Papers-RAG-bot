@@ -33,7 +33,9 @@ from .datasets import read_dataset
 from .metrics import recall_at_k
 from .retrieval import bootstrap_interval, dataset_digest
 
-DIAGNOSTIC_SPLITS = ("development", "validation")
+# The retrieval split is a benchmark read as a whole (Open RAG Bench): diagnosed like
+# development, never chosen on.
+DIAGNOSTIC_SPLITS = ("development", "validation", "retrieval")
 # LitSearch's rubric: broad means no more than 20 papers fit, specific no more than 5.
 BREADTH = {0: "broad", 1: "specific"}
 GROUPS = {

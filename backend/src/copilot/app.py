@@ -21,6 +21,7 @@ from .db.models import CorpusRelease
 from .db.session import get_active_release, make_engine
 from .search.api import SearchApi, install_error_handlers
 from .search.api import router as search_router
+from .search.client import qdrant_client
 from .search.service import SearchService
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,8 @@ def _check_database(engine: Engine, settings: Settings) -> CorpusRelease | None:
 
 
 def _qdrant_client(settings: Settings) -> QdrantClient:
-    return QdrantClient(
-        url=settings.qdrant_url,
+    return qdrant_client(
+        settings.qdrant_url,
         api_key=settings.qdrant_api_key,
         timeout=max(1, int(settings.ready_timeout_seconds)),
     )

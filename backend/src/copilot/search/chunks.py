@@ -42,8 +42,13 @@ def paper_groups(
     using: str,
     query_filter: models.Filter,
     limit: int,
+    best_chunks: dict[str, str] | None = None,
 ) -> list[tuple[str, float]]:
-    """The ``limit`` best papers of a chunk collection, each scored by its best chunk."""
+    """The ``limit`` best papers of a chunk collection, each scored by its best chunk.
+
+    ``best_chunks``, when given, receives each paper's best chunk id: a diagnostic
+    the evaluation harness reads to ask whether the hit fell in the right section.
+    """
 
     groups = client.query_points_groups(
         collection,
@@ -55,7 +60,10 @@ def paper_groups(
         group_size=1,
         with_payload=False,
     ).groups
-    return [(str(group.id), float(group.hits[0].score)) for group in groups if group.hits]
+    hits = [(str(group.id), group.hits[0]) for group in groups if group.hits]
+    if best_chunks is not None:
+        best_chunks.update((paper_id, str(hit.id)) for paper_id, hit in hits)
+    return [(paper_id, float(hit.score)) for paper_id, hit in hits]
 
 
 class CandidateRetriever(Protocol):
@@ -87,7 +95,14 @@ class UnionRetriever:
         return rrf(rankings, self._k)[:limit]
 
 
-def lexical_branch(engine: Any, client: QdrantClient, *, source: str, k: int = RRF_K) -> Any:
+def lexical_branch(
+    engine: Any,
+    client: QdrantClient,
+    *,
+    source: str,
+    k: int = RRF_K,
+    track_best_chunks: bool = False,
+) -> Any:
     """The BM25 branch for a candidate source (``configs/search.yaml``, ``candidates.source``)."""
 
     from .index import CHUNKS
@@ -96,7 +111,9 @@ def lexical_branch(engine: Any, client: QdrantClient, *, source: str, k: int = R
     papers = SparseRetriever(engine, client)
     if source == "papers":
         return papers
-    chunks = SparseRetriever(engine, client, kind=CHUNKS, group_papers=True)
+    chunks = SparseRetriever(
+        engine, client, kind=CHUNKS, group_papers=True, track_best_chunks=track_best_chunks
+    )
     if source == "chunks":
         return chunks
     if source == "both":
@@ -112,6 +129,7 @@ def dense_branch(
     source: str,
     max_tokens: int | None = None,
     k: int = RRF_K,
+    track_best_chunks: bool = False,
 ) -> Any:
     """The dense branch for a candidate source; the query is encoded once per retriever."""
 
@@ -122,7 +140,13 @@ def dense_branch(
     if source == "papers":
         return papers
     chunks = DenseRetriever(
-        engine, client, model, kind=CHUNKS, max_tokens=max_tokens, group_papers=True
+        engine,
+        client,
+        model,
+        kind=CHUNKS,
+        max_tokens=max_tokens,
+        group_papers=True,
+        track_best_chunks=track_best_chunks,
     )
     if source == "chunks":
         return chunks

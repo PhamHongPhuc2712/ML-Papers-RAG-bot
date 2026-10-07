@@ -83,6 +83,12 @@ compares against frozen outputs. That makes it the check CI can run.
   Recall@10 or nDCG@10.
 - **A failed query stays in every denominator.** It scores zero, its time counts toward
   latency, and the failure is counted by code.
+- **A benchmark read as a whole uses the `retrieval` split** (Open RAG Bench's text slice):
+  every query in one split, no decision ever, warm-up from the split's own last queries,
+  which the manifest says; `eval gaps` diagnoses it like development. `eval orb-sections
+  --run DIR --database-url …copilot_orb` then scores each variant's rank-1 hit against the
+  gold section, writing `sections.md` and `sections.json` beside the run, with the share of
+  queries whose section mapped at all.
 - **Tune on development, choose on validation, lock test.** Only a validation run
   produces a decision. The test split runs only with `--locked-test`, for a release
   decision, and no decision is ever computed from it.

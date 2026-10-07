@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .datasets import SPLITS
+from .datasets import RETRIEVAL_SPLIT, SPLITS
 
 _QUALITY = ("recall@10", "recall@50", "ndcg@10", "mrr@10")
 
@@ -31,7 +31,7 @@ def _signed(value: float) -> str:
 
 def _runs(out: Path) -> dict[str, dict[str, Any]]:
     runs = {}
-    for split in SPLITS:
+    for split in (*SPLITS, RETRIEVAL_SPLIT):
         path = out / split / "metrics.json"
         if path.is_file():
             runs[split] = json.loads(path.read_text(encoding="utf-8"))

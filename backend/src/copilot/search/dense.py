@@ -35,6 +35,7 @@ class DenseRetriever:
         kind: str = PAPERS,
         max_tokens: int | None = None,
         group_papers: bool = False,
+        track_best_chunks: bool = False,
     ) -> None:
         if group_papers and kind != CHUNKS:
             raise IndexBuildError("group_papers_requires_chunks", kind)
@@ -44,6 +45,10 @@ class DenseRetriever:
         self._kind = kind
         self._max_tokens = max_tokens
         self._group_papers = group_papers
+        # Diagnostic, opt-in and for one caller at a time: the last grouped search's
+        # best chunk per paper. The evaluation harness reads it; the API never does.
+        self._track_best_chunks = track_best_chunks
+        self.best_chunks: dict[str, str] = {}
         # A release's collection pair and model never change after staging.
         self._releases: dict[str, ReleaseRecord] = {}
 
@@ -70,6 +75,8 @@ class DenseRetriever:
         validate_vectors(encoded.vectors, self._model.dimensions)
         vector = [float(value) for value in encoded.vectors[0]]
         if self._group_papers:
+            if self._track_best_chunks:
+                self.best_chunks = {}
             return paper_groups(
                 self._client,
                 release.collection(self._kind),
@@ -77,6 +84,7 @@ class DenseRetriever:
                 using=DENSE,
                 query_filter=evidence_filter(filters),
                 limit=limit,
+                best_chunks=self.best_chunks if self._track_best_chunks else None,
             )
         hits = self._client.query_points(
             release.collection(self._kind),
