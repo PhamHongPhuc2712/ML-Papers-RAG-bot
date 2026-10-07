@@ -37,6 +37,10 @@ from typing import Any
 from .litsearch import LITSEARCH_REVISION, LitSearchQuery
 
 SPLITS = ("development", "validation", "test")
+# A benchmark read as a whole rather than tuned on: every query in one split that
+# never produces a decision (Open RAG Bench's text slice). Its answering sample is a
+# separate assignment beside the dataset, not a split of it.
+RETRIEVAL_SPLIT = "retrieval"
 SPLIT_SHARES = {"development": 0.6, "validation": 0.2, "test": 0.2}
 DEFAULT_SEED = 42
 
@@ -281,7 +285,7 @@ def validate_dataset(directory: Path) -> dict[str, Any]:
     families: dict[str, str] = {}
     split_ids: set[str] = set()
     for record in dataset.splits:
-        if record.split not in SPLITS:
+        if record.split not in (*SPLITS, RETRIEVAL_SPLIT):
             raise DatasetError("unknown_split", record.split)
         if record.query_id not in query_ids:
             raise DatasetError("unknown_query", record.query_id)

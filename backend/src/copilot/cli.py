@@ -310,8 +310,11 @@ def run_rechunk(
             shard=shard,
             progress=report,
         )
-        return {"policy": config.chunker.policy, "chunker_version": config.chunker.chunker_version,
-                **stats.as_dict()}
+        return {
+            "policy": config.chunker.policy,
+            "chunker_version": config.chunker.chunker_version,
+            **stats.as_dict(),
+        }
     finally:
         engine.dispose()
 
@@ -409,12 +412,21 @@ def run_corpus(
     def work(item: VenueYear, run_id: str) -> dict[str, object]:
         manifest = paths.manifest(item.venue, item.year)
         command = [
-            sys.executable, "-m", "copilot.cli", "worker", "run",
-            "--database-url", database_url,
-            "--manifest", str(manifest),
-            "--parsing-config", str(parsing_config),
-            "--staging-dir", str(data_dir / "sources"),
-            "--data-dir", str(data_dir),
+            sys.executable,
+            "-m",
+            "copilot.cli",
+            "worker",
+            "run",
+            "--database-url",
+            database_url,
+            "--manifest",
+            str(manifest),
+            "--parsing-config",
+            str(parsing_config),
+            "--staging-dir",
+            str(data_dir / "sources"),
+            "--data-dir",
+            str(data_dir),
         ]
         processes = [
             subprocess.Popen(  # noqa: S603 - fixed argv, no shell
@@ -544,10 +556,14 @@ def run_fetch_model(*, models: Path, data_dir: Path) -> dict[str, object]:
     embedding = load_embedding_spec(models)
     reranker = load_reranker_spec(models)
     return {
-        "embedding": {"identity": embedding.identity,
-                      "directory": str(fetch_model(embedding, data_dir))},
-        "reranker": {"model": f"{reranker.repo}@{reranker.revision}",
-                     "directory": str(fetch_model(reranker, data_dir))},
+        "embedding": {
+            "identity": embedding.identity,
+            "directory": str(fetch_model(embedding, data_dir)),
+        },
+        "reranker": {
+            "model": f"{reranker.repo}@{reranker.revision}",
+            "directory": str(fetch_model(reranker, data_dir)),
+        },
         "verified": True,
     }
 
@@ -1132,8 +1148,11 @@ def run_search_pilot(
         "mode": mode,
         "source": "handwritten" if handwritten else f"litsearch:{split}:in_domain",
         "queries": len(texts),
-        "models": {"embedding": model.identity, "reranker": reranker.identity,
-                   "precision": {"embedding": model.precision, "reranker": reranker.precision}},
+        "models": {
+            "embedding": model.identity,
+            "reranker": reranker.identity,
+            "precision": {"embedding": model.precision, "reranker": reranker.precision},
+        },
         "cold_start_ms": round(1000 * cold, 1),
         "total": summary(totals) if totals else None,
         "stages": {stage: summary(values) for stage, values in stage_seconds.items()},
@@ -1166,6 +1185,44 @@ def run_litsearch_snapshot(*, out: Path, source: Path | None, data_dir: Path) ->
         "out": str(destination / "manifest.json"),
         **{key: manifest[key] for key in ("counts", "digests", "golds")},
     }
+
+
+def run_orb_fetch(*, data_dir: Path, revision: str | None) -> dict[str, Any]:
+    """Fetch Open RAG Bench once, at a pinned commit, under DATA_DIR/benchmarks/orb."""
+
+    from .evaluation.orb import ORB_REVISION, OrbPaths, fetch_orb
+
+    paths = OrbPaths(data_dir / "benchmarks" / "orb")
+    checksums = fetch_orb(paths, revision=revision or ORB_REVISION)
+    return {"root": str(paths.root), "revision": revision or ORB_REVISION, "checksums": checksums}
+
+
+def run_orb_dataset(*, out: Path, data_dir: Path, database_url: str | None) -> dict[str, Any]:
+    """Freeze the text slice twice: text-free in the repository, hydratable under DATA_DIR."""
+
+    from .evaluation.orb import (
+        OrbPaths,
+        dataset_counts,
+        load_orb,
+        paper_ids_for,
+        sample_qa,
+        text_slice,
+        write_orb_dataset,
+    )
+
+    paths = OrbPaths(data_dir / "benchmarks" / "orb")
+    queries = text_slice(load_orb(paths))
+    assignment = sample_qa(queries)
+    paper_ids: dict[str, str] = {}
+    if database_url:
+        engine = make_engine(database_url)
+        try:
+            paper_ids = paper_ids_for({query.doc_id for query in queries}, engine)
+        finally:
+            engine.dispose()
+    write_orb_dataset(queries, assignment, out, include_text=False, paper_ids=paper_ids)
+    write_orb_dataset(queries, assignment, paths.dataset, include_text=True, paper_ids=paper_ids)
+    return {"out": str(out), "hydratable": str(paths.dataset), **dataset_counts(out)}
 
 
 def run_eval_smoke(fixture: Path, *, update: bool) -> dict[str, Any]:
@@ -1204,9 +1261,7 @@ def run_export_schema(out: Path) -> dict[str, object]:
     }
 
 
-def run_llm_spend(
-    *, database_url: str, day: str | None, run_id: str | None
-) -> dict[str, Any]:
+def run_llm_spend(*, database_url: str, day: str | None, run_id: str | None) -> dict[str, Any]:
     """Hosted-LLM calls, tokens and cost by model, for one UTC day or one run."""
 
     from datetime import date
@@ -1215,9 +1270,7 @@ def run_llm_spend(
 
     engine = make_engine(database_url)
     try:
-        return spend_report(
-            engine, day=date.fromisoformat(day) if day else None, run_id=run_id
-        )
+        return spend_report(engine, day=date.fromisoformat(day) if day else None, run_id=run_id)
     finally:
         engine.dispose()
 
@@ -1416,9 +1469,7 @@ def _parser() -> argparse.ArgumentParser:
     pilot.add_argument(
         "--mode", default="hybrid_rerank", choices=["bm25", "dense", "hybrid", "hybrid_rerank"]
     )
-    pilot.add_argument(
-        "--query", action="append", default=[], help="handwritten query; repeatable"
-    )
+    pilot.add_argument("--query", action="append", default=[], help="handwritten query; repeatable")
     pilot.add_argument("--split", default="development", choices=["development", "validation"])
     pilot.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH)
     pilot.add_argument("--limit-queries", type=int, default=None)
@@ -1466,7 +1517,9 @@ def _parser() -> argparse.ArgumentParser:
         "retrieval", help="run an experiment's variants over one frozen split"
     )
     retrieval.add_argument("--config", type=Path, default=DEFAULT_EXPERIMENT_PATH)
-    retrieval.add_argument("--split", required=True, choices=["development", "validation", "test"])
+    retrieval.add_argument(
+        "--split", required=True, choices=["development", "validation", "test", "retrieval"]
+    )
     retrieval.add_argument("--out", type=Path, required=True)
     retrieval.add_argument(
         "--locked-test",
@@ -1509,6 +1562,21 @@ def _parser() -> argparse.ArgumentParser:
         "--source", type=Path, default=None, help="defaults to DATA_DIR/benchmarks/litsearch"
     )
     litsearch_snapshot.add_argument("--data-dir", type=Path, default=None)
+    orb_fetch = evaluation_commands.add_parser(
+        "orb-fetch", help="download Open RAG Bench at its pinned revision, offline"
+    )
+    orb_fetch.add_argument("--revision", default=None, help="a 40-hex commit; default pinned")
+    orb_fetch.add_argument("--data-dir", type=Path, default=None)
+    orb_dataset = evaluation_commands.add_parser(
+        "orb-dataset", help="freeze ORB's text slice: ids and labels in git, text under DATA_DIR"
+    )
+    orb_dataset.add_argument("--out", type=Path, default=Path("data/fixtures/orb"))
+    orb_dataset.add_argument(
+        "--database-url",
+        default=None,
+        help="when given, gold arXiv ids are resolved to paper ids in that corpus",
+    )
+    orb_dataset.add_argument("--data-dir", type=Path, default=None)
     report = evaluation_commands.add_parser("report", help="re-render an experiment's report.md")
     report.add_argument("--out", type=Path, required=True)
     gaps = evaluation_commands.add_parser(
@@ -1528,9 +1596,7 @@ def _parser() -> argparse.ArgumentParser:
     worker = subparsers.add_parser("worker")
     worker_commands = worker.add_subparsers(dest="worker_command", required=True)
     run = worker_commands.add_parser("run", help="process leased jobs")
-    run.add_argument(
-        "--worker-id", default=f"{socket.gethostname() or 'worker'}-{os.getpid()}"
-    )
+    run.add_argument("--worker-id", default=f"{socket.gethostname() or 'worker'}-{os.getpid()}")
     run.add_argument("--once", action="store_true", help="process at most one job")
     run.add_argument("--max-jobs", type=int, default=None)
     run.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST_PATH)
@@ -1615,6 +1681,14 @@ def main(argv: list[str] | None = None) -> int:
         from .evaluation.datasets import validate_dataset
 
         result = dict(validate_dataset(args.path))
+    elif args.command == "eval" and args.eval_command == "orb-fetch":
+        result = run_orb_fetch(data_dir=_data_dir(args.data_dir, parser), revision=args.revision)
+    elif args.command == "eval" and args.eval_command == "orb-dataset":
+        result = run_orb_dataset(
+            out=args.out,
+            data_dir=_data_dir(args.data_dir, parser),
+            database_url=args.database_url,
+        )
     elif args.command == "corpus" and args.corpus_command == "ingest":
         result = run_ingest(
             args.manifest,
