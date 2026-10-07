@@ -1225,6 +1225,46 @@ def run_orb_dataset(*, out: Path, data_dir: Path, database_url: str | None) -> d
     return {"out": str(out), "hydratable": str(paths.dataset), **dataset_counts(out)}
 
 
+def run_orb_load(
+    *, database_url: str, parsing: Path, data_dir: Path, limit: int | None, delay: float
+) -> dict[str, Any]:
+    """Load the ORB corpus into its own migrated database, one paper per transaction."""
+
+    import sys
+
+    from .corpus.chunk import load_parsing_config
+    from .corpus.sources.base import HttpxTransport
+    from .evaluation.orb import OrbPaths
+    from .evaluation.orb_load import load_orb_corpus
+
+    paths = OrbPaths(data_dir / "benchmarks" / "orb")
+    engine = make_engine(database_url)
+    transport = HttpxTransport(timeout=120.0)
+    try:
+        migrate_database(engine)
+
+        def progress(doc_id: str, state: dict[str, Any]) -> None:
+            if state["papers"] % 25 == 0:
+                print(json.dumps({"doc_id": doc_id, **state}), file=sys.stderr, flush=True)
+
+        report = load_orb_corpus(
+            paths,
+            engine=engine,
+            parsing_config=load_parsing_config(parsing),
+            data_dir=data_dir,
+            transport=transport,
+            limit=limit,
+            delay_seconds=delay,
+            progress=progress,
+        )
+    finally:
+        transport.close()
+        engine.dispose()
+    failures = paths.root / "load-failures.json"
+    failures.write_text(json.dumps(report.failures, indent=2, sort_keys=True) + "\n")
+    return {**report.as_dict(), "failures_file": str(failures)}
+
+
 def run_eval_smoke(fixture: Path, *, update: bool) -> dict[str, Any]:
     """The synthetic smoke set against its frozen outputs; ``update`` re-freezes them."""
 
@@ -1577,6 +1617,14 @@ def _parser() -> argparse.ArgumentParser:
         help="when given, gold arXiv ids are resolved to paper ids in that corpus",
     )
     orb_dataset.add_argument("--data-dir", type=Path, default=None)
+    orb_load = evaluation_commands.add_parser(
+        "orb-load", help="load ORB's papers through identity, parser and chunker; no job queue"
+    )
+    orb_load.add_argument("--database-url", required=True, help="the copilot_orb database")
+    orb_load.add_argument("--parsing", type=Path, default=DEFAULT_PARSING_PATH)
+    orb_load.add_argument("--limit", type=int, default=None)
+    orb_load.add_argument("--delay", type=float, default=1.0, help="seconds between downloads")
+    orb_load.add_argument("--data-dir", type=Path, default=None)
     report = evaluation_commands.add_parser("report", help="re-render an experiment's report.md")
     report.add_argument("--out", type=Path, required=True)
     gaps = evaluation_commands.add_parser(
@@ -1683,6 +1731,14 @@ def main(argv: list[str] | None = None) -> int:
         result = dict(validate_dataset(args.path))
     elif args.command == "eval" and args.eval_command == "orb-fetch":
         result = run_orb_fetch(data_dir=_data_dir(args.data_dir, parser), revision=args.revision)
+    elif args.command == "eval" and args.eval_command == "orb-load":
+        result = run_orb_load(
+            database_url=args.database_url,
+            parsing=args.parsing,
+            data_dir=_data_dir(args.data_dir, parser),
+            limit=args.limit,
+            delay=args.delay,
+        )
     elif args.command == "eval" and args.eval_command == "orb-dataset":
         result = run_orb_dataset(
             out=args.out,
