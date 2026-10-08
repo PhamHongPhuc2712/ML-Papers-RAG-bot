@@ -42,6 +42,19 @@ chunk-level candidates. The test split is spent for this release. Open item: rig
 cold start the chunk-level dense branch exceeds its 1 s deadline for about a dozen queries
 until Qdrant's page cache warms. Next: P3.1.
 
+**Open RAG Bench, O1–O3 done (2026-10-07; plan `docs/superpowers/plans/2026-10-06-orb-text-benchmark.md`,
+evidence `reports/orb-text.md`).** The benchmark is pinned, its 1,914 text queries frozen,
+its 1,000 papers loaded through our pipeline into `copilot_orb` and release `orb-v1`, and
+retrieval measured on every query (`reports/retrieval/orb-text/`). Findings: chunk-level
+candidates beat title-and-abstract candidates by +0.22–0.25 nDCG@10 in every mode (P2.6
+reproduced on a second corpus; `hybrid` 0.948, MRR@5 0.937 beside haiku.rag's 0.977–0.990
+with 4B models); the cross-encoder, which scores titles and abstracts, **loses** 0.163
+nDCG@10 against plain fusion on these section-level questions — a recorded finding, not a
+decision, pointing at a pre-registered "rerank the candidate's best chunk" ablation on our
+corpus; `section_hit@1` 66.8% at 66.7% coverage. **O4 and O5 (the grounded generator and
+the judged answering run, about $1.50) are not started and need the developer's go-ahead.**
+The `retrieval` split is a benchmark read as a whole: no decision is ever computed from it.
+
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
 `[Not Found]`) and with other projects' jobs on this host (`esci-multimodel-ltr` ran GPU
 smoke scripts during P2.4). Under that load `hybrid_rerank` degrades — explicitly, within
