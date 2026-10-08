@@ -287,3 +287,66 @@ uv run --project backend mypy --config-file backend/pyproject.toml backend/src  
 ```
 
 Recorded reports (`orb-text`, `e3-litsearch`, `m2-release`) re-render unchanged.
+
+## O4 and O5: answering the text slice (2026-10-08, in progress)
+
+O4 (`reports/m4-evidence.md`) built the evidence retriever and the grounded generator; O5
+scores them. Each case: the shipped search's top 10 papers, evidence inside them under
+`configs/evidence.yaml`, the generator's claims with evidence ids (one repair, then
+insufficiency), then the answer-equivalence judge (`docs/judge-rubric.md`). Generator
+`gpt-6-luna` at effort `none`; judge the same model at effort `low` — one provider, a
+correlated-bias limitation this section states and the calibration below measures. An
+abstention is scored wrong without a judge call; a judge error is excluded and counted;
+cited MAP is 1/rank of the gold paper among cited papers. Config
+`configs/experiments/orb-text-qa.yaml`, outputs under `reports/qa/orb-text/` (ids, labels,
+verdicts and costs; the text under `${DATA_DIR}/eval/qa/`). Every run was clean: GPU 0%
+busy beforehand, no failed generation, no budget stop.
+
+### Pilot, 20 development cases (`orb-text-qa-development-20261008T100652Z`, `flat`)
+
+19 judged of 20, accuracy 0.79 [0.57, 0.91] Wilson, cited MAP 0.90, provenance validity
+1.00, 0 repairs, 0 abstentions, $0.0138 — $0.0007 a case against the plan's $0.0012
+estimate; 7.3 s a case at the median. The five non-correct cases, read: two retrieval
+misses (gold paper outside the top 10), one judge error, one strict verdict on an
+omitted detail, one verdict that faulted correct added detail with outside knowledge. Two
+fixes before the development pass, both to the judge: (1) the judge error was LaTeX
+(`\phi`) written unescaped inside the verdict's JSON, invalid twice; both parsers now
+take every backslash literally when the strict parse fails; (2) the rubric gained one
+rule, to judge added detail against the reference alone and never from the judge's own
+knowledge. The generation prompt is unchanged from O4.
+
+### Development pass, 100 cases, both variants (`orb-text-qa-development-20261008T101136Z`)
+
+| Variant | Judged | Accuracy (Wilson) [family bootstrap] | Extractive / abstractive | Cited MAP | Provenance | Abstained | Repairs | Judge errors | Gold in top 10 | Cost |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `flat` | 100 / 100 | 0.77 [0.68, 0.84] [0.68, 0.85] | 0.74 / 0.80 | 0.83 | 1.00 | 11 | 0 | 0 | 84% | $0.054 |
+| `section` | 100 / 100 | 0.76 [0.67, 0.83] [0.67, 0.84] | 0.72 / 0.80 | 0.84 | 0.99 | 8 | 1 | 0 | 84% | $0.066 |
+
+Median 5.5 s a case; $0.0005–0.0007 a case. The judge's parser fix held: 0 judge errors
+in 200 verdicts. The `flat` variant's 23 non-correct cases, by category: 14 retrieval
+misses (the gold paper not in the search's top 10, so the evidence could not contain the
+answer; 13 of these in `section` too), 1 abstention, and 8 answered with the gold paper
+in hand. Of those 8, read: 6 are verdicts on an omitted qualifier or clause (the
+reference, written by gpt-4o-mini, says "in France", "for high-skill workers", names a
+second mechanism or a limitation; the answer has the main fact and not the qualifier),
+1 answers a neighbouring case (the sinusoidal flux where the reference wants the general
+expression) and 1 contradicts the reference outright. The one repair was a LaTeX answer
+the strict parse refused before the wider fallback landed. **Two prompt passes were
+made** (the pilot and this one); the generation prompt was not changed and the rubric
+once. Whether the six omission verdicts are the judge's strictness or real misses is
+the calibration's question, which is why the rubric is not touched again before it.
+
+Two things this pass says about the pipeline, for the record and not as decisions:
+the first stage bounds accuracy at 84% here (the shipped abstract-text reranker's
+Recall@10 on ORB was 0.874; the chunk-text reranker read in the section above reaches
+0.985), and section expansion, with the same budget, carries fewer pieces (median 6
+against 8) for the same accuracy within noise on 100 cases.
+
+### Calibration and the frozen 400: pending the developer
+
+The blind labelling sheet for 50 development cases of `flat` (seed 42 over the judged
+cases) is at `${DATA_DIR}/eval/qa/labels/orb-text-qa-development-20261008T101136Z.flat.sheet.jsonl`:
+question, reference, answer and an empty `equivalent` per line, no verdict or reason.
+`eval calibration` then reports κ, agreement and the confusion matrix. Below κ = 0.6 the
+accuracy numbers are reported as uncalibrated and the rubric is fixed before the frozen
+run. The frozen 400 have not been scored (`frozen-scorings.json` absent).

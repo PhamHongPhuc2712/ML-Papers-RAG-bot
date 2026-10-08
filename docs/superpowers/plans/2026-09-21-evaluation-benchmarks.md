@@ -392,6 +392,16 @@ a reason; `source_chunk_ids` resolve to live chunks.
 
 ### Model and cost
 
+> **Revised by the ORB plan (O5, 2026-10-08).** The judge is `gpt-6-luna` at effort `low`
+> through the L2 chat client (`openai-gpt-6-luna-low` in `configs/llm.yaml`), not
+> `claude-opus-5`: the project funds one provider. The answer-equivalence rubric
+> (`prompts/judge/answer-equivalence-v1.yaml`) is a sixth judge prompt beside the five
+> below, used where a reference answer exists (ORB); the five reference-free metrics still
+> apply to E5's unanswerable and multi-paper cases, which ORB lacks. Calibration reuses
+> E7's rule: 50 blind hand labels, Cohen's κ, floor 0.6, every disagreement read
+> (`docs/judge-rubric.md`, `eval calibration`). The judge-swap run below needs a second
+> provider and stays open.
+
 Judge model `claude-opus-5`, pinned in `configs/evaluation.yaml` with the prompt version
 hashes. §11 asks for a judge separate from the generator; the project funds one provider, so
 the separation is not available and **the correlated-bias limitation is stated in every

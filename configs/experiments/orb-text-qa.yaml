@@ -1,0 +1,64 @@
+# ORB plan, O5: judged answering over Open RAG Bench's text slice.
+#
+#   eval qa --config configs/experiments/orb-text-qa.yaml --split development --limit 20 \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/qa/orb-text --max-spend-usd 0.50
+#   eval qa --config configs/experiments/orb-text-qa.yaml --split frozen --frozen \
+#     --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 2.50
+#   eval pair --treated reports/qa/orb-text/frozen/<section run>/cases.parquet \
+#     --baseline reports/qa/orb-text/frozen/<flat run>/cases.parquet
+#
+# Each case: the shipped search (`hybrid_rerank`, chunk candidates, configs/search.yaml)
+# gives its top `papers`; evidence is retrieved inside them (configs/evidence.yaml, with the
+# variant's overrides); the generator answers with claims and evidence ids, validated with
+# one repair; an abstention is scored wrong without a judge call; everything else goes to
+# the judge. Development cases tune prompts; the frozen 400 are scored once per
+# configuration (`--frozen`) and never read for debugging. The budget is the run's, refused
+# at its worst case before anything loads and enforced mid-run from the ledger.
+schema_version: 1
+name: orb-text-qa
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+# Keys in configs/llm.yaml. The same provider serves both; the correlated-bias limitation
+# is stated in the report and measured by the 50 blind hand labels (E7).
+generator: openai-gpt-6-luna
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-v1.yaml
+
+# Papers the first stage hands to the evidence retriever.
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: each hit is sent as its chunk
+  - name: section
+    changes: each hit is widened to its section (haiku.rag's rule), within the token budget
+    evidence:
+      expansion: section
+
+budget:
+  max_spend_usd: 2.50
+
+# Pre-registered: `section` is preferred over `flat` only if exact McNemar on the frozen
+# 400 rejects at p < 0.05 in its favour and `cited_map` does not fall by more than 0.03.
+decision:
+  primary: section
+  baseline: flat
+  mcnemar_p: 0.05
+  cited_map_max_drop: 0.03

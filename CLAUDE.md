@@ -285,6 +285,27 @@ uv run --env-file .env --project backend python -m copilot.cli eval retrieval --
 uv run --env-file .env --project backend python -m copilot.cli eval orb-sections --run reports/retrieval/orb-text --database-url ...copilot_orb
 ```
 
+Answering (O4–O5, 2026-10-08): `evidence/retrieve.py` finds chunk evidence inside the top
+papers (`configs/evidence.yaml`: 12 pieces, 3 per paper, 6,000 pinned-tokenizer tokens),
+`evidence/citations.py` validates every cited id structurally, `models/generation.py`
+answers with JSON claims through the chat client with one repair then insufficiency, and
+`evaluation/{qa,judge,pairing}.py` run and judge ORB's answering splits under a budget.
+**Every `eval qa` run spends money**: it needs `--max-spend-usd`, is refused at its worst
+case and stopped by the ledger. The frozen 400 are scored only with `--frozen`, once per
+configuration, and never read for debugging; development tunes prompts. Per-case text
+goes under `${DATA_DIR}/eval/qa/`, never under `reports/`. The judge (`gpt-6-luna`,
+effort `low`) shares the generator's provider: a stated limitation, measured by 50 blind
+hand labels (`docs/judge-rubric.md`, `eval calibration`, κ floor 0.6).
+
+```bash
+uv run --env-file .env --project backend python -m copilot.cli eval qa --split development --limit 20 --variant flat --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 0.50
+uv run --env-file .env --project backend python -m copilot.cli eval qa --split frozen --frozen --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 3.00
+uv run --project backend python -m copilot.cli eval qa-labels --run reports/qa/orb-text/development/<run>.flat --out ${DATA_DIR}/eval/qa/labels/<run>.jsonl --limit 50
+uv run --project backend python -m copilot.cli eval calibration --labels <labels>.jsonl --cases reports/qa/orb-text/development/<run>.flat/cases.parquet
+uv run --project backend python -m copilot.cli eval pair --treated <run>.section/cases.parquet --baseline <run>.flat/cases.parquet
+uv run --project backend python -m copilot.cli eval qa-smoke        # offline, frozen outputs; --update to re-freeze
+```
+
 Every run samples the GPU for 5 s before loading a model and marks itself **contended**
 when another process kept it over 20% busy. Run timing evidence only on a free GPU: the
 recorded policy (2026-10-05) is to evaluate and demo only on an idle GPU, and a run that

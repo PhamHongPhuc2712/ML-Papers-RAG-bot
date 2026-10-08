@@ -1585,6 +1585,48 @@ def _parser() -> argparse.ArgumentParser:
     )
     compare.add_argument("--baseline", type=Path, required=True, help="a run's metrics.json")
     compare.add_argument("--candidate", type=Path, required=True, help="a run's metrics.json")
+    qa = evaluation_commands.add_parser(
+        "qa", help="answer and judge one ORB answering split under a budget (O5)"
+    )
+    qa.add_argument("--config", type=Path, default=Path("configs/experiments/orb-text-qa.yaml"))
+    qa.add_argument("--split", choices=["development", "frozen"], required=True)
+    qa.add_argument("--out", type=Path, required=True)
+    qa.add_argument("--max-spend-usd", type=float, required=True, help="the run's budget")
+    qa.add_argument(
+        "--frozen",
+        action="store_true",
+        help="score the frozen split: once per configuration, never read for debugging",
+    )
+    qa.add_argument("--limit", type=int, default=None, help="the first N cases by id")
+    qa.add_argument("--variant", action="append", default=None, help="only these variants")
+    qa.add_argument("--database-url", required=True, help="the copilot_orb database")
+    qa.add_argument("--qdrant-url", default=None)
+    qa.add_argument("--data-dir", type=Path, default=None)
+    qa_smoke = evaluation_commands.add_parser(
+        "qa-smoke", help="the answering loop on synthetic cases with recorded verdicts"
+    )
+    qa_smoke.add_argument("--fixture", type=Path, default=Path("data/fixtures/qa-smoke"))
+    qa_smoke.add_argument(
+        "--update", action="store_true", help="re-freeze the outputs after an intended change"
+    )
+    pair = evaluation_commands.add_parser(
+        "pair", help="exact McNemar and a sign test between two answering runs"
+    )
+    pair.add_argument("--treated", type=Path, required=True, help="a run's cases.parquet")
+    pair.add_argument("--baseline", type=Path, required=True, help="a run's cases.parquet")
+    calibration = evaluation_commands.add_parser(
+        "calibration", help="the judge against blind hand labels over the same cases"
+    )
+    calibration.add_argument(
+        "--labels", type=Path, required=True, help="JSONL of query_id, equivalent"
+    )
+    calibration.add_argument("--cases", type=Path, required=True, help="a run's cases.parquet")
+    qa_labels = evaluation_commands.add_parser(
+        "qa-labels", help="a blind labelling sheet for a run's judged cases, under DATA_DIR"
+    )
+    qa_labels.add_argument("--run", type=Path, required=True, help="a run's variant directory")
+    qa_labels.add_argument("--out", type=Path, required=True, help="where to write the sheet")
+    qa_labels.add_argument("--limit", type=int, default=None)
     litsearch_snapshot = evaluation_commands.add_parser(
         "litsearch-snapshot",
         help="LitSearch's corpus_clean as a corpus snapshot, for its own release (E3)",
@@ -1703,6 +1745,57 @@ def main(argv: list[str] | None = None) -> int:
         result = run_eval_smoke(args.fixture, update=args.update)
         if not result["passed"]:
             print(json.dumps(result, sort_keys=True, default=str))
+            return 1
+    elif args.command == "eval" and args.eval_command == "qa":
+        from .evaluation.qa import QaError, run_qa
+
+        try:
+            result = run_qa(
+                args.config,
+                args.split,
+                args.out,
+                max_spend_usd=args.max_spend_usd,
+                frozen=args.frozen,
+                limit=args.limit,
+                variants=args.variant,
+                data_dir=_data_dir(args.data_dir, parser),
+                database_url=args.database_url,
+                qdrant_url=args.qdrant_url or _service_settings()[0],
+            )
+        except QaError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
+            return 1
+    elif args.command == "eval" and args.eval_command == "qa-labels":
+        from .evaluation.qa import write_label_sheet
+
+        result = write_label_sheet(args.run, out=args.out, limit=args.limit)
+    elif args.command == "eval" and args.eval_command == "qa-smoke":
+        from .evaluation.qa import check_qa_smoke, run_qa_smoke
+
+        actual = run_qa_smoke(args.fixture, update=args.update)
+        expected_path = args.fixture / "expected.json"
+        expected = json.loads(expected_path.read_text(encoding="utf-8"))
+        result = {**check_qa_smoke(actual, expected), "metrics": actual["metrics"]}
+        if not result["passed"]:
+            print(json.dumps(result, sort_keys=True, default=str))
+            return 1
+    elif args.command == "eval" and args.eval_command == "pair":
+        from .evaluation.pairing import PairingError
+        from .evaluation.pairing import pair as pair_runs
+
+        try:
+            result = pair_runs(args.treated, args.baseline).as_dict()
+        except PairingError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
+            return 1
+    elif args.command == "eval" and args.eval_command == "calibration":
+        from .evaluation.pairing import PairingError
+        from .evaluation.pairing import calibration as calibrate
+
+        try:
+            result = calibrate(args.labels, args.cases)
+        except PairingError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
             return 1
     elif args.command == "eval" and args.eval_command == "compare":
         from .evaluation.regression import compare_runs

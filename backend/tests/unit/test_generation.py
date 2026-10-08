@@ -252,3 +252,12 @@ def test_recorded_live_answers_pass_validation_unrepaired(fixture, question, cla
     assert outcome.answer.insufficient_evidence is insufficient
     assert all(set(c.evidence_ids) <= {"E1", "E2"} for c in outcome.answer.claims)
     assert outcome.served_models == ["gpt-6-luna"] and outcome.cost_usd > 0
+
+
+def test_an_answer_with_unescaped_latex_backslashes_still_parses():
+    text = (
+        '{"claims": [{"text": "The shift is \\(\\varphi = e\\Phi_0\\sin(\\Omega t)/\\Omega\\).",'
+        ' "evidence_ids": ["E1"]}], "insufficient_evidence": false}'
+    )
+    claims, _ = parse_answer(text)
+    assert "\\varphi" in claims[0].text and claims[0].evidence_ids == ["E1"]

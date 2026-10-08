@@ -32,6 +32,23 @@ from .llm import ChatClient
 PROMPT_PATH = Path("prompts/generate/grounded-claims-v1.yaml")
 _PLACEHOLDER = re.compile(r"\{(question|evidence|count|problems|allowed)\}")
 _FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+# Any backslash except one escaping a quote: LaTeX in an answer, written unescaped.
+_LONE_BACKSLASH = re.compile(r'\\(?!")')
+
+
+def loads_lenient(body: str) -> Any:
+    """``json.loads``, then once more with every backslash but ``\\"`` escaped.
+
+    Models answering about papers write LaTeX (``\\phi``, ``\\theta``, ``\\nu``) inside
+    JSON strings without escaping it. Some of it is invalid JSON (``\\p``), some of it
+    is a valid escape that corrupts the text (``\\t``, ``\\n``, ``\\u``). When the strict
+    parse fails, every backslash is taken literally, which is what was meant.
+    """
+
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        return json.loads(_LONE_BACKSLASH.sub(r"\\\\", body))
 
 
 class GenerationError(RuntimeError):
@@ -109,7 +126,7 @@ def parse_answer(text: str) -> tuple[list[Claim], bool]:
     if fenced:
         body = fenced.group(1)
     try:
-        payload = json.loads(body)
+        payload = loads_lenient(body)
     except json.JSONDecodeError as error:
         raise GenerationError("answer_unparseable", str(error)[:60]) from error
     if not isinstance(payload, dict):
