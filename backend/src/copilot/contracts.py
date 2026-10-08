@@ -137,11 +137,16 @@ class Evidence(ContractModel):
     source_kind: Literal["paper", "upload"]
     source_id: UUID
     version_id: str
-    chunk_id: UUID
+    # None only for abstract-only evidence: a paper with no parsed text (P4.1).
+    chunk_id: UUID | None
     text: str
     section: str
     page_start: int | None = None
     page_end: int | None = None
+    # The hit chunk's text was widened to its section (ORB plan, O4).
+    expanded: bool = False
+    # The paper's abstract stands in for a body it does not have; labelled, never hidden.
+    abstract_only: bool = False
 
 
 class Claim(ContractModel):

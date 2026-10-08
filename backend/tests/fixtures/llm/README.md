@@ -6,6 +6,8 @@ The chat-client tests (`tests/unit/test_llm_client.py`) parse these bodies throu
 | File | Source | Edited by hand |
 |---|---|---|
 | `openai_chat.json` | A real `gpt-6-luna` response, captured 2026-10-02 (L2 step 3): message "Reply with the word ok.", `reasoning_effort: none`, `max_completion_tokens: 1024` | `id` → `"fixture"`; `usage.prompt_tokens` 12 → 2048, `usage.prompt_tokens_details.cached_tokens` 0 → 1024 and `usage.total_tokens` 16 → 2052, so the cached-input parsing is pinned |
+| `openai_grounded_answer.json` | A real `gpt-6-luna` response, captured 2026-10-08 (ORB plan O4 step 5): the grounded-claims prompt (`prompts/generate/grounded-claims-v1.yaml`) over three synthetic evidence blocks, one of which carries an injected instruction, asked an answerable question; two claims citing `E1` and `E2`, the injection ignored. 296 prompt and 83 completion tokens, $0.000071 | `id` → `"fixture"` |
+| `openai_grounded_insufficient.json` | The same capture, asked a question the evidence does not answer: `{"claims": [], "insufficient_evidence": true}`. 285 prompt and 14 completion tokens, $0.000036 | `id` → `"fixture"` |
 | `deepseek_chat.json` | **Not captured**: no DeepSeek key was configured. Written from the non-streaming response example in DeepSeek's API reference (api-docs.deepseek.com/api/create-chat-completion, read 2026-10-02) | `id` → `"fixture"`; `content` → `"ok"`; usage set to 1,536 prompt tokens with `prompt_cache_hit_tokens` 512 and `prompt_cache_miss_tokens` 1,024 |
 
 Replace `deepseek_chat.json` with a captured body before `deepseek-flash` is used, since it
