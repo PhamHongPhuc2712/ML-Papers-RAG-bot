@@ -33,8 +33,10 @@ uv run --project backend python -m copilot.cli eval smoke
 uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/e3-litsearch
 ```
 
-A variant may override three search knobs, and only these (P2.6): `candidates.per_branch`
-for any mode, and `rerank.depth` and `deadlines_seconds.rerank` for `hybrid_rerank`. They go
+A variant may override four search knobs, and only these: `candidates.per_branch` for any
+mode, and `rerank.depth`, `deadlines_seconds.rerank` and `rerank.text` for `hybrid_rerank`
+(the first three from P2.6; `rerank.text` added 2026-10-08, one of `abstract`, `chunk`,
+`title_chunk`, and refused unless the variant's candidates come through chunks). They go
 in a `search:` block shaped like `configs/search.yaml`. Each variant's effective settings and
 their digest are in the manifest (`variants.<name>.search`, `search_sha256`), and `eval
 compare` lists any variant whose settings differ between the two runs. A decision block may
@@ -53,7 +55,9 @@ source is recorded per variant (`variants.<name>.candidates`); a source other th
 also appears in the variant's search settings as `candidates_source` and changes its digest,
 so runs recorded before the decision still read as the same search. A run naming `chunks` or
 `both` is refused before anything loads when the release has no chunk collection
-(`chunks_not_built`). The reranker is unchanged: it still scores titles and abstracts.
+(`chunks_not_built`). The reranker scores titles and abstracts unless the variant sets
+`rerank.text` to `chunk` or `title_chunk`, in which case it scores the chunk each paper was
+found by; `abstract` leaves every recorded digest unchanged, the other two change it.
 
 A `hybrid_rerank_llm` variant names the hosted model it uses with `llm:`, a key in
 `configs/llm.yaml`; no other mode may. Such a run needs `--max-spend-usd`. It is refused before

@@ -34,6 +34,9 @@ def evidence_filter(filters: PaperFilters | None) -> models.Filter:
     return models.Filter(must=must, must_not=base.must_not)
 
 
+GroupedHits = tuple[list[tuple[str, float]], dict[str, str]]
+
+
 def paper_groups(
     client: QdrantClient,
     collection: str,
@@ -42,12 +45,13 @@ def paper_groups(
     using: str,
     query_filter: models.Filter,
     limit: int,
-    best_chunks: dict[str, str] | None = None,
-) -> list[tuple[str, float]]:
+) -> GroupedHits:
     """The ``limit`` best papers of a chunk collection, each scored by its best chunk.
 
-    ``best_chunks``, when given, receives each paper's best chunk id: a diagnostic
-    the evaluation harness reads to ask whether the hit fell in the right section.
+    Returns the ranked (paper id, score) pairs and, beside them, the id of the chunk
+    each paper was found by: the evidence the reranker may read in place of the
+    abstract (``rerank.text`` in ``configs/search.yaml``), and what the evaluation
+    harness asks whether the hit fell in the right section.
     """
 
     groups = client.query_points_groups(
@@ -61,15 +65,22 @@ def paper_groups(
         with_payload=False,
     ).groups
     hits = [(str(group.id), group.hits[0]) for group in groups if group.hits]
-    if best_chunks is not None:
-        best_chunks.update((paper_id, str(hit.id)) for paper_id, hit in hits)
-    return [(paper_id, float(hit.score)) for paper_id, hit in hits]
+    ranked = [(paper_id, float(hit.score)) for paper_id, hit in hits]
+    return ranked, {paper_id: str(hit.id) for paper_id, hit in hits}
 
 
 class CandidateRetriever(Protocol):
     def search(
         self, query: str, filters: PaperFilters | None, limit: int, release_id: str
     ) -> list[tuple[str, float]]: ...
+
+
+class ChunkCandidateRetriever(CandidateRetriever, Protocol):
+    """A branch that can also say which chunk each paper was found by."""
+
+    def search_with_chunks(
+        self, query: str, filters: PaperFilters | None, limit: int, release_id: str
+    ) -> GroupedHits: ...
 
 
 class UnionRetriever:

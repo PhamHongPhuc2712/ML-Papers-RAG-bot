@@ -16,7 +16,7 @@ from sqlalchemy import Engine
 
 from ..contracts import PaperFilters
 from ..corpus.releases import ReleaseRecord, load_release
-from .chunks import evidence_filter, paper_groups
+from .chunks import GroupedHits, evidence_filter, paper_groups
 from .index import CHUNKS, PAPERS, SPARSE, IndexBuildError, qdrant_filter
 from .lexical import BM25Vocabulary
 
@@ -44,7 +44,8 @@ class SparseRetriever:
         self._kind = kind
         self._group_papers = group_papers
         # Diagnostic, opt-in and for one caller at a time: the last grouped search's
-        # best chunk per paper. The evaluation harness reads it; the API never does.
+        # best chunk per paper. The evaluation harness reads it; the service asks for
+        # the chunks of one search through ``search_with_chunks`` instead.
         self._track_best_chunks = track_best_chunks
         self.best_chunks: dict[str, str] = {}
         self._releases: dict[str, tuple[ReleaseRecord, BM25Vocabulary]] = {}
@@ -66,26 +67,33 @@ class SparseRetriever:
     def search(
         self, query: str, filters: PaperFilters | None, limit: int, release_id: str
     ) -> list[tuple[str, float]]:
+        return self.search_with_chunks(query, filters, limit, release_id)[0]
+
+    def search_with_chunks(
+        self, query: str, filters: PaperFilters | None, limit: int, release_id: str
+    ) -> GroupedHits:
+        """The ranked papers and, over the chunk collection, the chunk each was found by."""
+
         if limit < 1:
             raise IndexBuildError("invalid_limit", str(limit))
         release, vocabulary = self._release(release_id)
         encoded = vocabulary.encode_query(query)
         if not encoded.indices:
             # No query term occurs in this corpus: BM25 scores every document 0.
-            return []
+            return [], {}
         vector = models.SparseVector(indices=list(encoded.indices), values=list(encoded.values))
         if self._group_papers:
-            if self._track_best_chunks:
-                self.best_chunks = {}
-            return paper_groups(
+            ranked, chunks = paper_groups(
                 self._client,
                 release.collection(self._kind),
                 query=vector,
                 using=SPARSE,
                 query_filter=evidence_filter(filters),
                 limit=limit,
-                best_chunks=self.best_chunks if self._track_best_chunks else None,
             )
+            if self._track_best_chunks:
+                self.best_chunks = dict(chunks)
+            return ranked, chunks
         hits = self._client.query_points(
             release.collection(self._kind),
             query=vector,
@@ -94,4 +102,4 @@ class SparseRetriever:
             limit=limit,
             with_payload=False,
         ).points
-        return [(str(hit.id), float(hit.score)) for hit in hits]
+        return [(str(hit.id), float(hit.score)) for hit in hits], {}

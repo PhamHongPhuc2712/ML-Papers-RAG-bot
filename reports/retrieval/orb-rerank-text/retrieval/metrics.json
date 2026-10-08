@@ -1,0 +1,949 @@
+{
+  "comparisons": {},
+  "manifest": {
+    "bootstrap": {
+      "confidence": 0.95,
+      "resamples": 1000,
+      "seed": 42,
+      "unit": "query family"
+    },
+    "code": {
+      "diff_sha256": "b62277507dc41ed2eff90f2341d848613124daf330abb55fb308038ee27c9cd2",
+      "dirty": true,
+      "git_sha": "52b0f1e661d7b67dadd884a2d0a46a7e1505473e"
+    },
+    "corpus": {
+      "chunker_version": "paragraph-pack-v1",
+      "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+      "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "papers": "database",
+      "parser_version": "pypdf-text-v2",
+      "release_id": "orb-v1",
+      "releases": {
+        "orb-v1": {
+          "bm25_vocabulary_sha256": "536603619b1666eae20d80f1eac2a389c8dcc07597e782e4073879f4598d3181",
+          "dense_dimensions": 1024,
+          "dense_vector_bytes": 4083712,
+          "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+          "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+          "paper_collection": "dev_paper_abstracts_orb-v1",
+          "points": 997
+        }
+      }
+    },
+    "cost": {
+      "metered_usd": 0.0,
+      "note": "self-hosted models and services; no priced model call is made"
+    },
+    "created_at": "2026-10-08T06:16:22.745507+00:00",
+    "dataset": {
+      "digest": "c0ec514fbde7b69c0f2ed7048bf73c18668f789e22609376b5abb67853f75b36",
+      "labels": "paper_id",
+      "limited_to": null,
+      "path": "data/fixtures/orb",
+      "queries": 1914,
+      "slice": "all",
+      "sources": [
+        "orb@63f6b052ff83508b08e242db42263ee708815c26"
+      ],
+      "split": "retrieval"
+    },
+    "experiment": {
+      "config_sha256": "d4c45124889a24e9819d96f46e711b0f5a9f59e2014b060c5852b877d3a2c78e",
+      "name": "orb-rerank-text",
+      "path": "configs/experiments/orb-rerank-text.yaml"
+    },
+    "hardware": {
+      "cores": 12,
+      "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cuda": "13.0",
+      "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+      "ram_gb": 25.2,
+      "torch": "2.14.0+cu130"
+    },
+    "locked_test": false,
+    "run_id": "orb-rerank-text-retrieval-20261008T061622Z",
+    "search": {
+      "config_sha256": "edc6d0160b8d3eaa77e45aa12dc197f1627a15c404eee9bb59cbc0ec0be04b96",
+      "path": "configs/search.yaml",
+      "values": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      }
+    },
+    "seed": 42,
+    "timing": {
+      "gpu": {
+        "available": true,
+        "before_run": {
+          "available": true,
+          "busy": false,
+          "memory_mib": 2046,
+          "samples": 5,
+          "utilization_percent_p50": 0.0
+        },
+        "compute_processes_seen": [
+          "27",
+          "32"
+        ],
+        "memory_mib": {
+          "max": 9978,
+          "min": 4278
+        },
+        "samples": 11131,
+        "utilization_percent": {
+          "max": 100,
+          "p50": 99.0
+        }
+      },
+      "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+    },
+    "variants": {
+      "hybrid": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": null,
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid",
+        "release_id": "orb-v1",
+        "reranker": "none",
+        "reranker_precision": null,
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {},
+        "search_sha256": "5b89a15c621c69bda125997e8bfc674d314b46c8424b3b1fe996c5900f99c094",
+        "warmup_queries": {
+          "count": 10,
+          "split": "retrieval"
+        },
+        "warmup_seconds": 2.702
+      },
+      "hybrid_rerank": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": null,
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "orb-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {},
+        "search_sha256": "5b89a15c621c69bda125997e8bfc674d314b46c8424b3b1fe996c5900f99c094",
+        "warmup_queries": {
+          "count": 10,
+          "split": "retrieval"
+        },
+        "warmup_seconds": 6.836
+      },
+      "hybrid_rerank_chunk": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": "the reranker reads the chunk that found the paper instead of its abstract",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "orb-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rerank_text": "chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_text": "chunk"
+        },
+        "search_sha256": "0a4eb9493c2bc8a1a021906717c39d84b6e1dd0ddfd9c858f461fbe17a29d431",
+        "warmup_queries": {
+          "count": 10,
+          "split": "retrieval"
+        },
+        "warmup_seconds": 14.151
+      },
+      "hybrid_rerank_chunk_2500": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": "as hybrid_rerank_chunk, with a 2.5 s rerank deadline",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "orb-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_seconds": 2.5,
+          "rerank_text": "chunk"
+        },
+        "search_sha256": "95fc9d31e4fbc23c8129510278cf2e12c9ed3d911745172e1c8598769a007117",
+        "warmup_queries": {
+          "count": 10,
+          "split": "retrieval"
+        },
+        "warmup_seconds": 12.731
+      },
+      "hybrid_rerank_title_chunk": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": "the reranker reads the title followed by the chunk that found the paper",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "orb-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_text": "title_chunk"
+        },
+        "search_sha256": "dd913819426aea2f8f223c657f52197266d51edc06848b4573114fe0c1f88c63",
+        "warmup_queries": {
+          "count": 10,
+          "split": "retrieval"
+        },
+        "warmup_seconds": 13.01
+      },
+      "hybrid_rerank_title_chunk_2500": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": "as hybrid_rerank_title_chunk, with a 2.5 s rerank deadline",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "orb-v1",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk"
+        },
+        "search_sha256": "1a7f35e19e5b5baa8a3424fd2532ae68766b80b94442354028efc2a0f3aa58a5",
+        "warmup_queries": {
+          "count": 10,
+          "split": "retrieval"
+        },
+        "warmup_seconds": 12.901
+      }
+    }
+  },
+  "variants": {
+    "hybrid": {
+      "summary": {
+        "by_query_set": {
+          "orb_abstractive": {
+            "mrr@10": 0.9522116461366182,
+            "mrr@5": 0.9513251213139231,
+            "ndcg@10": 0.9591529707671091,
+            "queries": 893,
+            "recall@10": 0.9798432250839866,
+            "recall@50": 0.9921612541993281
+          },
+          "orb_extractive": {
+            "mrr@10": 0.9196722012343952,
+            "mrr@5": 0.9181031668299054,
+            "ndcg@10": 0.9322522390513596,
+            "queries": 1021,
+            "recall@10": 0.970617042115573,
+            "recall@50": 0.9853085210577864
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.9348538753711166,
+            "mrr@5": 0.9336032741205156,
+            "ndcg@10": 0.9448031029082898,
+            "queries": 1914,
+            "recall@10": 0.9749216300940439,
+            "recall@50": 0.9885057471264368
+          }
+        },
+        "candidate_recall": 0.9932079414838035,
+        "degraded": {
+          "count": 1,
+          "warnings": {
+            "lexical:timeout,dense:timeout": 1
+          }
+        },
+        "failures": {
+          "codes": {
+            "candidates_unavailable": 1
+          },
+          "count": 1
+        },
+        "judged@10": {
+          "mean": 0.09754312598013593,
+          "unknown": 1
+        },
+        "judged@5": {
+          "mean": 0.1933089388395191,
+          "unknown": 1
+        },
+        "judged@50": {
+          "mean": 0.019780449555671722,
+          "unknown": 1
+        },
+        "latency": {
+          "max_ms": 1116.9,
+          "p50_ms": 39.8,
+          "p95_ms": 70.6
+        },
+        "mrr@10": {
+          "high": 0.9506495732959181,
+          "low": 0.9240037203093028,
+          "mean": 0.9380855937455852
+        },
+        "mrr@5": {
+          "high": 0.9499149397413286,
+          "low": 0.9227140280853944,
+          "mean": 0.9369315074579933
+        },
+        "ndcg@10": {
+          "high": 0.9588932121087776,
+          "low": 0.9350829423483333,
+          "mean": 0.9473872062321448
+        },
+        "queries": 1914,
+        "recall@10": {
+          "high": 0.9848491653336614,
+          "low": 0.9655201283786555,
+          "mean": 0.9755701160739921
+        },
+        "recall@50": {
+          "high": 0.9967139114474385,
+          "low": 0.984522912308765,
+          "mean": 0.991147820023789
+        },
+        "rerank_pool_recall": null,
+        "stages": {
+          "dense": {
+            "max_ms": 971.8,
+            "p50_ms": 39.3,
+            "p95_ms": 69.2
+          },
+          "lexical": {
+            "max_ms": 882.0,
+            "p50_ms": 10.0,
+            "p95_ms": 18.1
+          }
+        }
+      }
+    },
+    "hybrid_rerank": {
+      "summary": {
+        "by_query_set": {
+          "orb_abstractive": {
+            "mrr@10": 0.8374082369043174,
+            "mrr@5": 0.8332213512504665,
+            "ndcg@10": 0.8575065578558876,
+            "queries": 893,
+            "recall@10": 0.9204927211646137,
+            "recall@50": 0.9932810750279956
+          },
+          "orb_extractive": {
+            "mrr@10": 0.6212630007928734,
+            "mrr@5": 0.611247143323539,
+            "ndcg@10": 0.6617615933854609,
+            "queries": 1021,
+            "recall@10": 0.791380999020568,
+            "recall@50": 0.9853085210577864
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.7221081919357781,
+            "mrr@5": 0.7148119122257053,
+            "ndcg@10": 0.753088789452384,
+            "queries": 1914,
+            "recall@10": 0.851619644723093,
+            "recall@50": 0.9890282131661442
+          }
+        },
+        "candidate_recall": 0.9937304075235109,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.0851619644723093,
+          "unknown": 0
+        },
+        "judged@5": {
+          "mean": 0.1593521421107628,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.019780564263322885,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1487.0,
+          "p50_ms": 565.6,
+          "p95_ms": 657.4
+        },
+        "mrr@10": {
+          "high": 0.7791084725054248,
+          "low": 0.7327041609476836,
+          "mean": 0.7564260075501156
+        },
+        "mrr@5": {
+          "high": 0.7733025802195699,
+          "low": 0.7257037434375129,
+          "mean": 0.7499420484530305
+        },
+        "ndcg@10": {
+          "high": 0.8053318889578196,
+          "low": 0.7630019329773373,
+          "mean": 0.7845732749822365
+        },
+        "queries": 1914,
+        "recall@10": {
+          "high": 0.891052125630614,
+          "low": 0.8546658771174275,
+          "mean": 0.8740730486854518
+        },
+        "recall@50": {
+          "high": 0.9970591854312784,
+          "low": 0.9849117653090521,
+          "mean": 0.9914708174398097
+        },
+        "rerank_pool_recall": 0.9890282131661442,
+        "stages": {
+          "dense": {
+            "max_ms": 876.7,
+            "p50_ms": 35.3,
+            "p95_ms": 55.2
+          },
+          "hydrate": {
+            "max_ms": 149.6,
+            "p50_ms": 6.4,
+            "p95_ms": 9.4
+          },
+          "lexical": {
+            "max_ms": 835.4,
+            "p50_ms": 9.3,
+            "p95_ms": 14.0
+          },
+          "rerank": {
+            "max_ms": 681.2,
+            "p50_ms": 521.5,
+            "p95_ms": 603.0
+          }
+        }
+      }
+    },
+    "hybrid_rerank_chunk": {
+      "summary": {
+        "by_query_set": {
+          "orb_abstractive": {
+            "mrr@10": 0.9652606694040065,
+            "mrr@5": 0.9648376259798432,
+            "ndcg@10": 0.9701783735289775,
+            "queries": 893,
+            "recall@10": 0.9854423292273237,
+            "recall@50": 0.9932810750279956
+          },
+          "orb_extractive": {
+            "mrr@10": 0.9448459338028388,
+            "mrr@5": 0.9430460333006856,
+            "ndcg@10": 0.952669468783469,
+            "queries": 1021,
+            "recall@10": 0.9774730656219393,
+            "recall@50": 0.9853085210577864
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.9543706772155048,
+            "mrr@5": 0.9532131661442006,
+            "ndcg@10": 0.9608384614364153,
+            "queries": 1914,
+            "recall@10": 0.9811912225705329,
+            "recall@50": 0.9890282131661442
+          }
+        },
+        "candidate_recall": 0.9937304075235109,
+        "degraded": {
+          "count": 10,
+          "warnings": {
+            "dense_timeout": 3,
+            "rerank_timeout": 9
+          }
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.09811912225705331,
+          "unknown": 0
+        },
+        "judged@5": {
+          "mean": 0.19446185997910137,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.019780564263322885,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 2518.3,
+          "p50_ms": 1259.9,
+          "p95_ms": 1419.2
+        },
+        "mrr@10": {
+          "high": 0.9689143542017008,
+          "low": 0.9463648208816975,
+          "mean": 0.9580504371573494
+        },
+        "mrr@5": {
+          "high": 0.967964368599866,
+          "low": 0.9447268484338898,
+          "mean": 0.9566476627975335
+        },
+        "ndcg@10": {
+          "high": 0.9742631651250359,
+          "low": 0.9544187500105518,
+          "mean": 0.9645442665415285
+        },
+        "queries": 1914,
+        "recall@10": {
+          "high": 0.9919684898076371,
+          "low": 0.9777116658463557,
+          "mean": 0.9851257126450924
+        },
+        "recall@50": {
+          "high": 0.9970591854312784,
+          "low": 0.9849117653090521,
+          "mean": 0.9914708174398097
+        },
+        "rerank_pool_recall": 0.988976377952756,
+        "stages": {
+          "dense": {
+            "max_ms": 1000.0,
+            "p50_ms": 33.9,
+            "p95_ms": 54.9
+          },
+          "hydrate": {
+            "max_ms": 865.7,
+            "p50_ms": 12.7,
+            "p95_ms": 26.2
+          },
+          "lexical": {
+            "max_ms": 756.2,
+            "p50_ms": 9.4,
+            "p95_ms": 16.4
+          },
+          "rerank": {
+            "max_ms": 1467.9,
+            "p50_ms": 1207.6,
+            "p95_ms": 1334.6
+          }
+        }
+      }
+    },
+    "hybrid_rerank_chunk_2500": {
+      "summary": {
+        "by_query_set": {
+          "orb_abstractive": {
+            "mrr@10": 0.9652606694040065,
+            "mrr@5": 0.9648376259798432,
+            "ndcg@10": 0.9701783735289775,
+            "queries": 893,
+            "recall@10": 0.9854423292273237,
+            "recall@50": 0.9932810750279956
+          },
+          "orb_extractive": {
+            "mrr@10": 0.9448459338028388,
+            "mrr@5": 0.9430460333006856,
+            "ndcg@10": 0.952669468783469,
+            "queries": 1021,
+            "recall@10": 0.9774730656219393,
+            "recall@50": 0.9853085210577864
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.9543706772155048,
+            "mrr@5": 0.9532131661442006,
+            "ndcg@10": 0.9608384614364153,
+            "queries": 1914,
+            "recall@10": 0.9811912225705329,
+            "recall@50": 0.9890282131661442
+          }
+        },
+        "candidate_recall": 0.9937304075235109,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.09811912225705331,
+          "unknown": 0
+        },
+        "judged@5": {
+          "mean": 0.19446185997910137,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.019780564263322885,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 2322.8,
+          "p50_ms": 1234.8,
+          "p95_ms": 1408.7
+        },
+        "mrr@10": {
+          "high": 0.9689143542017008,
+          "low": 0.9463648208816975,
+          "mean": 0.9580504371573494
+        },
+        "mrr@5": {
+          "high": 0.967964368599866,
+          "low": 0.9447268484338898,
+          "mean": 0.9566476627975335
+        },
+        "ndcg@10": {
+          "high": 0.9742631651250359,
+          "low": 0.9544187500105518,
+          "mean": 0.9645442665415285
+        },
+        "queries": 1914,
+        "recall@10": {
+          "high": 0.9919684898076371,
+          "low": 0.9777116658463557,
+          "mean": 0.9851257126450924
+        },
+        "recall@50": {
+          "high": 0.9970591854312784,
+          "low": 0.9849117653090521,
+          "mean": 0.9914708174398097
+        },
+        "rerank_pool_recall": 0.9890282131661442,
+        "stages": {
+          "dense": {
+            "max_ms": 710.6,
+            "p50_ms": 31.5,
+            "p95_ms": 45.2
+          },
+          "hydrate": {
+            "max_ms": 203.4,
+            "p50_ms": 10.4,
+            "p95_ms": 14.1
+          },
+          "lexical": {
+            "max_ms": 603.6,
+            "p50_ms": 9.0,
+            "p95_ms": 12.4
+          },
+          "rerank": {
+            "max_ms": 2277.4,
+            "p50_ms": 1190.1,
+            "p95_ms": 1349.3
+          }
+        }
+      }
+    },
+    "hybrid_rerank_title_chunk": {
+      "summary": {
+        "by_query_set": {
+          "orb_abstractive": {
+            "mrr@10": 0.9699452532039319,
+            "mrr@5": 0.9694288913773796,
+            "ndcg@10": 0.9739961120208838,
+            "queries": 893,
+            "recall@10": 0.986562150055991,
+            "recall@50": 0.9932810750279956
+          },
+          "orb_extractive": {
+            "mrr@10": 0.942925936290285,
+            "mrr@5": 0.9416748285994124,
+            "ndcg@10": 0.9508820745448882,
+            "queries": 1021,
+            "recall@10": 0.9755142017629774,
+            "recall@50": 0.9853085210577864
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.955532127514886,
+            "mrr@5": 0.9546238244514107,
+            "ndcg@10": 0.9616662101070952,
+            "queries": 1914,
+            "recall@10": 0.9806687565308255,
+            "recall@50": 0.9890282131661442
+          }
+        },
+        "candidate_recall": 0.9937304075235109,
+        "degraded": {
+          "count": 379,
+          "warnings": {
+            "dense_timeout": 4,
+            "rerank_timeout": 379
+          }
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.09806687565308256,
+          "unknown": 0
+        },
+        "judged@5": {
+          "mean": 0.19467084639498433,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.019780564263322885,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 2682.4,
+          "p50_ms": 1256.5,
+          "p95_ms": 2139.7
+        },
+        "mrr@10": {
+          "high": 0.9702108985342152,
+          "low": 0.9505286776783638,
+          "mean": 0.9606489237000188
+        },
+        "mrr@5": {
+          "high": 0.9696615683489876,
+          "low": 0.9497485563382689,
+          "mean": 0.9599192506459948
+        },
+        "ndcg@10": {
+          "high": 0.9751992201902753,
+          "low": 0.9575751472384396,
+          "mean": 0.9664596875039356
+        },
+        "queries": 1914,
+        "recall@10": {
+          "high": 0.9913377219966367,
+          "low": 0.9769549803125386,
+          "mean": 0.9842859193634387
+        },
+        "recall@50": {
+          "high": 0.9970591854312784,
+          "low": 0.9849117653090521,
+          "mean": 0.9914708174398097
+        },
+        "rerank_pool_recall": 0.9876221498371336,
+        "stages": {
+          "dense": {
+            "max_ms": 1000.0,
+            "p50_ms": 32.3,
+            "p95_ms": 627.7
+          },
+          "hydrate": {
+            "max_ms": 236.7,
+            "p50_ms": 10.6,
+            "p95_ms": 17.2
+          },
+          "lexical": {
+            "max_ms": 625.5,
+            "p50_ms": 9.1,
+            "p95_ms": 13.7
+          },
+          "rerank": {
+            "max_ms": 1480.5,
+            "p50_ms": 1192.6,
+            "p95_ms": 1301.2
+          }
+        }
+      }
+    },
+    "hybrid_rerank_title_chunk_2500": {
+      "summary": {
+        "by_query_set": {
+          "orb_abstractive": {
+            "mrr@10": 0.9701318900087097,
+            "mrr@5": 0.9696155281821576,
+            "ndcg@10": 0.9744359656163086,
+            "queries": 893,
+            "recall@10": 0.9876819708846585,
+            "recall@50": 0.9932810750279956
+          },
+          "orb_extractive": {
+            "mrr@10": 0.9465797615160984,
+            "mrr@5": 0.9454129937969311,
+            "ndcg@10": 0.9538641314468606,
+            "queries": 1021,
+            "recall@10": 0.9764936336924583,
+            "recall@50": 0.9853085210577864
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.9575682937751903,
+            "mrr@5": 0.9567049808429118,
+            "ndcg@10": 0.9634621711089908,
+            "queries": 1914,
+            "recall@10": 0.9817136886102403,
+            "recall@50": 0.9890282131661442
+          }
+        },
+        "candidate_recall": 0.9937304075235109,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.09817136886102405,
+          "unknown": 0
+        },
+        "judged@5": {
+          "mean": 0.1949843260188088,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.019780564263322885,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 2260.9,
+          "p50_ms": 1244.2,
+          "p95_ms": 1558.2
+        },
+        "mrr@10": {
+          "high": 0.9714380836170242,
+          "low": 0.9522725358039666,
+          "mean": 0.962211769768679
+        },
+        "mrr@5": {
+          "high": 0.9708420679354144,
+          "low": 0.9515448624612062,
+          "mean": 0.961444054796768
+        },
+        "ndcg@10": {
+          "high": 0.9764317469477186,
+          "low": 0.9588153796190808,
+          "mean": 0.9679597966820714
+        },
+        "queries": 1914,
+        "recall@10": {
+          "high": 0.992478056683483,
+          "low": 0.9786009853984661,
+          "mean": 0.9856281530700135
+        },
+        "recall@50": {
+          "high": 0.9970591854312784,
+          "low": 0.9849117653090521,
+          "mean": 0.9914708174398097
+        },
+        "rerank_pool_recall": 0.9890282131661442,
+        "stages": {
+          "dense": {
+            "max_ms": 320.3,
+            "p50_ms": 30.8,
+            "p95_ms": 42.1
+          },
+          "hydrate": {
+            "max_ms": 88.3,
+            "p50_ms": 10.3,
+            "p95_ms": 12.7
+          },
+          "lexical": {
+            "max_ms": 294.3,
+            "p50_ms": 8.8,
+            "p95_ms": 11.1
+          },
+          "rerank": {
+            "max_ms": 2217.2,
+            "p50_ms": 1201.2,
+            "p95_ms": 1513.8
+          }
+        }
+      }
+    }
+  }
+}

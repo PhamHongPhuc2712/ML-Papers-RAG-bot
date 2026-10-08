@@ -178,3 +178,112 @@ uv run --project backend mypy --config-file backend/pyproject.toml backend/src  
 
 Recorded reports re-render unchanged. The locked test split is untouched. O4 and O5 are
 not started.
+
+## Reranking the chunk that found the paper (2026-10-08)
+
+Finding 2 above said why the shipped reranker loses here: the first stage finds a paper by a
+body chunk, then the cross-encoder scores the query against the title and abstract, which do
+not contain the section the question came from. haiku.rag's reranker, which gains about one
+point of MAP on the same benchmark, scores the chunks themselves (its search hands the
+reranker chunk objects and expands context only afterwards). The search service now has the
+same mechanism as a configurable: `rerank.text` in `configs/search.yaml` (`abstract`, the
+shipped setting; `chunk`, the evidence chunk the paper was found by, the better-ranked
+branch's when BM25 and dense disagree; `title_chunk`, that chunk with the title in front).
+The setting is part of the cache identity and a run's search digest, needs
+`candidates.source: chunks`, and a candidate no branch found through a chunk is read as its
+abstract and counted in the trace. The model is unchanged: `bge-reranker-v2-m3` at the
+1,024-token pair budget.
+
+Run `orb-rerank-text-retrieval-20261008T061622Z` (`reports/retrieval/orb-rerank-text/`),
+config `configs/experiments/orb-rerank-text.yaml`, pre-registered before any number existed,
+no decision block. A 60-query probe before it (scratch, not recorded) had put chunk-pair
+reranking at p95 1.39 s and max 1.47 s against the shipped 1.5 s rerank deadline, so each
+chunk-text variant runs twice: under the shipped deadline (the serving path's reading) and
+under a 2.5 s deadline (the quality reading: a query the reranker cannot finish falls back to
+the RRF order, which here ranks *higher* than the shipped reranker and would inflate the
+row). Clean: GPU 0% busy before the run (p50 over 5 s, 2,046 MiB held by the Windows-side
+process), no failed query in any reranked variant, 0 degraded in the two relaxed-deadline
+rows, 3 h 6 min. Two Windows-side processes (`[Not Found]` to WSL, pids 27 and 32) were
+listed during the run; the two reference rows reproduce O3 (`hybrid_rerank` to four
+decimals; `hybrid` to within one query, see below), which is the evidence the run was not
+contended in a way that mattered.
+
+| Variant | Rerank reads | Deadline | Recall@10 | nDCG@10 | MRR@5 | Degraded | p50 / p95 / max | rerank p95 |
+|---|---|---|---|---|---|---|---|---|
+| `hybrid` (O3: 0.976 / 0.948 / 0.937) | — | — | 0.976 [0.966, 0.985] | 0.947 [0.935, 0.959] | 0.937 | 1 (1 failed) | 40 / 71 / 1,117 ms | — |
+| `hybrid_rerank` (shipped; O3 reproduced) | abstract | 1.5 s | 0.874 [0.855, 0.891] | 0.785 [0.763, 0.805] | 0.750 | 0 | 566 / 657 / 1,487 ms | 603 ms |
+| `hybrid_rerank_chunk` | chunk | 1.5 s | 0.985 [0.978, 0.992] | 0.965 [0.954, 0.974] | 0.953 | 10 | 1,260 / 1,419 / 2,518 ms | 1,335 ms |
+| `hybrid_rerank_title_chunk` | title + chunk | 1.5 s | 0.984 [0.977, 0.991] | 0.966 [0.958, 0.975] | 0.956 | 379 | 1,257 / 2,140 / 2,682 ms | 1,301 ms |
+| **`hybrid_rerank_chunk_2500`** | chunk | 2.5 s | 0.985 [0.978, 0.992] | **0.965** [0.954, 0.974] | 0.953 | 0 | 1,235 / 1,409 / 2,323 ms | 1,349 ms |
+| **`hybrid_rerank_title_chunk_2500`** | title + chunk | 2.5 s | 0.986 [0.979, 0.992] | **0.968** [0.959, 0.976] | 0.957 | 0 | 1,244 / 1,558 / 2,261 ms | 1,514 ms |
+
+Paired differences, 95% intervals over query families (wins / losses / ties of 387):
+
+| Comparison | nDCG@10 | Recall@10 | MRR@5 |
+|---|---|---|---|
+| `hybrid_rerank_chunk_2500` vs `hybrid_rerank` | **+0.180 [+0.160, +0.201]**, 251 / 15 / 121 | +0.111 [+0.095, +0.130] | +0.207 [+0.183, +0.230] |
+| `hybrid_rerank_title_chunk_2500` vs `hybrid_rerank` | **+0.183 [+0.163, +0.204]**, 252 / 14 / 121 | +0.112 [+0.096, +0.130] | +0.212 [+0.189, +0.235] |
+| `hybrid_rerank_chunk_2500` vs `hybrid` | +0.017 [+0.009, +0.027], 84 / 43 / 260 | +0.010 [+0.002, +0.018] | +0.020 [+0.010, +0.031] |
+| `hybrid_rerank_title_chunk_2500` vs `hybrid` | +0.021 [+0.012, +0.030], 85 / 37 / 265 | +0.010 [+0.003, +0.018] | +0.025 [+0.014, +0.035] |
+| `hybrid_rerank_title_chunk_2500` vs `hybrid_rerank_chunk_2500` | +0.003 [+0.001, +0.006], 33 / 15 / 339 | +0.001 [−0.001, +0.002] | +0.005 [+0.002, +0.009] |
+| `hybrid_rerank_chunk` (1.5 s) vs its 2.5 s twin | 0.000, 0 / 0 / 387 | 0.000 | 0.000 |
+| `hybrid_rerank_title_chunk` (1.5 s) vs its 2.5 s twin | −0.002 [−0.005, +0.002], 9 / 14 / 364 | −0.001 | −0.002 |
+
+1. **Reading the chunk recovers the loss and then some.** Over the same reranked head
+   (Recall@50 identical, 0.991), the reranker that reads the chunk gains +0.180 nDCG@10 over
+   the one that reads the abstract, 251 families to 15, and now sits *above* plain fusion by
+   +0.017 [+0.009, +0.027] (chunk) and +0.021 [+0.012, +0.030] (title and chunk). The gold
+   paper is at rank 1 for 1,802–1,807 queries against `hybrid`'s 1,740 and the shipped
+   reranker's 1,268. Extractive questions, which lost most, recover most: 0.662 → 0.953.
+   The title in front of the chunk adds +0.003 [+0.001, +0.006], 33 to 15: real, small.
+2. **Where the hit lands.** Over the 1,277 queries whose gold section mapped,
+   `section_hit@1` is 69.5–69.7% (`hybrid` 66.8%, the shipped reranker 48.2%) and `paper@1`
+   94.1–94.4%; given the right paper, the best chunk is in the gold section 73.1%, the same
+   as before, because the reranker reorders papers and does not choose the chunk.
+3. **Beside haiku.rag.** Its ORB rows with a reranker read MAP 0.983–0.990 over all 3,045
+   queries; our chunk-reranked MRR@5 over the 1,914 text queries reads 0.953–0.957 against
+   0.750 for the shipped stack and 0.937 for plain `hybrid`. Still a placement, not a
+   comparison (text slice against all queries, pypdf against Docling, BGE-M3 and a 568M
+   reranker against 4B models), but the mechanism is now the same, and the reranker now
+   helps on this benchmark as theirs does.
+4. **The cost is latency, and the shipped deadline does not fit it.** A chunk pair runs to
+   the 1,024-token budget where an abstract pair is a few hundred tokens: rerank p95 goes
+   from 0.60 s to 1.3–1.5 s, request p50 from 0.57 s to 1.24 s. Under the shipped 1.5 s
+   rerank deadline the chunk row lost 10 queries (7 rerank timeouts, 3 dense timeouts while
+   abandoned rerank work held the GPU) and the title-and-chunk row lost 379: its p50 sits
+   at 1.26 s against the deadline, and once one rerank overruns, the abandoned call keeps
+   the single rerank lane and the GPU busy so the next query's rerank, and sometimes its
+   dense branch (p95 628 ms in that row against 45 ms elsewhere), time out behind it. The
+   quality held either way — every one of the 10 degraded chunk-row queries had its gold
+   paper at rank 1 under both orders, and the 379-query row reads within 0.002 of its twin —
+   but a serving path that degrades a fifth of its requests is not the serving path. Under
+   2.5 s both rows are clean with request p95 1.41 s and 1.56 s, inside the 3 s total. Two
+   levers for serving, neither measured here: a 512-token pair budget (spec §7's own
+   comparison; a chunk's median is 671 tokens) and a smaller rerank depth.
+5. **One query failed in `hybrid`** (`0d9b8d7b…`): both branches timed out at the 1.0 s
+   branch deadline (1.117 s total), the only failure in 11,484 queries; O3's `hybrid` had
+   none. It is scored zero and stays in the denominator (0.947 against O3's 0.948); the five
+   reranked rows, which ran the same branches, saw no such failure.
+
+**This is not a decision.** ORB reads the shipped configuration; it never chooses. The
+shipped reranker reads abstracts because LitSearch validation chose it, where a query
+describes a whole paper and the abstract is the right text. What this run adds is that on
+section-level questions the same model over the chunk that found the paper is the right
+text, and that the serving path cannot carry it under its current rerank deadline. The
+promotion path is a pre-registered rule on our corpus's validation split, where both query
+shapes occur, with the deadline or pair budget settled first; the locked test split is
+spent, so a shipped change needs its own release and the next locked run.
+
+```text
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/orb-rerank-text.yaml --split retrieval --database-url …copilot_orb --out reports/retrieval/orb-rerank-text
+uv run --project backend python -m copilot.cli eval report --out reports/retrieval/orb-rerank-text
+uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/orb-rerank-text --split retrieval --focus hybrid_rerank_title_chunk_2500
+uv run --env-file .env --project backend python -m copilot.cli eval orb-sections --run reports/retrieval/orb-rerank-text --database-url …copilot_orb
+uv run --env-file .env.test --project backend pytest backend/tests -q           -> 610 passed (14 new)
+uv run --project backend pytest backend/tests -m "not integration" -q           -> 416 passed
+uv run --project backend python -m copilot.cli eval smoke                       -> passed, reproducible
+uv run --project backend ruff check backend                                     -> All checks passed
+uv run --project backend mypy --config-file backend/pyproject.toml backend/src  -> no issues in 62 files
+```
+
+Recorded reports (`orb-text`, `e3-litsearch`, `m2-release`) re-render unchanged.

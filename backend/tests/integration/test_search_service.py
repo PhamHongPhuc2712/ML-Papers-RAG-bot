@@ -396,8 +396,13 @@ class FakeListwise:
         if self.sleep:
             threading.Event().wait(self.sleep)
         if self.fail == "not_a_permutation":
-            return ListwiseResult(order=[0] * len(texts), ranked_by_model=1, cost_usd=0.0,
-                                  served_model="fake-model", cached=False)
+            return ListwiseResult(
+                order=[0] * len(texts),
+                ranked_by_model=1,
+                cost_usd=0.0,
+                served_model="fake-model",
+                cached=False,
+            )
         if self.fail == "spend_cap":
             raise LlmError("llm_spend_cap")
         if self.fail == "unparseable":
@@ -405,9 +410,13 @@ class FakeListwise:
         if self.fail == "server_error":
             raise LlmError("llm_server_error", retryable=True)
         order = list(range(len(texts)))
-        return ListwiseResult(order=order[::-1] if self.reverse else order,
-                              ranked_by_model=len(texts), cost_usd=0.0012,
-                              served_model="fake-model", cached=False)
+        return ListwiseResult(
+            order=order[::-1] if self.reverse else order,
+            ranked_by_model=len(texts),
+            cost_usd=0.0012,
+            served_model="fake-model",
+            cached=False,
+        )
 
 
 @pytest.fixture
@@ -420,8 +429,7 @@ def service_factory(corpus):
 
 
 def _deep(limit: int = 50) -> SearchRequest:
-    return SearchRequest(query=QUERY, mode="hybrid_rerank_llm", filters=PaperFilters(),
-                         limit=limit)
+    return SearchRequest(query=QUERY, mode="hybrid_rerank_llm", filters=PaperFilters(), limit=limit)
 
 
 def test_the_llm_reorders_the_reranked_head_without_changing_its_members(service_factory):
@@ -439,12 +447,15 @@ def test_the_llm_reorders_the_reranked_head_without_changing_its_members(service
     assert stage["served_model"] == "fake-model" and stage["cached"] is False
 
 
-@pytest.mark.parametrize("failure, warning", [
-    ("spend_cap", "llm_spend_cap"),
-    ("unparseable", "llm_rerank_unparseable"),
-    ("timeout", "llm_rerank_timeout"),
-    ("server_error", "llm_rerank_failed"),
-])
+@pytest.mark.parametrize(
+    "failure, warning",
+    [
+        ("spend_cap", "llm_spend_cap"),
+        ("unparseable", "llm_rerank_unparseable"),
+        ("timeout", "llm_rerank_timeout"),
+        ("server_error", "llm_rerank_failed"),
+    ],
+)
 def test_an_llm_failure_serves_the_cross_encoder_order_and_says_why(
     service_factory, failure, warning
 ):
@@ -458,7 +469,8 @@ def test_an_llm_failure_serves_the_cross_encoder_order_and_says_why(
 
 def test_without_a_configured_llm_the_mode_degrades_rather_than_failing(service_factory):
     deep = service_factory(listwise=None).rank(
-        SearchRequest(query="graph", mode="hybrid_rerank_llm", filters=PaperFilters()))
+        SearchRequest(query="graph", mode="hybrid_rerank_llm", filters=PaperFilters())
+    )
     assert "llm_rerank_unavailable" in deep.ordering.warnings and deep.ordering.items
 
 
@@ -524,3 +536,198 @@ def test_a_real_llm_timeout_falls_back_on_the_threaded_runner(corpus):
         service.close()
     assert deep.ordering.items == plain.ordering.items
     assert deep.ordering.warnings == ("llm_rerank_timeout",)
+
+
+# --- Reranking the chunk that found the paper (rerank.text) --------------------------------
+
+
+class RecordingReranker:
+    """Scores in fused order and keeps every text it was asked to read."""
+
+    identity = "fixture/recording"
+
+    def __init__(self) -> None:
+        self.texts: list[list[str]] = []
+
+    def score(self, query, texts):
+        self.texts.append(list(texts))
+        return [float(len(texts) - index) for index in range(len(texts))]
+
+
+def _chunk_service(corpus, reranker, text: str, **overrides) -> SearchService:
+    from copilot.search.index import CHUNKS
+
+    config = SearchConfig(
+        candidates_per_branch=100,
+        candidates_source="chunks",
+        rerank_depth=50,
+        rerank_text=text,
+    )
+    parts = {
+        "lexical": SparseRetriever(
+            corpus.engine, corpus.client, kind=CHUNKS, group_papers=True, track_best_chunks=True
+        ),
+        "dense": DenseRetriever(
+            corpus.engine,
+            corpus.client,
+            FixtureEmbedding(),
+            kind=CHUNKS,
+            group_papers=True,
+            track_best_chunks=True,
+        ),
+        "reranker": reranker,
+        "config": config,
+    }
+    parts.update(overrides)
+    return _service(corpus, **parts)
+
+
+@pytest.fixture
+def body_chunks(corpus):
+    """Every seeded chunk gets a body text distinct from its paper's abstract, then restored."""
+
+    from sqlalchemy import text as sql
+
+    with corpus.engine.begin() as connection:
+        rows = connection.execute(
+            sql(
+                "select c.id::text as chunk_id, c.text, p.title from chunks c"
+                " join paper_versions pv on pv.id = c.paper_version_id"
+                " join papers p on p.id = pv.paper_id"
+            )
+        ).mappings()
+        originals = {row["chunk_id"]: (row["text"], row["title"]) for row in rows}
+        for chunk_id, (_, title) in originals.items():
+            connection.execute(
+                sql("update chunks set text = :text where id = cast(:id as uuid)"),
+                {"text": f"Body of {title}, as only the paper says.", "id": chunk_id},
+            )
+    try:
+        yield {
+            chunk_id: f"Body of {title}, as only the paper says."
+            for chunk_id, (_, title) in originals.items()
+        }
+    finally:
+        with corpus.engine.begin() as connection:
+            for chunk_id, (original, _) in originals.items():
+                connection.execute(
+                    sql("update chunks set text = :text where id = cast(:id as uuid)"),
+                    {"text": original, "id": chunk_id},
+                )
+
+
+def test_chunk_text_reranking_scores_the_chunk_that_found_each_paper(corpus, body_chunks):
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "chunk")
+    response, trace = service.search_with_trace(_request("hybrid_rerank"))
+    assert not response.degraded
+    head = [paper_id for paper_id, _ in trace.stages["fusion"]["candidates"]][:50]
+    stage = trace.stages["rerank"]
+    assert stage["text"] == "chunk" and stage["abstract_fallbacks"] == 0
+    chosen = stage["chunks"]
+    assert set(chosen) == set(head)
+    # The reranker read each paper's evidence chunk, never its abstract.
+    (texts,) = reranker.texts
+    assert texts == [body_chunks[chosen[paper_id]] for paper_id in head]
+    assert all(text.startswith("Body of ") for text in texts)
+    # The chunk scored is the one a branch found the paper by, and the branches still
+    # expose it for the evaluation harness.
+    found = {**service._branches["dense"].best_chunks, **service._branches["lexical"].best_chunks}
+    assert found and all(chosen[paper_id] in found.values() for paper_id in head)
+
+
+def test_title_chunk_reranking_prepends_the_title_to_the_chunk(corpus, body_chunks):
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "title_chunk")
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    head = [paper_id for paper_id, _ in trace.stages["fusion"]["candidates"]][:50]
+    rows = PaperStore(corpus.engine).load(head)
+    chosen = trace.stages["rerank"]["chunks"]
+    (texts,) = reranker.texts
+    assert texts == [f"{rows[pid].title}\n{body_chunks[chosen[pid]]}" for pid in head]
+
+
+def test_the_chunk_a_paper_ranked_higher_by_is_the_one_reranked(corpus, body_chunks):
+    """When the branches disagree, the chunk from the branch that ranked the paper better wins."""
+
+    from sqlalchemy import text as sql
+
+    class Scripted:
+        def __init__(self, hits, chunks) -> None:
+            self.hits, self.chunks = hits, chunks
+
+        def search(self, query, filters, limit, release_id):
+            return list(self.hits)
+
+        def search_with_chunks(self, query, filters, limit, release_id):
+            return list(self.hits), dict(self.chunks)
+
+    with corpus.engine.connect() as connection:
+        pairs = connection.execute(
+            sql(
+                "select pv.paper_id::text as paper_id, c.id::text as chunk_id from chunks c"
+                " join paper_versions pv on pv.id = c.paper_version_id order by c.id"
+            )
+        ).all()
+    own = {paper_id: chunk_id for paper_id, chunk_id in pairs}
+    first, second = list(own)[:2]
+    # Each branch names the other paper's chunk for the paper it ranks lower.
+    lexical = Scripted([(first, 9.0), (second, 8.0)], {first: own[first], second: own[first]})
+    dense = Scripted([(second, 1.0), (first, 0.5)], {second: own[second], first: own[second]})
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "chunk", lexical=lexical, dense=dense)
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    chosen = trace.stages["rerank"]["chunks"]
+    assert chosen[first] == own[first], "lexical ranked `first` higher: its chunk"
+    assert chosen[second] == own[second], "dense ranked `second` higher: its chunk"
+    (texts,) = reranker.texts
+    assert set(texts) == {body_chunks[own[first]], body_chunks[own[second]]}
+
+
+def test_a_branch_without_chunks_falls_back_to_abstracts_and_says_so(corpus):
+    """A head member no branch found through a chunk is scored by its abstract, counted."""
+
+    hits = [(paper_id, 1.0) for paper_id in list(corpus.ids.values())[:3]]
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "chunk", lexical=Fixed(hits), dense=Fixed(hits))
+    response, trace = service.search_with_trace(_request("hybrid_rerank"))
+    rows = PaperStore(corpus.engine).load([paper_id for paper_id, _ in hits])
+    (texts,) = reranker.texts
+    assert sorted(texts) == sorted(rows[paper_id].text for paper_id, _ in hits)
+    assert trace.stages["rerank"]["abstract_fallbacks"] == 3
+    assert trace.stages["rerank"]["chunks"] == {}
+    # Still a full rerank over every candidate: the ordering is not degraded.
+    assert not response.degraded
+
+
+def test_the_rerank_text_is_part_of_the_cache_identity(corpus):
+    abstract = _service(corpus, config=SearchConfig(candidates_source="chunks"))
+    chunk = _chunk_service(corpus, FixtureReranker(), "chunk")
+    assert "rerank_text" not in abstract.identity("hybrid_rerank")
+    assert chunk.identity("hybrid_rerank")["rerank_text"] == "chunk"
+    assert "rerank_text" not in chunk.identity("hybrid")
+
+
+def test_chunk_text_reranking_needs_chunk_candidates_and_a_chunk_source():
+    with pytest.raises(ValueError, match="rerank_text"):
+        SearchConfig(candidates_source="papers", rerank_text="chunk")
+    with pytest.raises(ValueError, match="rerank_text"):
+        SearchConfig(candidates_source="chunks", rerank_text="section")
+    # Without a database the chunk texts must come from the caller.
+    with pytest.raises(ValueError, match="chunk_source_required"):
+        SearchService(
+            engine=None,
+            lexical=Fixed([]),
+            dense=Fixed([]),
+            reranker=FixtureReranker(),
+            config=SearchConfig(candidates_source="chunks", rerank_text="chunk"),
+            papers=PaperStore.__new__(PaperStore),
+            capture=lambda: None,
+        )
+
+
+def test_hydrate_time_includes_the_chunk_texts_the_reranker_reads(corpus, body_chunks):
+    service = _chunk_service(corpus, RecordingReranker(), "chunk")
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    assert trace.stages["hydrate"]["seconds"] >= 0.0
+    assert trace.stages["hydrate"]["chunks"] == len(trace.stages["rerank"]["chunks"])

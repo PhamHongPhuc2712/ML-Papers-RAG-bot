@@ -75,6 +75,9 @@ class SearchConfig:
     candidates_source: str = "papers"
     rrf_k: int = RRF_K
     rerank_depth: int = 50
+    # What the cross-encoder reads for each candidate (decided as an ablation, see
+    # ``RERANK_TEXTS``): the title and abstract, or the chunk that found the paper.
+    rerank_text: str = "abstract"
     branch_seconds: float = 1.0
     rerank_seconds: float = 1.5
     total_seconds: float = 3.0
@@ -85,8 +88,21 @@ class SearchConfig:
     llm_rerank_seconds: float = 20.0
     llm_total_seconds: float = 25.0
 
+    def __post_init__(self) -> None:
+        if self.rerank_text not in RERANK_TEXTS:
+            raise ValueError(f"rerank_text must be one of {', '.join(RERANK_TEXTS)}")
+        if self.rerank_text != ABSTRACT_TEXT and self.candidates_source != "chunks":
+            # Only a chunk-level first stage knows which chunk found a paper; a paper
+            # found through its abstract has no evidence chunk to rerank.
+            raise ValueError(f"rerank_text {self.rerank_text} requires candidates_source chunks")
+
 
 CANDIDATE_SOURCES = ("papers", "chunks", "both")
+# `abstract`: the title and abstract, spec §7's canonical paper text. `chunk`: the
+# evidence chunk the first stage found the paper by (the better-ranked branch's when
+# the two disagree). `title_chunk`: that chunk with the title in front of it.
+ABSTRACT_TEXT = "abstract"
+RERANK_TEXTS = (ABSTRACT_TEXT, "chunk", "title_chunk")
 
 
 def load_search_config(path: str | Path) -> SearchConfig:
@@ -95,11 +111,15 @@ def load_search_config(path: str | Path) -> SearchConfig:
     source = str((raw.get("candidates") or {}).get("source", "papers"))
     if source not in CANDIDATE_SOURCES:
         raise ValueError(f"candidates.source must be one of {', '.join(CANDIDATE_SOURCES)}")
+    rerank_text = str((raw.get("rerank") or {}).get("text", ABSTRACT_TEXT))
+    if rerank_text not in RERANK_TEXTS:
+        raise ValueError(f"rerank.text must be one of {', '.join(RERANK_TEXTS)}")
     return SearchConfig(
         candidates_per_branch=int((raw.get("candidates") or {}).get("per_branch", 100)),
         candidates_source=source,
         rrf_k=int((raw.get("fusion") or {}).get("rrf_k", RRF_K)),
         rerank_depth=int((raw.get("rerank") or {}).get("depth", 50)),
+        rerank_text=rerank_text,
         branch_seconds=float(deadlines.get("branch", 1.0)),
         rerank_seconds=float(deadlines.get("rerank", 1.5)),
         total_seconds=float(deadlines.get("total", 3.0)),
@@ -117,6 +137,12 @@ class CandidateRetriever(Protocol):
     def search(
         self, query: str, filters: PaperFilters | None, limit: int, release_id: str
     ) -> list[tuple[str, float]]: ...
+
+
+# A branch over the chunk collection may also say which chunk found each paper
+# (``search_with_chunks``, see ``chunks.ChunkCandidateRetriever``); the service asks
+# for it only when the reranker is to read that chunk.
+_WITH_CHUNKS = "search_with_chunks"
 
 
 class ListwiseReranker(Protocol):
@@ -297,6 +323,53 @@ class PaperSource(Protocol):
     def load(self, paper_ids: Sequence[str]) -> dict[str, PaperRow]: ...
 
 
+@dataclass(frozen=True)
+class ChunkRow:
+    chunk_id: str
+    paper_id: str
+    text: str
+    section_path: str
+
+
+_CHUNK_ROWS = """
+select c.id::text as chunk_id,
+       pv.paper_id::text as paper_id,
+       c.text,
+       c.section_path
+from chunks c
+join paper_versions pv on pv.id = c.paper_version_id
+where c.id = any(cast(:ids as uuid[]))
+"""
+
+
+class ChunkStore:
+    """The stored text of the chunks a first stage found papers by, for the reranker."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def load(self, chunk_ids: Sequence[str]) -> dict[str, ChunkRow]:
+        if not chunk_ids:
+            return {}
+        with self._engine.connect() as connection:
+            rows = connection.execute(text(_CHUNK_ROWS), {"ids": list(chunk_ids)}).mappings()
+            return {
+                str(row["chunk_id"]): ChunkRow(
+                    chunk_id=str(row["chunk_id"]),
+                    paper_id=str(row["paper_id"]),
+                    text=str(row["text"]),
+                    section_path=str(row["section_path"]),
+                )
+                for row in rows
+            }
+
+
+class ChunkSource(Protocol):
+    """Chunk text by chunk id: PostgreSQL in service, a fixture in tests."""
+
+    def load(self, chunk_ids: Sequence[str]) -> dict[str, ChunkRow]: ...
+
+
 @dataclass
 class SearchTrace:
     """Everything a stage decided, for offline analysis; never shown as probabilities."""
@@ -357,6 +430,19 @@ _LLM_WARNINGS = {
 }
 
 
+def _split_hits(value: Any) -> tuple[Sequence[tuple[str, float]], Mapping[str, str]]:
+    """A branch's answer: plain hits, or hits beside the chunk each paper was found by."""
+
+    if (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and isinstance(value[0], list)
+        and isinstance(value[1], Mapping)
+    ):
+        return value[0], value[1]
+    return value, {}
+
+
 def _first_occurrence(hits: Sequence[tuple[str, float]]) -> list[tuple[str, float]]:
     """A branch that repeats an ID keeps it once, at its best (first) rank and score."""
 
@@ -390,16 +476,24 @@ class SearchService:
         capture: Callable[[], ReleaseRecord | None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         listwise: ListwiseReranker | None = None,
+        chunks: ChunkSource | None = None,
     ) -> None:
         if engine is None and (papers is None or capture is None):
             # Without a database, metadata and the release must both come from the caller.
             raise ValueError("engine_required")
+        if engine is None and chunks is None and config.rerank_text != ABSTRACT_TEXT:
+            # The reranker is to read chunk text, and without a database it must come
+            # from the caller.
+            raise ValueError("chunk_source_required")
         self._branches: dict[str, CandidateRetriever] = {"lexical": lexical, "dense": dense}
         self._reranker = reranker
         self._listwise = listwise
         self._config = config
         self._runner = runner or ThreadedStageRunner()
         self._papers: PaperSource = papers or PaperStore(cast(Engine, engine))
+        self._chunks: ChunkSource | None = chunks or (
+            ChunkStore(engine) if engine is not None else None
+        )
         self._capture = capture or (lambda: capture_release(cast(Engine, engine)))
         self._clock = clock
 
@@ -430,6 +524,9 @@ class SearchService:
         if mode in _RERANKED:
             identity["reranker"] = str(getattr(self._reranker, "identity", "none"))
             identity["rerank_depth"] = config.rerank_depth
+            if config.rerank_text != ABSTRACT_TEXT:
+                # The same model over other text is another ranker.
+                identity["rerank_text"] = config.rerank_text
         if mode == "hybrid_rerank_llm":
             identity["listwise"] = str(getattr(self._listwise, "identity", "none"))
         return identity
@@ -519,10 +616,17 @@ class SearchService:
 
         branches = _MODE_BRANCHES[request.mode]
         budget = max(0.0, min(config.branch_seconds, remaining()))
+        # The reranker reads chunk text only when asked to, and only a branch over the
+        # chunk collection can say which chunk found a paper.
+        want_chunks = request.mode in _RERANKED and config.rerank_text != ABSTRACT_TEXT
         stages: dict[str, Stage] = {}
         for name in branches:
+            branch = self._branches[name]
+            method: Callable[..., Any] = branch.search
+            if want_chunks and hasattr(branch, _WITH_CHUNKS):
+                method = getattr(branch, _WITH_CHUNKS)
             search = partial(
-                self._branches[name].search,
+                method,
                 request.query,
                 request.filters,
                 config.candidates_per_branch,
@@ -532,12 +636,21 @@ class SearchService:
         outcomes = self._runner.run(stages)
 
         lists: dict[str, list[tuple[str, float]]] = {}
+        # Per paper, the chunk it was found by in the branch that ranked it best.
+        evidence: dict[str, str] = {}
+        evidence_rank: dict[str, int] = {}
         for name in branches:
             outcome = outcomes[name]
             if outcome.error is None:
-                hits = _first_occurrence(outcome.value)
+                raw_hits, chunks = _split_hits(outcome.value)
+                hits = _first_occurrence(raw_hits)
                 lists[name] = hits
                 trace.stages[name] = {"seconds": round(outcome.seconds, 4), "candidates": hits}
+                for rank, (paper_id, _) in enumerate(hits):
+                    chunk_id = chunks.get(paper_id)
+                    if chunk_id and rank < evidence_rank.get(paper_id, len(hits) + 1):
+                        evidence[paper_id] = chunk_id
+                        evidence_rank[paper_id] = rank
             else:
                 trace.stages[name] = {"seconds": round(outcome.seconds, 4), "error": outcome.error}
                 trace.warnings.append(_warning(name, outcome.error))
@@ -567,7 +680,7 @@ class SearchService:
 
         rows: dict[str, PaperRow] = {}
         if request.mode in _RERANKED:
-            ordered = self._rerank(request.query, ordered, scores, trace, remaining, rows)
+            ordered = self._rerank(request.query, ordered, scores, trace, remaining, rows, evidence)
         if request.mode == "hybrid_rerank_llm":
 
             def deep_remaining() -> float:
@@ -660,11 +773,17 @@ class SearchService:
         trace: SearchTrace,
         remaining: Callable[[], float],
         rows: dict[str, PaperRow],
+        evidence: Mapping[str, str] | None = None,
     ) -> list[tuple[str, float]]:
         """Reorder at most ``depth`` fused candidates; on any failure keep the RRF order.
 
         Only the reranked head is returned: appending the unreranked tail would
         rank reranker logits against RRF scores, which measure different things.
+
+        What each candidate is read as is ``rerank_text``: its title and abstract,
+        or the chunk the first stage found it by (``evidence``), with or without the
+        title. A candidate no branch found through a chunk is read as its abstract
+        and counted, so the stage says how much of the head it read as evidence.
         """
 
         head = fused[: self._config.rerank_depth]
@@ -681,7 +800,7 @@ class SearchService:
             trace.warnings.append("metadata_missing")
             head = [pair for pair in head if pair[0] in rows]
         candidates = [paper_id for paper_id, _ in head]
-        texts = [rows[paper_id].text for paper_id in candidates]
+        texts, read = self._rerank_texts(candidates, rows, evidence or {}, trace)
 
         def score() -> list[float]:
             return validate_scores(reranker.score(query, texts), len(texts))
@@ -702,6 +821,7 @@ class SearchService:
                     "seconds": round(outcome.seconds, 4),
                     "attempts": len(errors) + 1,
                     "candidates": ordered,
+                    **read,
                 }
                 return ordered
             errors.append(outcome.error)
@@ -711,6 +831,42 @@ class SearchService:
         trace.stages["rerank"] = {"errors": errors}
         trace.warnings.append(_warning("rerank", errors[-1]))
         return head
+
+    def _rerank_texts(
+        self,
+        candidates: Sequence[str],
+        rows: Mapping[str, PaperRow],
+        evidence: Mapping[str, str],
+        trace: SearchTrace,
+    ) -> tuple[list[str], dict[str, Any]]:
+        """What the cross-encoder reads per candidate, and a record of what that was."""
+
+        mode = self._config.rerank_text
+        if mode == ABSTRACT_TEXT or self._chunks is None:
+            return [rows[paper_id].text for paper_id in candidates], {}
+        wanted = {paper_id: evidence[paper_id] for paper_id in candidates if paper_id in evidence}
+        tick = self._clock()
+        chunks = self._chunks.load(list(wanted.values()))
+        stage = trace.stages.setdefault("hydrate", {"seconds": 0.0})
+        stage["seconds"] = round(stage["seconds"] + self._clock() - tick, 4)
+        stage["chunks"] = len(chunks)
+        texts: list[str] = []
+        scored: dict[str, str] = {}
+        fallbacks = 0
+        for paper_id in candidates:
+            chunk = chunks.get(wanted.get(paper_id, ""))
+            if chunk is None:
+                # No branch found this paper through a chunk, or the chunk is gone
+                # from the database: the abstract is the text there is.
+                texts.append(rows[paper_id].text)
+                fallbacks += 1
+                continue
+            scored[paper_id] = chunk.chunk_id
+            if mode == "title_chunk":
+                texts.append(f"{rows[paper_id].title}\n{chunk.text}")
+            else:
+                texts.append(chunk.text)
+        return texts, {"text": mode, "chunks": scored, "abstract_fallbacks": fallbacks}
 
     def _llm_rerank(
         self,

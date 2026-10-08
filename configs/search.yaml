@@ -24,6 +24,14 @@ rerank:
   # At most this many fused candidates are reranked, and hybrid_rerank returns
   # only from them: reranker logits are never compared with RRF scores.
   depth: 50
+  # What the cross-encoder reads for each candidate. `abstract`: the title and
+  # abstract (spec §7's canonical paper text, the shipped setting). `chunk`: the
+  # evidence chunk the first stage found the paper by, so the reranker judges the
+  # text that matched rather than a summary of the paper; `title_chunk` puts the
+  # title in front of it. Both need `candidates.source: chunks`. An ablation
+  # (2026-10-08) after Open RAG Bench showed the abstract-text reranker losing
+  # 0.163 nDCG@10 on section-level questions; a change here is a release decision.
+  text: abstract
 
 cache:
   # Spec §7: an ordering's top 200 (hybrid_rerank: its reranked head) is kept this

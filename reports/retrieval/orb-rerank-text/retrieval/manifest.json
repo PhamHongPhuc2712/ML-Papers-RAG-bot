@@ -1,0 +1,302 @@
+{
+  "bootstrap": {
+    "confidence": 0.95,
+    "resamples": 1000,
+    "seed": 42,
+    "unit": "query family"
+  },
+  "code": {
+    "diff_sha256": "b62277507dc41ed2eff90f2341d848613124daf330abb55fb308038ee27c9cd2",
+    "dirty": true,
+    "git_sha": "52b0f1e661d7b67dadd884a2d0a46a7e1505473e"
+  },
+  "corpus": {
+    "chunker_version": "paragraph-pack-v1",
+    "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+    "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+    "papers": "database",
+    "parser_version": "pypdf-text-v2",
+    "release_id": "orb-v1",
+    "releases": {
+      "orb-v1": {
+        "bm25_vocabulary_sha256": "536603619b1666eae20d80f1eac2a389c8dcc07597e782e4073879f4598d3181",
+        "dense_dimensions": 1024,
+        "dense_vector_bytes": 4083712,
+        "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+        "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "paper_collection": "dev_paper_abstracts_orb-v1",
+        "points": 997
+      }
+    }
+  },
+  "cost": {
+    "metered_usd": 0.0,
+    "note": "self-hosted models and services; no priced model call is made"
+  },
+  "created_at": "2026-10-08T06:16:22.745507+00:00",
+  "dataset": {
+    "digest": "c0ec514fbde7b69c0f2ed7048bf73c18668f789e22609376b5abb67853f75b36",
+    "labels": "paper_id",
+    "limited_to": null,
+    "path": "data/fixtures/orb",
+    "queries": 1914,
+    "slice": "all",
+    "sources": [
+      "orb@63f6b052ff83508b08e242db42263ee708815c26"
+    ],
+    "split": "retrieval"
+  },
+  "experiment": {
+    "config_sha256": "d4c45124889a24e9819d96f46e711b0f5a9f59e2014b060c5852b877d3a2c78e",
+    "name": "orb-rerank-text",
+    "path": "configs/experiments/orb-rerank-text.yaml"
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "locked_test": false,
+  "run_id": "orb-rerank-text-retrieval-20261008T061622Z",
+  "search": {
+    "config_sha256": "edc6d0160b8d3eaa77e45aa12dc197f1627a15c404eee9bb59cbc0ec0be04b96",
+    "path": "configs/search.yaml",
+    "values": {
+      "branch_seconds": 1.0,
+      "cache_depth": 200,
+      "cache_ttl_seconds": 600,
+      "candidates_per_branch": 100,
+      "rerank_depth": 50,
+      "rerank_retries": 1,
+      "rerank_seconds": 1.5,
+      "rrf_k": 60,
+      "total_seconds": 3.0
+    }
+  },
+  "seed": 42,
+  "timing": {
+    "gpu": {
+      "available": true,
+      "before_run": {
+        "available": true,
+        "busy": false,
+        "memory_mib": 2046,
+        "samples": 5,
+        "utilization_percent_p50": 0.0
+      },
+      "compute_processes_seen": [
+        "27",
+        "32"
+      ],
+      "memory_mib": {
+        "max": 9978,
+        "min": 4278
+      },
+      "samples": 11131,
+      "utilization_percent": {
+        "max": 100,
+        "p50": 99.0
+      }
+    },
+    "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+  },
+  "variants": {
+    "hybrid": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid",
+      "release_id": "orb-v1",
+      "reranker": "none",
+      "reranker_precision": null,
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {},
+      "search_sha256": "5b89a15c621c69bda125997e8bfc674d314b46c8424b3b1fe996c5900f99c094",
+      "warmup_queries": {
+        "count": 10,
+        "split": "retrieval"
+      },
+      "warmup_seconds": 2.702
+    },
+    "hybrid_rerank": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "orb-v1",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {},
+      "search_sha256": "5b89a15c621c69bda125997e8bfc674d314b46c8424b3b1fe996c5900f99c094",
+      "warmup_queries": {
+        "count": 10,
+        "split": "retrieval"
+      },
+      "warmup_seconds": 6.836
+    },
+    "hybrid_rerank_chunk": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": "the reranker reads the chunk that found the paper instead of its abstract",
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "orb-v1",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rerank_text": "chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {
+        "rerank_text": "chunk"
+      },
+      "search_sha256": "0a4eb9493c2bc8a1a021906717c39d84b6e1dd0ddfd9c858f461fbe17a29d431",
+      "warmup_queries": {
+        "count": 10,
+        "split": "retrieval"
+      },
+      "warmup_seconds": 14.151
+    },
+    "hybrid_rerank_chunk_2500": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": "as hybrid_rerank_chunk, with a 2.5 s rerank deadline",
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "orb-v1",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 2.5,
+        "rerank_text": "chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {
+        "rerank_seconds": 2.5,
+        "rerank_text": "chunk"
+      },
+      "search_sha256": "95fc9d31e4fbc23c8129510278cf2e12c9ed3d911745172e1c8598769a007117",
+      "warmup_queries": {
+        "count": 10,
+        "split": "retrieval"
+      },
+      "warmup_seconds": 12.731
+    },
+    "hybrid_rerank_title_chunk": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": "the reranker reads the title followed by the chunk that found the paper",
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "orb-v1",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rerank_text": "title_chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {
+        "rerank_text": "title_chunk"
+      },
+      "search_sha256": "dd913819426aea2f8f223c657f52197266d51edc06848b4573114fe0c1f88c63",
+      "warmup_queries": {
+        "count": 10,
+        "split": "retrieval"
+      },
+      "warmup_seconds": 13.01
+    },
+    "hybrid_rerank_title_chunk_2500": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": "as hybrid_rerank_title_chunk, with a 2.5 s rerank deadline",
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "orb-v1",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_retries": 1,
+        "rerank_seconds": 2.5,
+        "rerank_text": "title_chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {
+        "rerank_seconds": 2.5,
+        "rerank_text": "title_chunk"
+      },
+      "search_sha256": "1a7f35e19e5b5baa8a3424fd2532ae68766b80b94442354028efc2a0f3aa58a5",
+      "warmup_queries": {
+        "count": 10,
+        "split": "retrieval"
+      },
+      "warmup_seconds": 12.901
+    }
+  }
+}

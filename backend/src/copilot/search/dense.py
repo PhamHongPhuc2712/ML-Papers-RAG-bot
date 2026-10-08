@@ -15,7 +15,7 @@ from sqlalchemy import Engine
 from ..contracts import PaperFilters
 from ..corpus.releases import ReleaseRecord, load_release
 from ..models.embeddings import VectorModel, validate_vectors
-from .chunks import evidence_filter, paper_groups
+from .chunks import GroupedHits, evidence_filter, paper_groups
 from .index import CHUNKS, DENSE, PAPERS, IndexBuildError, qdrant_filter
 
 
@@ -46,7 +46,8 @@ class DenseRetriever:
         self._max_tokens = max_tokens
         self._group_papers = group_papers
         # Diagnostic, opt-in and for one caller at a time: the last grouped search's
-        # best chunk per paper. The evaluation harness reads it; the API never does.
+        # best chunk per paper. The evaluation harness reads it; the service asks for
+        # the chunks of one search through ``search_with_chunks`` instead.
         self._track_best_chunks = track_best_chunks
         self.best_chunks: dict[str, str] = {}
         # A release's collection pair and model never change after staging.
@@ -62,6 +63,13 @@ class DenseRetriever:
     def search(
         self, query: str, filters: PaperFilters | None, limit: int, release_id: str
     ) -> list[tuple[str, float]]:
+        return self.search_with_chunks(query, filters, limit, release_id)[0]
+
+    def search_with_chunks(
+        self, query: str, filters: PaperFilters | None, limit: int, release_id: str
+    ) -> GroupedHits:
+        """The ranked papers and, over the chunk collection, the chunk each was found by."""
+
         release = self._release(release_id)
         if release.model_revision != self._model.identity:
             raise IndexBuildError(
@@ -75,17 +83,17 @@ class DenseRetriever:
         validate_vectors(encoded.vectors, self._model.dimensions)
         vector = [float(value) for value in encoded.vectors[0]]
         if self._group_papers:
-            if self._track_best_chunks:
-                self.best_chunks = {}
-            return paper_groups(
+            ranked, chunks = paper_groups(
                 self._client,
                 release.collection(self._kind),
                 query=vector,
                 using=DENSE,
                 query_filter=evidence_filter(filters),
                 limit=limit,
-                best_chunks=self.best_chunks if self._track_best_chunks else None,
             )
+            if self._track_best_chunks:
+                self.best_chunks = dict(chunks)
+            return ranked, chunks
         hits = self._client.query_points(
             release.collection(self._kind),
             query=vector,
@@ -94,4 +102,4 @@ class DenseRetriever:
             limit=limit,
             with_payload=False,
         ).points
-        return [(str(hit.id), float(hit.score)) for hit in hits]
+        return [(str(hit.id), float(hit.score)) for hit in hits], {}

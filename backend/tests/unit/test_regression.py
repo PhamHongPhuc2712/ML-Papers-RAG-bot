@@ -700,3 +700,113 @@ def test_the_search_file_names_its_candidate_source_and_refuses_an_unknown_one(t
     del raw["candidates"]["source"]
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     assert load_search_config(path).candidates_source == "papers"
+
+
+# --- Reranking the chunk that found the paper (rerank.text) --------------------------------
+
+
+def test_a_variant_may_rerank_chunk_text_and_only_a_reranked_mode_may(tmp_path):
+    path = _config_with(
+        tmp_path,
+        [
+            {
+                "name": "rerank_chunk",
+                "mode": "hybrid_rerank",
+                "candidates": "chunks",
+                "search": {"rerank": {"text": "chunk"}},
+            },
+            {
+                "name": "rerank_title_chunk",
+                "mode": "hybrid_rerank",
+                "candidates": "chunks",
+                "search": {"rerank": {"text": "title_chunk"}},
+            },
+        ],
+    )
+    by_name = {variant.name: variant for variant in load_experiment(path).variants}
+    assert by_name["rerank_chunk"].search == (("rerank_text", "chunk"),)
+    assert by_name["rerank_title_chunk"].search == (("rerank_text", "title_chunk"),)
+
+
+@pytest.mark.parametrize(
+    ("variant", "why"),
+    [
+        (
+            {"name": "plain", "mode": "hybrid", "search": {"rerank": {"text": "chunk"}}},
+            "plain.search.rerank.text means nothing",
+        ),
+        (
+            {"name": "odd", "mode": "hybrid_rerank", "search": {"rerank": {"text": "section"}}},
+            "odd.search.rerank.text must be one of",
+        ),
+        (
+            {"name": "num", "mode": "hybrid_rerank", "search": {"rerank": {"text": 3}}},
+            "num.search.rerank.text must be one of",
+        ),
+        (
+            # Paper-level candidates carry no chunk to rerank.
+            {
+                "name": "papers",
+                "mode": "hybrid_rerank",
+                "candidates": "papers",
+                "search": {"rerank": {"text": "chunk"}},
+            },
+            "papers.*rerank_text",
+        ),
+    ],
+)
+def test_a_rerank_text_outside_the_three_or_without_chunks_is_refused(tmp_path, variant, why):
+    path = _config_with(tmp_path, [variant])
+    with pytest.raises(ExperimentError, match=why):
+        load_experiment(path)
+
+
+def test_the_shipped_rerank_text_leaves_every_recorded_digest_unchanged():
+    from copilot.evaluation.retrieval import search_config_for, search_digest, search_values
+    from copilot.search.service import SearchConfig
+
+    base = SearchConfig(candidates_source="chunks")
+    assert "rerank_text" not in search_values(base, "hybrid_rerank", "chunks")
+    chunk = search_config_for(
+        Variant(
+            name="c", mode="hybrid_rerank", candidates="chunks", search=(("rerank_text", "chunk"),)
+        ),
+        base,
+    )
+    assert chunk.rerank_text == "chunk"
+    assert search_values(chunk, "hybrid_rerank", "chunks")["rerank_text"] == "chunk"
+    digests = {
+        search_digest(
+            search_config_for(
+                Variant(
+                    name="v",
+                    mode="hybrid_rerank",
+                    candidates="chunks",
+                    search=(("rerank_text", text),),
+                ),
+                base,
+            ),
+            "hybrid_rerank",
+            "chunks",
+        )
+        for text in ("abstract", "chunk", "title_chunk")
+    }
+    assert len(digests) == 3
+
+
+def test_the_search_file_names_its_rerank_text_and_refuses_an_unknown_one(tmp_path):
+    from copilot.search.service import load_search_config
+
+    shipped = load_search_config("configs/search.yaml")
+    assert shipped.rerank_text == "abstract"
+    path = tmp_path / "search.yaml"
+    path.write_text("candidates:\n  source: chunks\nrerank:\n  text: section\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="rerank.text"):
+        load_search_config(path)
+    path.write_text("candidates:\n  source: papers\nrerank:\n  text: chunk\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="rerank_text"):
+        load_search_config(path)
+    path.write_text(
+        "candidates:\n  source: chunks\nrerank:\n  text: title_chunk\n", encoding="utf-8"
+    )
+    assert load_search_config(path).rerank_text == "title_chunk"

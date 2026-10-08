@@ -41,7 +41,9 @@ from pydantic import ValidationError
 from ..contracts import ListwiseResult, PaperFilters, SearchRequest
 from ..corpus.releases import ReleaseRecord
 from ..search.service import (
+    ABSTRACT_TEXT,
     CANDIDATE_SOURCES,
+    RERANK_TEXTS,
     Outcome,
     PaperRow,
     SearchConfig,
@@ -108,6 +110,8 @@ SEARCH_OVERRIDES: Mapping[tuple[str, str], tuple[str, type, tuple[str, ...]]] = 
     ("candidates", "per_branch"): ("candidates_per_branch", int, MODES),
     ("rerank", "depth"): ("rerank_depth", int, RERANKED),
     ("deadlines_seconds", "rerank"): ("rerank_seconds", float, RERANKED),
+    # What the cross-encoder reads: the abstract, or the chunk that found the paper.
+    ("rerank", "text"): ("rerank_text", str, RERANKED),
 }
 
 
@@ -121,7 +125,7 @@ class Variant:
     release: str | None = None
     pair_max_tokens: int | None = None
     # (SearchConfig field, value) pairs this variant overrides, sorted by field.
-    search: tuple[tuple[str, float], ...] = ()
+    search: tuple[tuple[str, Any], ...] = ()
     # The configs/llm.yaml model key behind a hybrid_rerank_llm variant, and only one.
     llm: str | None = None
     # One of CANDIDATE_SOURCES, or None to follow the shared search file (see
@@ -169,14 +173,14 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _search_overrides(name: str, mode: str, raw: object) -> tuple[tuple[str, float], ...]:
+def _search_overrides(name: str, mode: str, raw: object) -> tuple[tuple[str, Any], ...]:
     """A variant's ``search`` block, refused unless every entry is a knob P2.6 may turn."""
 
     if raw is None:
         return ()
     if not isinstance(raw, Mapping):
         raise ExperimentError("experiment_invalid", f"{name}.search")
-    overrides: dict[str, float] = {}
+    overrides: dict[str, Any] = {}
     for section, values in raw.items():
         if not isinstance(values, Mapping):
             raise ExperimentError("experiment_invalid", f"{name}.search.{section}")
@@ -188,6 +192,13 @@ def _search_overrides(name: str, mode: str, raw: object) -> tuple[tuple[str, flo
             field_name, kind, modes = target
             if mode not in modes:
                 raise ExperimentError("experiment_invalid", f"{where} means nothing for {mode}")
+            if kind is str:
+                if value not in RERANK_TEXTS:
+                    raise ExperimentError(
+                        "experiment_invalid", f"{where} must be one of {', '.join(RERANK_TEXTS)}"
+                    )
+                overrides[field_name] = str(value)
+                continue
             if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
                 raise ExperimentError("experiment_invalid", f"{where} must be a positive number")
             if kind is int and not isinstance(value, int):
@@ -211,12 +222,24 @@ def candidate_source(experiment: Experiment, variant: Variant, config: SearchCon
     return config.candidates_source
 
 
-def search_config_for(variant: Variant, base: SearchConfig) -> SearchConfig:
-    """The search configuration one variant runs under: the shared file plus its overrides."""
+def search_config_for(
+    variant: Variant, base: SearchConfig, candidates: str | None = None
+) -> SearchConfig:
+    """The search configuration one variant runs under: the shared file plus its overrides.
+
+    ``candidates`` is the variant's resolved candidate source (``candidate_source``);
+    given, it replaces the shared file's, so a reranker asked to read chunk text is
+    refused here for a variant whose first stage finds no chunks.
+    """
 
     # Types were checked per field when the experiment loaded (SEARCH_OVERRIDES).
     overrides: dict[str, Any] = dict(variant.search)
-    config = replace(base, **overrides)
+    if candidates is not None:
+        overrides["candidates_source"] = candidates
+    try:
+        config = replace(base, **overrides)
+    except ValueError as error:
+        raise ExperimentError("experiment_invalid", f"{variant.name}: {error}") from error
     if config.rerank_seconds > config.total_seconds:
         # The reranker's budget is cut to what the total leaves, so a larger one is a
         # deadline the run claims and never applies.
@@ -252,6 +275,10 @@ def search_values(
     values.pop("candidates_source", None)
     if candidates != "papers":
         values["candidates_source"] = candidates
+    # Likewise the reranker's text: the abstract adds nothing, so every run recorded
+    # before the setting existed still reads as the same search.
+    if values.get("rerank_text", ABSTRACT_TEXT) == ABSTRACT_TEXT:
+        values.pop("rerank_text", None)
     return values
 
 
@@ -412,6 +439,10 @@ def load_experiment(path: str | Path) -> Experiment:
                 "experiment_invalid",
                 f"{variant.name}.candidates must be one of {', '.join(CANDIDATE_SOURCES)}",
             )
+        if variant.candidates is not None:
+            # A variant that names its own first stage is checked now; one that follows
+            # the shared file is checked when the run resolves it (search_config_for).
+            search_config_for(variant, SearchConfig(), candidates=variant.candidates)
     if experiment.slice not in SLICES:
         raise ExperimentError("experiment_invalid", "dataset.slice")
     if experiment.labels not in LABELS:
@@ -1333,11 +1364,12 @@ def run_retrieval(
     # Every variant's configuration is settled before anything loads, so an override
     # that cannot apply fails in seconds rather than after the models warm up.
     search_config = load_search_config(experiment.search)
-    configs = {
-        variant.name: search_config_for(variant, search_config) for variant in experiment.variants
-    }
     sources = {
-        variant.name: candidate_source(experiment, variant, configs[variant.name])
+        variant.name: candidate_source(experiment, variant, search_config)
+        for variant in experiment.variants
+    }
+    configs = {
+        variant.name: search_config_for(variant, search_config, candidates=sources[variant.name])
         for variant in experiment.variants
     }
     llm_variants = [variant for variant in experiment.variants if variant.llm is not None]

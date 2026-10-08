@@ -1,0 +1,91 @@
+# Reranking the chunk that found the paper, read on Open RAG Bench (2026-10-08).
+#
+#   eval retrieval --config configs/experiments/orb-rerank-text.yaml --split retrieval \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/retrieval/orb-rerank-text
+#   eval orb-sections --run reports/retrieval/orb-rerank-text --database-url ...copilot_orb
+#
+# Why: O3 (reports/orb-text.md) found the shipped reranker *losing* 0.163 nDCG@10 against
+# plain fusion on ORB's section-level questions. The first stage finds each paper by a
+# body chunk, then the cross-encoder scores the query against the title and abstract,
+# which do not contain the section the question came from. haiku.rag, whose reranker
+# gains on the same benchmark, scores the chunks themselves. `rerank.text` now lets the
+# cross-encoder read the chunk the paper was found by (the better-ranked branch's when
+# BM25 and dense disagree), with or without the title in front of it.
+#
+# Pre-registered before any number existed: a read of ORB, never a choice. There is no
+# `decision` block, and the single `retrieval` split holds every text query. What this
+# run can say: whether reranking chunk text recovers what reranking abstracts lost, next
+# to `hybrid` (0.948 nDCG@10 in O3) and the shipped `hybrid_rerank` (0.785).
+#
+# Two readings of each chunk-text row. Under the shipped 1.5 s rerank deadline, the
+# serving path's: a chunk pair runs longer than an abstract pair, and a query the
+# reranker cannot finish falls back to the RRF order, degraded. Under a 2.5 s deadline,
+# the quality read: a 60-query probe (2026-10-08, before this run) put chunk-pair
+# reranking at p95 1.39 s and max 1.47 s, so under 1.5 s some of 1,914 queries would
+# time out and be scored as `hybrid`, which here ranks *higher* than the shipped
+# reranker, inflating the row. The relaxed rows are the ones to read for quality; the
+# shipped-deadline rows say what the serving path would do today. A shipped change
+# needs its own pre-registered rule on our corpus's validation split.
+schema_version: 1
+name: orb-rerank-text
+
+dataset:
+  path: data/fixtures/orb
+  query_text: benchmarks/orb/dataset/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: orb-v1
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [5, 10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  # The two O3 rows this read is placed against; both must reproduce O3.
+  - name: hybrid
+    mode: hybrid
+    candidates: chunks
+  # The shipped configuration: chunk candidates, the reranker reads titles and abstracts.
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+    candidates: chunks
+  - name: hybrid_rerank_chunk
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: the reranker reads the chunk that found the paper instead of its abstract
+    search:
+      rerank: {text: chunk}
+  - name: hybrid_rerank_title_chunk
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: the reranker reads the title followed by the chunk that found the paper
+    search:
+      rerank: {text: title_chunk}
+  # The same two, under a deadline the chunk pairs fit (the quality read).
+  - name: hybrid_rerank_chunk_2500
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: as hybrid_rerank_chunk, with a 2.5 s rerank deadline
+    search:
+      rerank: {text: chunk}
+      deadlines_seconds: {rerank: 2.5}
+  - name: hybrid_rerank_title_chunk_2500
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: as hybrid_rerank_title_chunk, with a 2.5 s rerank deadline
+    search:
+      rerank: {text: title_chunk}
+      deadlines_seconds: {rerank: 2.5}

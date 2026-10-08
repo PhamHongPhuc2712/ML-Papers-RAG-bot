@@ -225,7 +225,10 @@ captured release — since 2026-10-06 from the chunk collection, one hit per pap
 best evidence chunk (`candidates.source` in `configs/search.yaml`) — RRF in our code,
 cross-encoder rerank of at most 50, every stage under a deadline with explicit, typed
 fallbacks. Ranking parameters live in `configs/search.yaml`; the reranker is pinned in
-`configs/models.yaml` beside the embedder.
+`configs/models.yaml` beside the embedder. `rerank.text` (2026-10-08) says what the
+cross-encoder reads: `abstract` (shipped) or the chunk that found the paper (`chunk`,
+`title_chunk`), the mechanism haiku.rag's reranker uses; it is an ablation knob until a
+pre-registered validation run on our corpus says otherwise.
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli search pilot --query "contrastive learning for sentence embeddings"

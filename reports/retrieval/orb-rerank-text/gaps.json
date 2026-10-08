@@ -1,0 +1,470 @@
+{
+  "comparable_to_published": false,
+  "depth": 50,
+  "focus": "hybrid_rerank_title_chunk_2500",
+  "run": "reports/retrieval/orb-rerank-text",
+  "splits": {
+    "retrieval": {
+      "gold_ranks": {
+        "hybrid": {
+          "all": {
+            "1": 1740,
+            "11-20": 15,
+            "2-5": 109,
+            "21-50": 11,
+            "6-10": 17,
+            "absent": 22
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 833,
+              "11-20": 6,
+              "2-5": 37,
+              "21-50": 5,
+              "6-10": 5,
+              "absent": 7
+            },
+            "orb_extractive": {
+              "1": 907,
+              "11-20": 9,
+              "2-5": 72,
+              "21-50": 6,
+              "6-10": 12,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1740,
+              "11-20": 15,
+              "2-5": 109,
+              "21-50": 11,
+              "6-10": 17,
+              "absent": 22
+            }
+          }
+        },
+        "hybrid_rerank": {
+          "all": {
+            "1": 1268,
+            "11-20": 96,
+            "2-5": 257,
+            "21-50": 167,
+            "6-10": 105,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 711,
+              "11-20": 24,
+              "2-5": 84,
+              "21-50": 41,
+              "6-10": 27,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 557,
+              "11-20": 72,
+              "2-5": 173,
+              "21-50": 126,
+              "6-10": 78,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1268,
+              "11-20": 96,
+              "2-5": 257,
+              "21-50": 167,
+              "6-10": 105,
+              "absent": 21
+            }
+          }
+        },
+        "hybrid_rerank_chunk": {
+          "all": {
+            "1": 1802,
+            "11-20": 6,
+            "2-5": 59,
+            "21-50": 9,
+            "6-10": 17,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 853,
+              "11-20": 2,
+              "2-5": 24,
+              "21-50": 5,
+              "6-10": 3,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 949,
+              "11-20": 4,
+              "2-5": 35,
+              "21-50": 4,
+              "6-10": 14,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1802,
+              "11-20": 6,
+              "2-5": 59,
+              "21-50": 9,
+              "6-10": 17,
+              "absent": 21
+            }
+          }
+        },
+        "hybrid_rerank_chunk_2500": {
+          "all": {
+            "1": 1802,
+            "11-20": 6,
+            "2-5": 59,
+            "21-50": 9,
+            "6-10": 17,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 853,
+              "11-20": 2,
+              "2-5": 24,
+              "21-50": 5,
+              "6-10": 3,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 949,
+              "11-20": 4,
+              "2-5": 35,
+              "21-50": 4,
+              "6-10": 14,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1802,
+              "11-20": 6,
+              "2-5": 59,
+              "21-50": 9,
+              "6-10": 17,
+              "absent": 21
+            }
+          }
+        },
+        "hybrid_rerank_title_chunk": {
+          "all": {
+            "1": 1802,
+            "11-20": 8,
+            "2-5": 61,
+            "21-50": 8,
+            "6-10": 14,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 858,
+              "11-20": 1,
+              "2-5": 19,
+              "21-50": 5,
+              "6-10": 4,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 944,
+              "11-20": 7,
+              "2-5": 42,
+              "21-50": 3,
+              "6-10": 10,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1802,
+              "11-20": 8,
+              "2-5": 61,
+              "21-50": 8,
+              "6-10": 14,
+              "absent": 21
+            }
+          }
+        },
+        "hybrid_rerank_title_chunk_2500": {
+          "all": {
+            "1": 1807,
+            "11-20": 6,
+            "2-5": 59,
+            "21-50": 8,
+            "6-10": 13,
+            "absent": 21
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "1": 857,
+              "11-20": 0,
+              "2-5": 21,
+              "21-50": 5,
+              "6-10": 4,
+              "absent": 6
+            },
+            "orb_extractive": {
+              "1": 950,
+              "11-20": 6,
+              "2-5": 38,
+              "21-50": 3,
+              "6-10": 9,
+              "absent": 15
+            }
+          },
+          "specificity": {
+            "specific": {
+              "1": 1807,
+              "11-20": 6,
+              "2-5": 59,
+              "21-50": 8,
+              "6-10": 13,
+              "absent": 21
+            }
+          }
+        }
+      },
+      "litsearch_cutoffs": {
+        "hybrid": {},
+        "hybrid_rerank": {},
+        "hybrid_rerank_chunk": {},
+        "hybrid_rerank_chunk_2500": {},
+        "hybrid_rerank_title_chunk": {},
+        "hybrid_rerank_title_chunk_2500": {}
+      },
+      "misses": {
+        "hybrid_rerank_title_chunk_2500": {
+          "orb_abstractive / specific": {
+            "beyond_depth": [
+              "d9653b7c-5ace-4aa4-ad81-39c3e739a67c",
+              "f6ed58d1-f346-4e32-b520-17dacd41dc42"
+            ],
+            "not_in_pool": [
+              "82aadc22-ff94-4eb7-b9c5-394dc2d18980",
+              "8431252b-a908-42eb-ae19-75e1c1d68245",
+              "e4aa5613-8f28-44a6-ac2a-4e3186c624e0",
+              "fc4d4614-1926-4824-b9da-cfdcc2d0132e"
+            ],
+            "queries": 893
+          },
+          "orb_extractive / specific": {
+            "beyond_depth": [
+              "01416eb6-2408-491e-a971-5647f51d7af8",
+              "57974a20-83f8-4a30-b935-ca111cc76f08",
+              "6e96f396-0181-4857-8121-7027e4d8baed",
+              "7f25612d-9419-4e0a-a89a-9a5a6638e2a6",
+              "8459f7cb-dc3a-4327-8195-98e269c487a6",
+              "91ef1af9-518c-4588-bdc6-5b8ec42095c8",
+              "c83b2de2-c2b8-4d33-aaab-a843bd1aa46b"
+            ],
+            "not_in_pool": [
+              "0ee1e0b4-ba87-4b4b-9eb3-ccae367efaca",
+              "2a20d5ac-d249-4bc8-8f83-4bdab8c800d1",
+              "51ca04bc-2c6e-439d-a36d-ffbd993e684e",
+              "579c73fa-0827-4d11-bca1-6b81e1da2c07",
+              "781eab48-5ba2-40ba-99e6-b00a46817d77",
+              "ad569d84-fb7b-430f-94f7-21a7e923f5bd",
+              "cf5e78d1-9121-41ad-93be-30b28c2253ac",
+              "d6ad1c29-0565-474a-af9b-a17b9622b852"
+            ],
+            "queries": 1021
+          }
+        }
+      },
+      "queries": 1914,
+      "stage_losses": {
+        "hybrid": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006792058516196447,
+            "queries": 1914,
+            "within_depth": 0.9885057471264368
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.005599104143337066,
+              "queries": 893,
+              "within_depth": 0.9921612541993281
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006792058516196447,
+              "queries": 1914,
+              "within_depth": 0.9885057471264368
+            }
+          }
+        },
+        "hybrid_rerank": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        },
+        "hybrid_rerank_chunk": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        },
+        "hybrid_rerank_chunk_2500": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        },
+        "hybrid_rerank_title_chunk": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        },
+        "hybrid_rerank_title_chunk_2500": {
+          "all": {
+            "beyond_depth": 0.004702194357366771,
+            "not_in_pool": 0.006269592476489028,
+            "queries": 1914,
+            "within_depth": 0.9890282131661442
+          },
+          "query_set": {
+            "orb_abstractive": {
+              "beyond_depth": 0.0022396416573348264,
+              "not_in_pool": 0.004479283314669653,
+              "queries": 893,
+              "within_depth": 0.9932810750279956
+            },
+            "orb_extractive": {
+              "beyond_depth": 0.0068560235063663075,
+              "not_in_pool": 0.007835455435847209,
+              "queries": 1021,
+              "within_depth": 0.9853085210577864
+            }
+          },
+          "specificity": {
+            "specific": {
+              "beyond_depth": 0.004702194357366771,
+              "not_in_pool": 0.006269592476489028,
+              "queries": 1914,
+              "within_depth": 0.9890282131661442
+            }
+          }
+        }
+      }
+    }
+  }
+}
