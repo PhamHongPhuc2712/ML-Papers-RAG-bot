@@ -810,3 +810,52 @@ def test_the_search_file_names_its_rerank_text_and_refuses_an_unknown_one(tmp_pa
         "candidates:\n  source: chunks\nrerank:\n  text: title_chunk\n", encoding="utf-8"
     )
     assert load_search_config(path).rerank_text == "title_chunk"
+
+
+def test_the_manifest_records_the_experiment_s_own_parsing_policy(tmp_path):
+    """A corpus re-chunked for one read is recorded under its policy, not the shipped one."""
+
+    from copilot.corpus.releases import ReleaseRecord
+    from copilot.evaluation.retrieval import build_manifest
+    from copilot.search.service import SearchConfig
+
+    parsing = tmp_path / "parsing.yaml"
+    parsing.write_text(
+        "parser: {parser_version: pypdf-text-v2}\n"
+        "chunker: {chunker_version: paragraph-pack-256-v1}\n",
+        encoding="utf-8",
+    )
+    text = EXPERIMENT.read_text(encoding="utf-8").replace(
+        "search: configs/search.yaml", f"search: configs/search.yaml\nparsing: {parsing}"
+    )
+    path = tmp_path / "experiment.yaml"
+    path.write_text(text, encoding="utf-8")
+    assert load_experiment(EXPERIMENT).parsing == Path("configs/parsing.yaml")
+    experiment = load_experiment(path)
+    assert experiment.parsing == parsing
+
+    release = ReleaseRecord(
+        id="r",
+        manifest_sha256="m",
+        paper_collection="p",
+        chunk_collection="c",
+        model_revision="model@rev",
+        status="staged",
+        counts={},
+    )
+    kwargs = {
+        "split": "validation",
+        "queries": [],
+        "corpus": release,
+        "releases": {},
+        "variants": {},
+        "search_config": SearchConfig(),
+        "locked_test": False,
+        "limited": None,
+        "gpu": {},
+    }
+    recorded = build_manifest(experiment, **kwargs)["corpus"]
+    assert recorded["chunker_version"] == "paragraph-pack-256-v1"
+    assert recorded["parser_version"] == "pypdf-text-v2"
+    shipped = build_manifest(load_experiment(EXPERIMENT), **kwargs)["corpus"]
+    assert shipped["chunker_version"] == "paragraph-pack-v1"

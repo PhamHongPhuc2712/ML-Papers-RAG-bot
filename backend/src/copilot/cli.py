@@ -1220,9 +1220,19 @@ def run_orb_dataset(*, out: Path, data_dir: Path, database_url: str | None) -> d
 
 
 def run_orb_load(
-    *, database_url: str, parsing: Path, data_dir: Path, limit: int | None, delay: float
+    *,
+    database_url: str,
+    parsing: Path,
+    data_dir: Path,
+    limit: int | None,
+    delay: float,
+    reparse: bool = False,
 ) -> dict[str, Any]:
-    """Load the ORB corpus into its own migrated database, one paper per transaction."""
+    """Load the ORB corpus into its own migrated database, one paper per transaction.
+
+    With ``reparse`` the loaded corpus is re-chunked from the kept PDFs under the
+    policy in ``parsing``, offline; its failure record is kept apart from the load's.
+    """
 
     import sys
 
@@ -1232,6 +1242,7 @@ def run_orb_load(
     from .evaluation.orb_load import load_orb_corpus
 
     paths = OrbPaths(data_dir / "benchmarks" / "orb")
+    parsing_config = load_parsing_config(parsing)
     engine = make_engine(database_url)
     transport = HttpxTransport(timeout=120.0)
     try:
@@ -1244,17 +1255,22 @@ def run_orb_load(
         report = load_orb_corpus(
             paths,
             engine=engine,
-            parsing_config=load_parsing_config(parsing),
+            parsing_config=parsing_config,
             data_dir=data_dir,
             transport=transport,
             limit=limit,
             delay_seconds=delay,
             progress=progress,
+            reparse=reparse,
         )
     finally:
         transport.close()
         engine.dispose()
-    failures = paths.root / "load-failures.json"
+    failures = paths.root / (
+        f"load-failures.{parsing_config.chunker.chunker_version}.json"
+        if reparse
+        else "load-failures.json"
+    )
     failures.write_text(json.dumps(report.failures, indent=2, sort_keys=True) + "\n")
     return {**report.as_dict(), "failures_file": str(failures)}
 
@@ -1660,6 +1676,11 @@ def _parser() -> argparse.ArgumentParser:
     orb_load.add_argument("--parsing", type=Path, default=DEFAULT_PARSING_PATH)
     orb_load.add_argument("--limit", type=int, default=None)
     orb_load.add_argument("--delay", type=float, default=1.0, help="seconds between downloads")
+    orb_load.add_argument(
+        "--reparse",
+        action="store_true",
+        help="re-chunk the loaded corpus from the kept PDFs under --parsing; downloads nothing",
+    )
     orb_load.add_argument("--data-dir", type=Path, default=None)
     orb_sections = evaluation_commands.add_parser(
         "orb-sections", help="score a recorded ORB run's rank-1 hits against the gold sections"
@@ -1833,6 +1854,7 @@ def main(argv: list[str] | None = None) -> int:
             data_dir=_data_dir(args.data_dir, parser),
             limit=args.limit,
             delay=args.delay,
+            reparse=args.reparse,
         )
     elif args.command == "eval" and args.eval_command == "orb-sections":
         from .evaluation.orb import OrbPaths

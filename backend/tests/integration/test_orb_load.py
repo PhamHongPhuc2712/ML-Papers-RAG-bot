@@ -265,3 +265,69 @@ def test_a_stalled_download_is_retried_then_recorded_not_fatal(clean_database, t
     assert report.failures == {"2401.00002v1": "download:download_transport"}
     # One backoff for the recovered paper, two for the one given up on, one polite pause.
     assert sleeps.count(15.0) == 3 and sleeps.count(1.0) == 1
+
+
+def test_a_reparse_reads_the_stored_pdfs_and_replaces_the_chunks(clean_database, tmp_path):
+    """Re-chunking the loaded corpus under another policy never touches the network."""
+
+    paths = _benchmark(tmp_path)
+    transport = FakeTransport()
+    for doc in DOCS:
+        transport.routes[f"https://arxiv.test/pdf/{doc}"] = (
+            200,
+            {"content-type": "application/pdf"},
+            FIXTURE_PDF,
+        )
+    config = _parsing_config(tmp_path)
+    kwargs = {
+        "engine": clean_database,
+        "data_dir": tmp_path,
+        "transport": transport,
+        "allowed_hosts": frozenset({"arxiv.test"}),
+        "resolver": lambda host: [PUBLIC_IP],
+        "sleep": lambda seconds: None,
+    }
+    first = load_orb_corpus(paths, parsing_config=config, **kwargs)
+    assert first.parsed == 2 and len(transport.calls) == 2
+    with session_scope(clean_database) as session:
+        before = set(session.execute(select(Chunk.id)).scalars().all())
+        versions = {v.id: v.content_sha256 for v in session.execute(select(PaperVersion)).scalars()}
+
+    smaller = replace(
+        config,
+        chunker=replace(
+            config.chunker,
+            chunker_version="paragraph-pack-test-v2",
+            target_tokens=32,
+            max_tokens=32,
+            paragraph_max_tokens=32,
+            overlap_sentences=0,
+        ),
+    )
+    # Without --reparse a parsed version is skipped, whatever the policy says.
+    skipped = load_orb_corpus(paths, parsing_config=smaller, **kwargs)
+    assert (skipped.parsed, skipped.skipped) == (0, 2)
+
+    reparsed = load_orb_corpus(paths, parsing_config=smaller, reparse=True, **kwargs)
+    assert reparsed.parsed == 2 and reparsed.skipped == 0 and reparsed.failed == {}
+    assert len(transport.calls) == 2, "a reparse downloads nothing"
+    with session_scope(clean_database) as session:
+        rows = session.execute(select(Chunk.id, Chunk.chunker_version, Chunk.token_count)).all()
+        assert rows and {row.chunker_version for row in rows} == {"paragraph-pack-test-v2"}
+        assert not before & {row.id for row in rows}, "every chunk identity changed"
+        assert max(row.token_count for row in rows) <= 32
+        # The versions keep their identity and checksum; only their chunking moved.
+        after = {v.id: v.content_sha256 for v in session.execute(select(PaperVersion)).scalars()}
+        assert after == versions
+    # A second reparse under the same policy is a no-op.
+    again = load_orb_corpus(paths, parsing_config=smaller, reparse=True, **kwargs)
+    assert (again.parsed, again.skipped) == (0, 2)
+
+    # A version whose PDF is gone from disk is recorded, not fetched.
+    for pdf in paths.pdfs.iterdir():
+        pdf.unlink()
+    third = replace(
+        smaller, chunker=replace(smaller.chunker, chunker_version="paragraph-pack-test-v3")
+    )
+    missing = load_orb_corpus(paths, parsing_config=third, reparse=True, **kwargs)
+    assert missing.failed == {"reparse:pdf_missing": 2} and len(transport.calls) == 2

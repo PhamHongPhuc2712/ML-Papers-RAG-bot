@@ -1,0 +1,194 @@
+{
+  "mapped_pairs": 987,
+  "pairs": 1527,
+  "rule": {
+    "min_run": 3,
+    "min_share": 0.4
+  },
+  "run": "reports/retrieval/orb-c256",
+  "split": "retrieval",
+  "variants": {
+    "hybrid": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.9263322884012539,
+        "queries": 1914,
+        "section_hit_at_1": 0.5711960943856794,
+        "section_hit_given_paper_at_1": 0.6120313862249346
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.9428891377379619,
+        "queries": 893,
+        "section_hit_at_1": 0.5795275590551181,
+        "section_hit_given_paper_at_1": 0.6143572621035058
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.9118511263467189,
+        "queries": 1021,
+        "section_hit_at_1": 0.5622895622895623,
+        "section_hit_given_paper_at_1": 0.6094890510948905
+      }
+    },
+    "hybrid_rerank": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.6635318704284221,
+        "queries": 1914,
+        "section_hit_at_1": 0.4011391375101709,
+        "section_hit_given_paper_at_1": 0.5745920745920746
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.7961926091825308,
+        "queries": 893,
+        "section_hit_at_1": 0.47716535433070867,
+        "section_hit_given_paper_at_1": 0.584942084942085
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.5475024485798237,
+        "queries": 1021,
+        "section_hit_at_1": 0.31986531986531985,
+        "section_hit_given_paper_at_1": 0.5588235294117647
+      }
+    },
+    "hybrid_rerank_chunk": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.9221525600835946,
+        "queries": 1914,
+        "section_hit_at_1": 0.5711960943856794,
+        "section_hit_given_paper_at_1": 0.6136363636363636
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.9339305711086227,
+        "queries": 893,
+        "section_hit_at_1": 0.573228346456693,
+        "section_hit_given_paper_at_1": 0.6148648648648649
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.9118511263467189,
+        "queries": 1021,
+        "section_hit_at_1": 0.569023569023569,
+        "section_hit_given_paper_at_1": 0.6123188405797102
+      }
+    },
+    "hybrid_rerank_chunk_2500": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.9221525600835946,
+        "queries": 1914,
+        "section_hit_at_1": 0.5711960943856794,
+        "section_hit_given_paper_at_1": 0.6136363636363636
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.9339305711086227,
+        "queries": 893,
+        "section_hit_at_1": 0.573228346456693,
+        "section_hit_given_paper_at_1": 0.6148648648648649
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.9118511263467189,
+        "queries": 1021,
+        "section_hit_at_1": 0.569023569023569,
+        "section_hit_given_paper_at_1": 0.6123188405797102
+      }
+    },
+    "hybrid_rerank_title_chunk_2500": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.9315569487983281,
+        "queries": 1914,
+        "section_hit_at_1": 0.5736371033360456,
+        "section_hit_given_paper_at_1": 0.6109185441941074
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.9473684210526315,
+        "queries": 893,
+        "section_hit_at_1": 0.5779527559055118,
+        "section_hit_given_paper_at_1": 0.610648918469218
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.9177277179236043,
+        "queries": 1021,
+        "section_hit_at_1": 0.569023569023569,
+        "section_hit_given_paper_at_1": 0.6112115732368897
+      }
+    },
+    "hybrid_rerank_v1": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.6624869383490073,
+        "queries": 1914,
+        "section_hit_at_1": 0.0,
+        "section_hit_given_paper_at_1": 0.0
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.7961926091825308,
+        "queries": 893,
+        "section_hit_at_1": 0.0,
+        "section_hit_given_paper_at_1": 0.0
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.545543584720862,
+        "queries": 1021,
+        "section_hit_at_1": 0.0,
+        "section_hit_given_paper_at_1": 0.0
+      }
+    },
+    "hybrid_v1": {
+      "all": {
+        "coverage": 0.642110762800418,
+        "mapped": 1229,
+        "paper_at_1": 0.9096133751306165,
+        "queries": 1914,
+        "section_hit_at_1": 0.0,
+        "section_hit_given_paper_at_1": 0.0
+      },
+      "query_set:orb_abstractive": {
+        "coverage": 0.7110862262038073,
+        "mapped": 635,
+        "paper_at_1": 0.9339305711086227,
+        "queries": 893,
+        "section_hit_at_1": 0.0,
+        "section_hit_given_paper_at_1": 0.0
+      },
+      "query_set:orb_extractive": {
+        "coverage": 0.5817825661116552,
+        "mapped": 594,
+        "paper_at_1": 0.8883447600391773,
+        "queries": 1021,
+        "section_hit_at_1": 0.0,
+        "section_hit_given_paper_at_1": 0.0
+      }
+    }
+  }
+}

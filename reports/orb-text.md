@@ -350,3 +350,123 @@ question, reference, answer and an empty `equivalent` per line, no verdict or re
 `eval calibration` then reports κ, agreement and the confusion matrix. Below κ = 0.6 the
 accuracy numbers are reported as uncalibrated and the rubric is fixed before the frozen
 run. The frozen 400 have not been scored (`frozen-scorings.json` absent).
+
+## haiku.rag's chunk size, read on Open RAG Bench (2026-10-09)
+
+**Why.** haiku.rag 0.95.0 (read from source) is a flat chunk index with an agent on top:
+Docling parses to a layout tree, its chunker cuts 256-token chunks with no overlap that keep
+their heading path, the embedded and full-text strings are the headings prepended to the
+chunk, one search over all chunks fetches ten times the limit and the cross-encoder scores
+each chunk's text, then every survivor is widened to its section within 5,000 characters. A
+Pydantic AI agent may search up to five times, must call `cite` with retrieved chunk ids
+before answering, and an empty list is a valid "ungrounded". Beside it, what our pipeline
+still did differently after `candidates.source: chunks` and `rerank.text: chunk` was the
+chunk itself: `paragraph-pack-v1` packs paragraphs to 800 tokens. Pre-registered question
+(`configs/experiments/orb-c256-retrieval.yaml`): over the same corpus, parser, tokenizer and
+models, does a 256-token chunk change first-stage recall, the fused ranking, the chunk-reading
+reranker and its latency, and where the best chunk lands? A read of ORB, no decision block.
+
+**How.** `eval orb-load --reparse` (new) re-chunks a loaded corpus from the PDFs kept under
+`${DATA_DIR}/benchmarks/orb/pdfs`, offline, under another parsing file; it replaces each
+version's chunks (`store_parsed_document` keeps one chunking per version) and skips a version
+already under the target policy. It ran against `copilot_orb_c256`, a PostgreSQL template
+copy of `copilot_orb`, so paper ids and the committed labels carry over and `orb-v1` is
+untouched. Policy `configs/parsing-orb-c256.yaml`: `paragraph-pack-256-v1`, pack to 256,
+split a paragraph past 256 on sentences, no overlap (haiku.rag's `HybridChunker` rule in our
+policy; its tokenizer is Qwen's, ours BGE-M3's). 997 parsed, 3 recorded `reparse:not_parsed`
+(the oversized PDFs of O2), 28 min; **119,983 chunks, median 213 tokens, max 256** (O2:
+41,670, median 671, max 1,200); body 65,249, references 18,905, appendix 15,751, front
+12,179, abstract 3,304, figure 2,052, table 1,315, acknowledgments 1,228. Snapshot
+`${DATA_DIR}/exports/orb-c256` (119,369 chunk identities, papers digest identical to
+`orb-v1`'s, `corpus validate` valid); release `orb-c256` built on the idle GPU in 806 s
+(encode 733 s, 163 points/s), 852 MB, both digests equal to the snapshot's, `validate-index`
+valid; never activated.
+
+Run `orb-c256-retrieval-20261009T042830Z` (`reports/retrieval/orb-c256/`): GPU 0% busy
+before it (p50 over 5 s, 1,771 MiB held by the Windows-side process, pid 27, the only other
+compute process seen), **0 failed and 0 degraded queries in every row**, 75 min. Two rows read
+`orb-v1` through the clone (its paper table is identical and neither reads chunk text from
+the database), so the chunk-size comparison is paired within one run; both reproduce O3
+(`hybrid` 0.948, `hybrid_rerank` 0.785). The `orb-v1` chunk-text rows cannot be re-read in
+the clone, so they are placed against the 2026-10-08 run by query family with the harness's
+own arithmetic (`pairing-vs-orb-v1.json`; `eval compare` refuses two releases by design).
+A first run of the same config (`…T030428Z`, identical rankings) was set aside: the run
+manifest had recorded the chunker version from the shipped parsing file. The harness now
+records the experiment's own `parsing:` file (default `configs/parsing.yaml`), with a test.
+
+| Variant | Chunks | Rerank reads | Deadline | Recall@10 | nDCG@10 | MRR@5 | Gold at rank 1 | p50 / p95 / max | rerank p95 |
+|---|---|---|---|---|---|---|---|---|---|
+| `hybrid_v1` (O3 reproduced) | 800 | — | — | 0.976 [0.966, 0.985] | 0.948 [0.936, 0.959] | 0.937 | 1,741 | 28 / 39 / 650 ms | — |
+| `hybrid_rerank_v1` (shipped; O3 reproduced) | 800 | abstract | 1.5 s | 0.874 [0.855, 0.891] | 0.785 [0.763, 0.805] | 0.750 | 1,268 | 541 / 607 / 833 ms | 564 ms |
+| **`hybrid`** | 256 | — | — | 0.980 [0.971, 0.989] | **0.959** [0.948, 0.969] | 0.951 | 1,773 | 32 / 41 / 333 ms | — |
+| `hybrid_rerank` | 256 | abstract | 1.5 s | 0.872 [0.852, 0.890] | 0.784 [0.762, 0.805] | 0.750 | 1,270 | 542 / 605 / 822 ms | 564 ms |
+| `hybrid_rerank_chunk` | 256 | chunk | 1.5 s | 0.983 [0.976, 0.991] | 0.958 [0.948, 0.967] | 0.948 | 1,765 | 379 / 403 / 617 ms | 360 ms |
+| `hybrid_rerank_chunk_2500` | 256 | chunk | 2.5 s | 0.983 [0.976, 0.991] | 0.958 [0.948, 0.967] | 0.948 | 1,765 | 380 / 407 / 1,228 ms | 361 ms |
+| **`hybrid_rerank_title_chunk_2500`** | 256 | title + chunk | 2.5 s | 0.986 [0.978, 0.993] | **0.965** [0.956, 0.974] | 0.957 | 1,783 | 407 / 432 / 1,015 ms | 388 ms |
+
+Paired differences, 95% intervals over query families (wins / losses / ties of 387):
+
+| Comparison | nDCG@10 | MRR@5 | Recall@10 |
+|---|---|---|---|
+| `hybrid` (256) vs `hybrid_v1` (800), within run | **+0.011 [+0.005, +0.019]**, 70 / 36 / 281 | +0.014 [+0.006, +0.023] | +0.004 [−0.000, +0.009] |
+| `hybrid_rerank` (256) vs `hybrid_rerank_v1` (800), within run | −0.001 [−0.004, +0.002], 67 / 57 / 263 | +0.000 [−0.003, +0.004] | −0.002 [−0.009, +0.003] |
+| `hybrid_rerank_chunk_2500`: 256 vs 800 (2026-10-08 run) | **−0.007 [−0.013, −0.001]**, 42 / 64 | −0.009 [−0.017, −0.001] | −0.002 [−0.007, +0.003] |
+| `hybrid_rerank_title_chunk_2500`: 256 vs 800 (2026-10-08 run) | −0.003 [−0.009, +0.003], 36 / 53 | −0.004 [−0.011, +0.003] | +0.000 [−0.005, +0.005] |
+| `hybrid_rerank_chunk_2500` vs `hybrid`, both 256 | −0.002 [−0.010, +0.006], 55 / 66 / 266 | −0.004 [−0.013, +0.006] | +0.003 [−0.003, +0.011] |
+| `hybrid_rerank_title_chunk_2500` vs `hybrid`, both 256 | +0.006 [−0.003, +0.015], 63 / 53 / 271 | +0.006 [−0.004, +0.016] | +0.006 [−0.001, +0.013] |
+
+1. **Smaller chunks help plain fusion.** Over the same 997 papers, a 256-token chunk finds the
+   gold paper at rank 1 for 1,773 queries against 1,741: +0.011 [+0.005, +0.019] nDCG@10, 70
+   families to 36; extractive questions gain most (0.932 → 0.946; abstractive 0.960 → 0.967).
+   Recall@50 is unchanged within noise (0.991 → 0.993), so this is ordering, not reach.
+2. **The abstract-reading reranker is indifferent to the chunk**, as it must be: it reads the
+   same text either way (−0.001 [−0.004, +0.002]). O3's loss is the text, not the chunking.
+3. **The chunk-reading reranker loses its margin over fusion.** Reading a 256-token chunk, it
+   ranks slightly worse than reading an 800-token one (−0.007 [−0.013, −0.001], 42 to 64) and
+   no longer beats fusion: −0.002 [−0.010, +0.006] for the chunk, +0.006 [−0.003, +0.015] with
+   the title in front, against +0.017 and +0.021 at 800 tokens. Fusion got better and the
+   cross-encoder sees less context per pair; the two meet. The best row overall is still the
+   title-and-chunk reranker (0.965 [0.956, 0.974], MRR@5 0.957), but by a margin this read
+   cannot distinguish from zero.
+4. **Latency is the clear change.** A 256-token pair reranks at p95 360–388 ms against
+   1,335–1,514 ms at 800 tokens and 564 ms for the shipped abstract pairs: request p95 403–432
+   ms, 0 of 1,914 degraded under the shipped 1.5 s deadline, where the 800-token rows lost 10
+   (chunk) and 379 (title and chunk). The 1.5 s and 2.5 s chunk rows are identical to the
+   query. What the 2026-10-08 section left open, the serving cost of chunk-text reranking,
+   has a chunk-size answer as well as a deadline or pair-budget one.
+5. **Where the hit lands is not comparable across chunk sizes** (`sections.md`). The mapping
+   rule needs a run of a gold section's sentences inside one chunk, so fewer sections map
+   (987 of 1,527 pairs, 1,229 queries at 64.2%, against 1,022 and 66.7%), and a smaller chunk
+   is a smaller target: `hybrid` puts its best chunk in the gold section for 57.1% of mapped
+   queries (66.8% at 800 tokens) and 61.2% given the right paper (72.8%). `paper@1` moves the
+   other way, 92.6% against 91.0%. The `orb-v1` rows read 0.0 here because their chunk ids
+   are not in the clone; their figures are the 2026-10-08 run's. For evidence, the unit the
+   generator receives is what matters, and that is where section expansion (`context.expansion:
+   section`, the `section` QA variant) is meant to put back what a small chunk leaves out.
+6. **Beside haiku.rag.** MRR@5 over the 1,914 text queries reads 0.951 (fusion) and 0.957
+   (title and chunk) against their 0.983–0.990 MAP over all 3,045 with 4B models and Docling
+   text. Candidate source, reranker text and chunk size are now the same mechanisms as theirs;
+   what remains different is the parser (pypdf against Docling: a third of ORB's gold sections
+   do not map onto our chunks at all) and the models (568M against 4B), and this read cannot
+   separate the two. Still a placement, not a comparison.
+
+Not a decision. A chunking change on our corpus is a release decision: a pre-registered rule
+on the validation split, then a rebuild of 3,426,221 chunks (`corpus rechunk`, days of GPU
+time for the index) and a locked run. What this read supports pre-registering there: the
+fusion gain and the reranker's latency; what it warns about: the chunk-reading reranker's
+margin, which here went to zero, and the section-hit metric, which must be re-based. The
+answering run (O5) has not been repeated over `orb-c256`; it would be a new variant, about
+$0.07 per 100 development cases, registered before the frozen split is scored.
+
+Commands, in order (`.../copilot_orb_c256` is the clone's URL):
+
+```text
+psql -U copilot -d postgres -c "CREATE DATABASE copilot_orb_c256 TEMPLATE copilot_orb"
+eval orb-load --database-url .../copilot_orb_c256 --parsing configs/parsing-orb-c256.yaml --reparse
+corpus export --run orb-c256 --out orb-c256 --database-url .../copilot_orb_c256
+corpus validate --manifest ${DATA_DIR}/exports/orb-c256/manifest.json
+search build-index --manifest ${DATA_DIR}/exports/orb-c256/manifest.json --release orb-c256 --collections papers,chunks --database-url .../copilot_orb_c256
+search validate-index --release orb-c256 --database-url .../copilot_orb_c256
+eval retrieval --config configs/experiments/orb-c256-retrieval.yaml --split retrieval --database-url .../copilot_orb_c256 --out reports/retrieval/orb-c256
+eval orb-sections --run reports/retrieval/orb-c256 --database-url .../copilot_orb_c256
+```

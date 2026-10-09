@@ -285,6 +285,16 @@ uv run --env-file .env --project backend python -m copilot.cli eval retrieval --
 uv run --env-file .env --project backend python -m copilot.cli eval orb-sections --run reports/retrieval/orb-text --database-url ...copilot_orb
 ```
 
+Chunk size on ORB (2026-10-09): `eval orb-load --reparse` re-chunks a loaded ORB corpus
+offline from the PDFs kept under `${DATA_DIR}/benchmarks/orb/pdfs` under the `--parsing`
+file given (never downloads; records what it cannot re-read). It ran on `copilot_orb_c256`, a
+template clone of `copilot_orb`, under `configs/parsing-orb-c256.yaml` (256-token
+`paragraph-pack-256-v1`, no overlap), indexed as release `orb-c256`, never activated; the
+live corpus stays `paragraph-pack-v1`. An experiment config may name its `parsing:` file, which
+the run manifest records (`configs/experiments/orb-c256-retrieval.yaml`). Read: fusion +0.011
+nDCG@10 over 800-token chunks, chunk-text reranking 3.5× faster but no longer ahead of fusion
+(`reports/orb-text.md`, last section). Not a decision.
+
 Answering (O4–O5, 2026-10-08): `evidence/retrieve.py` finds chunk evidence inside the top
 papers (`configs/evidence.yaml`: 12 pieces, 3 per paper, 6,000 pinned-tokenizer tokens),
 `evidence/citations.py` validates every cited id structurally, `models/generation.py`

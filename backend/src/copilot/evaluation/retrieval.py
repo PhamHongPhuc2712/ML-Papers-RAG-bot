@@ -155,6 +155,10 @@ class Experiment:
     confidence: float
     variants: tuple[Variant, ...]
     decision: Mapping[str, Any]
+    # The parsing policy the release's corpus was chunked under, recorded in the run
+    # manifest. The shipped file unless the experiment names another, as a corpus
+    # re-chunked for one read does (`configs/parsing-orb-c256.yaml`).
+    parsing: Path = Path("configs/parsing.yaml")
 
     def variant(self, name: str) -> Variant:
         for variant in self.variants:
@@ -408,6 +412,7 @@ def load_experiment(path: str | Path) -> Experiment:
             papers=str(raw["corpus"].get("papers", "database")),
             search=Path(raw["search"]),
             models=Path(raw["models"]),
+            parsing=Path(raw.get("parsing", "configs/parsing.yaml")),
             recall_at=tuple(int(k) for k in metrics["recall_at"]),
             ndcg_at=tuple(int(k) for k in metrics["ndcg_at"]),
             mrr_at=tuple(int(k) for k in metrics["mrr_at"]),
@@ -1601,7 +1606,7 @@ def build_manifest(
     gpu: Mapping[str, Any],
     created: datetime | None = None,
 ) -> dict[str, Any]:
-    parsing = yaml.safe_load(Path("configs/parsing.yaml").read_text(encoding="utf-8")) or {}
+    parsing = yaml.safe_load(Path(experiment.parsing).read_text(encoding="utf-8")) or {}
     parser = (parsing.get("parser") or {}).get("parser_version")
     chunker = (parsing.get("chunker") or {}).get("chunker_version")
     if experiment.papers == "snapshot":

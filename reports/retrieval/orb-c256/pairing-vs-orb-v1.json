@@ -1,0 +1,210 @@
+{
+ "method": "orb-c256 row (run orb-c256-retrieval-20261009T042830Z) minus the orb-v1 row of the same name from reports/retrieval/orb-rerank-text (run orb-rerank-text-retrieval-20261008T061622Z), paired by query family (gold document), 1,000 family bootstrap resamples, seed 42, 95% percentile interval: retrieval.paired's arithmetic over the two recorded per_query.parquet files. eval compare refuses the pair by design (different release), which is why it is recorded here.",
+ "pairs": {
+  "hybrid": {
+   "baseline": "hybrid",
+   "candidate": "hybrid",
+   "families": 387,
+   "mrr@5": {
+    "baseline": 0.9369,
+    "candidate": 0.9512,
+    "difference": 0.0143,
+    "high": 0.0236,
+    "losses": 32,
+    "low": 0.0058,
+    "wins": 68
+   },
+   "ndcg@10": {
+    "baseline": 0.9474,
+    "candidate": 0.9591,
+    "difference": 0.0117,
+    "high": 0.0195,
+    "losses": 36,
+    "low": 0.0053,
+    "wins": 70
+   },
+   "recall@10": {
+    "baseline": 0.9756,
+    "candidate": 0.98,
+    "difference": 0.0045,
+    "high": 0.0096,
+    "losses": 6,
+    "low": -0.0002,
+    "wins": 14
+   },
+   "recall@50": {
+    "baseline": 0.9911,
+    "candidate": 0.9929,
+    "difference": 0.0018,
+    "high": 0.0042,
+    "losses": 1,
+    "low": -0.0005,
+    "wins": 6
+   }
+  },
+  "hybrid_rerank": {
+   "baseline": "hybrid_rerank",
+   "candidate": "hybrid_rerank",
+   "families": 387,
+   "mrr@5": {
+    "baseline": 0.7499,
+    "candidate": 0.7502,
+    "difference": 0.0003,
+    "high": 0.0035,
+    "losses": 41,
+    "low": -0.0031,
+    "wins": 46
+   },
+   "ndcg@10": {
+    "baseline": 0.7846,
+    "candidate": 0.7839,
+    "difference": -0.0007,
+    "high": 0.0023,
+    "losses": 57,
+    "low": -0.0037,
+    "wins": 67
+   },
+   "recall@10": {
+    "baseline": 0.8741,
+    "candidate": 0.8718,
+    "difference": -0.0023,
+    "high": 0.0033,
+    "losses": 7,
+    "low": -0.0095,
+    "wins": 8
+   },
+   "recall@50": {
+    "baseline": 0.9915,
+    "candidate": 0.9929,
+    "difference": 0.0014,
+    "high": 0.0038,
+    "losses": 1,
+    "low": -0.0009,
+    "wins": 5
+   }
+  },
+  "hybrid_rerank_chunk": {
+   "baseline": "hybrid_rerank_chunk",
+   "candidate": "hybrid_rerank_chunk",
+   "families": 387,
+   "mrr@5": {
+    "baseline": 0.9566,
+    "candidate": 0.9477,
+    "difference": -0.0089,
+    "high": -0.0007,
+    "losses": 61,
+    "low": -0.0168,
+    "wins": 40
+   },
+   "ndcg@10": {
+    "baseline": 0.9645,
+    "candidate": 0.9575,
+    "difference": -0.007,
+    "high": -0.0006,
+    "losses": 64,
+    "low": -0.0132,
+    "wins": 42
+   },
+   "recall@10": {
+    "baseline": 0.9851,
+    "candidate": 0.9834,
+    "difference": -0.0017,
+    "high": 0.0031,
+    "losses": 12,
+    "low": -0.0069,
+    "wins": 10
+   },
+   "recall@50": {
+    "baseline": 0.9915,
+    "candidate": 0.9929,
+    "difference": 0.0014,
+    "high": 0.0038,
+    "losses": 1,
+    "low": -0.0009,
+    "wins": 5
+   }
+  },
+  "hybrid_rerank_chunk_2500": {
+   "baseline": "hybrid_rerank_chunk_2500",
+   "candidate": "hybrid_rerank_chunk_2500",
+   "families": 387,
+   "mrr@5": {
+    "baseline": 0.9566,
+    "candidate": 0.9477,
+    "difference": -0.0089,
+    "high": -0.0007,
+    "losses": 61,
+    "low": -0.0168,
+    "wins": 40
+   },
+   "ndcg@10": {
+    "baseline": 0.9645,
+    "candidate": 0.9575,
+    "difference": -0.007,
+    "high": -0.0006,
+    "losses": 64,
+    "low": -0.0132,
+    "wins": 42
+   },
+   "recall@10": {
+    "baseline": 0.9851,
+    "candidate": 0.9834,
+    "difference": -0.0017,
+    "high": 0.0031,
+    "losses": 12,
+    "low": -0.0069,
+    "wins": 10
+   },
+   "recall@50": {
+    "baseline": 0.9915,
+    "candidate": 0.9929,
+    "difference": 0.0014,
+    "high": 0.0038,
+    "losses": 1,
+    "low": -0.0009,
+    "wins": 5
+   }
+  },
+  "hybrid_rerank_title_chunk_2500": {
+   "baseline": "hybrid_rerank_title_chunk_2500",
+   "candidate": "hybrid_rerank_title_chunk_2500",
+   "families": 387,
+   "mrr@5": {
+    "baseline": 0.9614,
+    "candidate": 0.9572,
+    "difference": -0.0042,
+    "high": 0.0032,
+    "losses": 49,
+    "low": -0.0113,
+    "wins": 32
+   },
+   "ndcg@10": {
+    "baseline": 0.968,
+    "candidate": 0.965,
+    "difference": -0.003,
+    "high": 0.003,
+    "losses": 53,
+    "low": -0.0086,
+    "wins": 36
+   },
+   "recall@10": {
+    "baseline": 0.9856,
+    "candidate": 0.9857,
+    "difference": 0.0001,
+    "high": 0.0047,
+    "losses": 10,
+    "low": -0.0046,
+    "wins": 12
+   },
+   "recall@50": {
+    "baseline": 0.9915,
+    "candidate": 0.9929,
+    "difference": 0.0014,
+    "high": 0.0038,
+    "losses": 1,
+    "low": -0.0009,
+    "wins": 5
+   }
+  }
+ }
+}

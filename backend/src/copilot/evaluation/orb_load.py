@@ -11,6 +11,12 @@ never by title.
 No job queue: a thousand papers is one loop, one transaction per paper, resumable
 because a paper whose version is already parsed is skipped. Every PDF is kept
 under ``DATA_DIR/benchmarks/orb/pdfs`` for O3's section mapping.
+
+A *reparse* re-chunks a loaded corpus under another policy from those kept PDFs:
+each parsed version is read back from ``pdfs/<content_sha256>.pdf``, parsed by the
+same adapter and chunked by the configured policy, which replaces its chunks
+(``store_parsed_document`` keeps one chunking per version). Nothing is downloaded:
+a version whose PDF is gone, or that never parsed, is recorded and left as it is.
 """
 
 from __future__ import annotations
@@ -34,7 +40,7 @@ from ..corpus.documents import store_parsed_document
 from ..corpus.download import DownloadPolicyError, Resolver, default_resolver, download_pdf
 from ..corpus.parse import ParseStatus, parse_pdf_result
 from ..corpus.sources.base import ProviderError, ProviderThrottled, Transport
-from ..db.models import PaperVersion
+from ..db.models import Chunk, PaperVersion
 from ..db.session import session_scope
 from .orb import ORB_REVISION, OrbError, OrbPaths
 
@@ -123,6 +129,17 @@ def _version_for(session: Any, paper_id: UUID, revision: str, version: str | Non
     return found
 
 
+def _chunked_under(session: Any, version_id: UUID, chunker_version: str) -> bool:
+    """Whether the version's stored chunks already carry this chunker revision."""
+
+    statement = (
+        select(Chunk.id)
+        .where(Chunk.paper_version_id == version_id, Chunk.chunker_version == chunker_version)
+        .limit(1)
+    )
+    return session.execute(statement).first() is not None
+
+
 def _arxiv_version(doc_id: str) -> str | None:
     from ..corpus.normalize import normalize_arxiv
 
@@ -179,12 +196,17 @@ def load_orb_corpus(
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
     progress: Callable[[str, dict[str, Any]], None] | None = None,
+    reparse: bool = False,
 ) -> LoadReport:
     """Resolve, download, parse and chunk every paper in ``pdf_urls.json``.
 
     A paper whose version is already parsed is skipped, so a stopped run resumes.
     A download or parse that fails is recorded with its typed reason and the
     loop continues; the PDF, when there is one, stays on disk for a retry.
+
+    With ``reparse``, a parsed version is instead read back from its kept PDF and
+    chunked under the configured policy, unless it already is; nothing is
+    downloaded, so the run is offline.
     """
 
     urls = json.loads(paths.member("pdf/arxiv/pdf_urls.json").read_text(encoding="utf-8"))
@@ -220,38 +242,56 @@ def load_orb_corpus(
                 report.failures[doc_id] = f"identity:{error.code}"
                 continue
             version = _version_for(session, paper_id, revision, version_label)
-            if version.parse_status == ParseStatus.PARSED.value:
-                report.skipped += 1
-                continue
             version_id = version.id
+            kept_pdf: Path | None = None
+            if version.parse_status == ParseStatus.PARSED.value:
+                if not reparse or _chunked_under(session, version_id, chunker.chunker_version):
+                    report.skipped += 1
+                    continue
+                kept_pdf = paths.pdfs / f"{version.content_sha256}.pdf"
+                if not kept_pdf.is_file():
+                    failed["reparse:pdf_missing"] += 1
+                    report.failures[doc_id] = "reparse:pdf_missing"
+                    continue
+            elif reparse:
+                # A reparse is offline: a version that never parsed has no kept PDF
+                # worth re-reading, and the load's own failure record stands.
+                failed["reparse:not_parsed"] += 1
+                report.failures[doc_id] = "reparse:not_parsed"
+                continue
 
-        try:
-            downloaded = _download(
-                str(urls[doc_id]),
-                paths,
-                transport,
-                allowed_hosts=allowed_hosts,
-                max_bytes=max(int(parser.max_pdf_bytes), 1),
-                resolver=resolver,
-                sleep=sleep,
-            )
-        except DownloadPolicyError as error:
-            failed[f"download_policy:{error.reason}"] += 1
-            report.failures[doc_id] = f"download_policy:{error.reason}"
-            continue
-        except (ProviderThrottled, ProviderError) as error:
-            code = getattr(error, "code", "throttled")
-            failed[f"download:{code}"] += 1
-            report.failures[doc_id] = f"download:{code}"
-            continue
-        except OSError:
-            failed["download:io"] += 1
-            report.failures[doc_id] = "download:io"
-            continue
-        if delay_seconds > 0:
-            sleep(delay_seconds)
+        if kept_pdf is not None:
+            pdf_path = kept_pdf
+            downloaded = None
+        else:
+            try:
+                downloaded = _download(
+                    str(urls[doc_id]),
+                    paths,
+                    transport,
+                    allowed_hosts=allowed_hosts,
+                    max_bytes=max(int(parser.max_pdf_bytes), 1),
+                    resolver=resolver,
+                    sleep=sleep,
+                )
+            except DownloadPolicyError as error:
+                failed[f"download_policy:{error.reason}"] += 1
+                report.failures[doc_id] = f"download_policy:{error.reason}"
+                continue
+            except (ProviderThrottled, ProviderError) as error:
+                code = getattr(error, "code", "throttled")
+                failed[f"download:{code}"] += 1
+                report.failures[doc_id] = f"download:{code}"
+                continue
+            except OSError:
+                failed["download:io"] += 1
+                report.failures[doc_id] = "download:io"
+                continue
+            pdf_path = downloaded.path
+            if delay_seconds > 0:
+                sleep(delay_seconds)
 
-        parsed = parse_pdf_result(downloaded.path, max_bytes=parser.max_pdf_bytes)
+        parsed = parse_pdf_result(pdf_path, max_bytes=parser.max_pdf_bytes)
         chunks = (
             chunk_document(parsed.sections, spans, chunker)
             if parsed.status is ParseStatus.PARSED
@@ -261,8 +301,9 @@ def load_orb_corpus(
             stored = session.get(PaperVersion, version_id)
             if stored is None:
                 raise OrbError("version_missing", str(version_id))
-            stored.content_sha256 = downloaded.sha256
-            stored.source_url = downloaded.final_url
+            if downloaded is not None:
+                stored.content_sha256 = downloaded.sha256
+                stored.source_url = downloaded.final_url
             ids = store_parsed_document(
                 session,
                 stored,

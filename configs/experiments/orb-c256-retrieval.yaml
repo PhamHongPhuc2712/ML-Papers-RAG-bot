@@ -1,0 +1,105 @@
+# haiku.rag's chunk granularity on Open RAG Bench (2026-10-09): the same corpus, parser
+# and models, re-chunked at 256 tokens with no overlap (configs/parsing-orb-c256.yaml),
+# indexed as release `orb-c256` in the clone database `copilot_orb_c256`.
+#
+#   eval retrieval --config configs/experiments/orb-c256-retrieval.yaml --split retrieval \
+#     --database-url postgresql+psycopg://...copilot_orb_c256 --out reports/retrieval/orb-c256
+#   eval orb-sections --run reports/retrieval/orb-c256 --database-url ...copilot_orb_c256
+#
+# Why: beside haiku.rag's ORB rows, the structural differences in our pipeline are a
+# paper-first first stage (closed by `candidates.source: chunks`), the text the reranker
+# reads (closed by `rerank.text: chunk`), and the chunk itself: haiku.rag cuts 256-token
+# chunks with no overlap and re-adds context after ranking; `paragraph-pack-v1` packs
+# paragraphs to 800 tokens. A smaller chunk should match a section-level question more
+# precisely, cost the reranker a shorter pair (the chunk-text rows timed out under the
+# shipped 1.5 s deadline at 800 tokens), and put the best chunk in the gold section more
+# often; it may also split the sentence a question needs from its context.
+#
+# Pre-registered before any number existed: a read of ORB, never a choice; no `decision`
+# block. Two rows read the untouched `orb-v1` release through the clone (the paper table
+# is identical, and neither row reads chunk text from the database), so the comparison
+# is paired within one run over the same 1,914 queries and the same gold labels:
+# `hybrid` against `hybrid_v1`, `hybrid_rerank` against `hybrid_rerank_v1`. The `orb-v1`
+# chunk-text rows cannot be re-run here (the clone holds only the new chunks), so they
+# are placed against `reports/retrieval/orb-rerank-text/` by query family, offline.
+# What this run can say: whether 256-token chunks change first-stage recall, the fused
+# ranking, the chunk-reading reranker's ranking and its latency under the shipped
+# deadline, and `section_hit@1`. A chunking change on our corpus is a release decision
+# with its own pre-registered rule on the validation split.
+schema_version: 1
+name: orb-c256
+
+dataset:
+  path: data/fixtures/orb
+  query_text: benchmarks/orb/dataset/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: orb-c256
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+# The policy orb-c256 was chunked under, so the run manifest records it, not the shipped one.
+parsing: configs/parsing-orb-c256.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [5, 10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  # O3's rows over the untouched release; both must reproduce O3 (0.948 and 0.785 nDCG@10).
+  - name: hybrid_v1
+    mode: hybrid
+    candidates: chunks
+    release: orb-v1
+    changes: the 800-token chunks of orb-v1, plain fusion
+  - name: hybrid_rerank_v1
+    mode: hybrid_rerank
+    candidates: chunks
+    release: orb-v1
+    changes: the 800-token chunks of orb-v1, the reranker reads titles and abstracts
+  # The same two over the 256-token chunks.
+  - name: hybrid
+    mode: hybrid
+    candidates: chunks
+    baseline: hybrid_v1
+    changes: 256-token chunks, plain fusion
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: hybrid_rerank_v1
+    changes: 256-token chunks, the reranker reads titles and abstracts (the shipped setting)
+  # The chunk-reading reranker over 256-token chunks, under the shipped deadline and the
+  # relaxed one; at 800 tokens the shipped deadline degraded 10 and 379 queries.
+  - name: hybrid_rerank_chunk
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: hybrid
+    changes: 256-token chunks, the reranker reads the chunk that found the paper
+    search:
+      rerank: {text: chunk}
+  - name: hybrid_rerank_chunk_2500
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: hybrid
+    changes: as hybrid_rerank_chunk, with a 2.5 s rerank deadline
+    search:
+      rerank: {text: chunk}
+      deadlines_seconds: {rerank: 2.5}
+  - name: hybrid_rerank_title_chunk_2500
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: hybrid
+    changes: 256-token chunks, the reranker reads the title then the chunk, 2.5 s deadline
+    search:
+      rerank: {text: title_chunk}
+      deadlines_seconds: {rerank: 2.5}

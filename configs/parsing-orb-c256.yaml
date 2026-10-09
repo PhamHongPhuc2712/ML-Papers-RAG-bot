@@ -1,0 +1,39 @@
+# Open RAG Bench only: the shipped parsing policy with haiku.rag's chunk granularity
+# (2026-10-09). Same parser, same tokenizer, same paragraph-pack policy; the packing
+# budget drops from 800/900/1,200 tokens to 256, and the chunker repeats no overlap.
+# haiku.rag's HybridChunker cuts docling items at 256 tokens and merges undersized
+# neighbours up to that size, with no overlap, then re-adds context after ranking by
+# expanding each hit to its section; `target_tokens: 256` with `max_tokens: 256` is the
+# same packing rule in our policy, and a paragraph past 256 is split on sentences.
+#
+# A new `chunker_version` means new chunk identities, so this policy is applied to a
+# clone of `copilot_orb` (`copilot_orb_c256`) by `eval orb-load --reparse`, from the
+# PDFs kept under ${DATA_DIR}/benchmarks/orb/pdfs, and indexed as a separate release.
+# It is a read of one benchmark, not a decision: the live corpus stays paragraph-pack-v1
+# until a pre-registered validation run on it says otherwise.
+schema_version: 1
+parser:
+  adapter: pypdf-text
+  parser_version: pypdf-text-v2
+  max_pdf_bytes: 52428800
+  reject_encrypted: true
+chunker:
+  policy: paragraph-pack
+  chunker_version: paragraph-pack-256-v1
+  # fixed-window fields, read by the loader and unused by paragraph-pack.
+  target_tokens: 256
+  hard_cap_tokens: 256
+  overlap_tokens: 0
+  references_in_default_evidence: false
+  uuid_namespace: 9d2f5a6c-7b3e-4c1a-8e5d-2f6b9c1d3e47
+  # paragraph-pack: pack whole paragraphs to 256, split a paragraph past 256 on
+  # sentence boundaries, repeat nothing.
+  max_tokens: 256
+  paragraph_max_tokens: 256
+  overlap_sentences: 0
+  tokenizer:
+    kind: model
+    repo: BAAI/bge-m3
+    revision: 5617a9f61b028005a4858fdac845db406aefb181
+    file: tokenizer.json
+    sha256: 21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08
