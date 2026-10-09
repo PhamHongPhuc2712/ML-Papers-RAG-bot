@@ -1643,6 +1643,17 @@ def _parser() -> argparse.ArgumentParser:
     qa_labels.add_argument("--run", type=Path, required=True, help="a run's variant directory")
     qa_labels.add_argument("--out", type=Path, required=True, help="where to write the sheet")
     qa_labels.add_argument("--limit", type=int, default=None)
+    qa_rejudge = evaluation_commands.add_parser(
+        "qa-rejudge",
+        help="re-judge a run's answers with a second model and report agreement; spends money",
+    )
+    qa_rejudge.add_argument("--run", type=Path, required=True, help="a run's variant directory")
+    qa_rejudge.add_argument("--judge", required=True, help="a model key in configs/llm.yaml")
+    qa_rejudge.add_argument(
+        "--out", type=Path, required=True, help="the verdict sheet, under DATA_DIR"
+    )
+    qa_rejudge.add_argument("--max-spend-usd", type=float, required=True)
+    qa_rejudge.add_argument("--limit", type=int, default=None)
     litsearch_snapshot = evaluation_commands.add_parser(
         "litsearch-snapshot",
         help="LitSearch's corpus_clean as a corpus snapshot, for its own release (E3)",
@@ -1790,6 +1801,20 @@ def main(argv: list[str] | None = None) -> int:
         from .evaluation.qa import write_label_sheet
 
         result = write_label_sheet(args.run, out=args.out, limit=args.limit)
+    elif args.command == "eval" and args.eval_command == "qa-rejudge":
+        from .evaluation.qa import QaError, run_second_judge
+
+        try:
+            result = run_second_judge(
+                args.run,
+                judge_key=args.judge,
+                out=args.out,
+                max_spend_usd=args.max_spend_usd,
+                limit=args.limit,
+            )
+        except QaError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
+            return 1
     elif args.command == "eval" and args.eval_command == "qa-smoke":
         from .evaluation.qa import check_qa_smoke, run_qa_smoke
 

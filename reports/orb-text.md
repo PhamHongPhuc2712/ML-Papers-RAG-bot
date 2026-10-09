@@ -342,14 +342,52 @@ Recall@10 on ORB was 0.874; the chunk-text reranker read in the section above re
 0.985), and section expansion, with the same budget, carries fewer pieces (median 6
 against 8) for the same accuracy within noise on 100 cases.
 
-### Calibration and the frozen 400: pending the developer
+### Calibration by a second judge (2026-10-09, the developer's decision)
 
-The blind labelling sheet for 50 development cases of `flat` (seed 42 over the judged
-cases) is at `${DATA_DIR}/eval/qa/labels/orb-text-qa-development-20261008T101136Z.flat.sheet.jsonl`:
-question, reference, answer and an empty `equivalent` per line, no verdict or reason.
-`eval calibration` then reports κ, agreement and the confusion matrix. Below κ = 0.6 the
-accuracy numbers are reported as uncalibrated and the rubric is fixed before the frozen
-run. The frozen 400 have not been scored (`frozen-scorings.json` absent).
+The developer had no time to label, and decided to measure the judge the way haiku.rag
+does: against a second judge model rather than against a person. Their page reports 95%
+agreement, κ 0.90, between their new and previous judges on 120 ORB cases, and human
+adjudication only on cases where two judges disagreed. Ours is `openai-gpt-6-sol`, a
+different model family on the same provider ($2 / $0.20 / $10 per 1M tokens on the
+provider's pricing page, read 2026-10-09; effort `none`, 1,024 output tokens), reading
+the same question, reference and answer under the same rubric and prompt
+(`answer-equivalence-v1`, same digest), through `eval qa-rejudge` under the ledger. Its
+verdicts stand in for the labels in `eval calibration`'s arithmetic, with the κ floor of
+0.6 unchanged. **This is model-model agreement:** two models can share a blind spot, and
+this one shares the generator's provider too, so it is weaker evidence than 50 hand
+labels, and every accuracy number below carries that caveat. The plan's step 7 records
+the substitution.
+
+Pilot on 2 cases ($0.002; the model accepted `reasoning_effort: none`, `temperature: 0`
+and `seed`), then the `flat` run's 89 judged answers (the 11 abstentions were scored wrong
+without a judge call and are not re-judged); 0 judge errors, $0.098 from the ledger
+(`llm spend --day 2026-10-09`: 89 calls, 30,231 input and 3,983 output tokens, $0.100
+with the pilot). Verdict sheet under `${DATA_DIR}/eval/qa/labels/`, summary beside the run
+(`second-judge.openai-gpt-6-sol.json`, no text).
+
+| | Second judge: equivalent | Second judge: not |
+|---|---|---|
+| **Judge of record: equivalent** | 75 | 2 |
+| **Judge of record: not** | 2 | 10 |
+
+**Agreement 95.5% (85 of 89), Cohen's κ 0.807**, above the 0.6 floor, beside haiku.rag's
+95% and 0.90. The four disagreements, read: every one is the omitted-qualifier pattern the
+development pass had already flagged (an answer with the reference's main fact and not a
+qualifying clause or a second conclusion), two where the judge of record was stricter and
+two where the second judge was. Neither judge is systematically the stricter one, and
+nothing in the four suggests a rubric fix, so the rubric stays as it is and the development
+accuracies stand as calibrated against a second model: 0.77 [0.68, 0.84] `flat` and 0.76
+[0.67, 0.83] `section`. What remains uncertain is exactly the band the four cases sit in,
+answers that omit a qualifier, which a human read would settle and this check cannot.
+
+### The frozen 400: pending
+
+The blind labelling sheet written for 50 development cases
+(`${DATA_DIR}/eval/qa/labels/…flat.sheet.jsonl`) stays unlabelled; the second-judge check
+above replaces it by decision. The frozen 400 have not been scored (`frozen-scorings.json`
+absent). Before they are, the chunk-size read above argues for registering a third variant,
+the 256-token corpus with the chunk-reading reranker, so the one scoring per configuration
+is not spent on the weaker first stage; that is the developer's call.
 
 ## haiku.rag's chunk size, read on Open RAG Bench (2026-10-09)
 

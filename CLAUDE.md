@@ -304,14 +304,17 @@ answers with JSON claims through the chat client with one repair then insufficie
 case and stopped by the ledger. The frozen 400 are scored only with `--frozen`, once per
 configuration, and never read for debugging; development tunes prompts. Per-case text
 goes under `${DATA_DIR}/eval/qa/`, never under `reports/`. The judge (`gpt-6-luna`,
-effort `low`) shares the generator's provider: a stated limitation, measured by 50 blind
-hand labels (`docs/judge-rubric.md`, `eval calibration`, κ floor 0.6).
+effort `low`) shares the generator's provider: a stated limitation. The developer's decision
+(2026-10-09) replaced the 50 blind hand labels with a second judge model, `openai-gpt-6-sol`,
+over the same answers (`eval qa-rejudge`, then `eval calibration`'s arithmetic, κ floor 0.6):
+model-model agreement, haiku.rag's method, weaker than a human's labels and said so.
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli eval qa --split development --limit 20 --variant flat --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 0.50
 uv run --env-file .env --project backend python -m copilot.cli eval qa --split frozen --frozen --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 3.00
 uv run --project backend python -m copilot.cli eval qa-labels --run reports/qa/orb-text/development/<run>.flat --out ${DATA_DIR}/eval/qa/labels/<run>.jsonl --limit 50
 uv run --project backend python -m copilot.cli eval calibration --labels <labels>.jsonl --cases reports/qa/orb-text/development/<run>.flat/cases.parquet
+uv run --env-file .env --project backend python -m copilot.cli eval qa-rejudge --run reports/qa/orb-text/development/<run>.flat --judge openai-gpt-6-sol --out ${DATA_DIR}/eval/qa/labels/<run>.flat.rejudge.jsonl --max-spend-usd 2.70   # second judge in place of hand labels (2026-10-09)
 uv run --project backend python -m copilot.cli eval pair --treated <run>.section/cases.parquet --baseline <run>.flat/cases.parquet
 uv run --project backend python -m copilot.cli eval qa-smoke        # offline, frozen outputs; --update to re-freeze
 ```

@@ -608,6 +608,12 @@ Ruff; mypy strict; `eval smoke`.
 - [ ] **Step 7: Calibration.** Hand-label 50 development answers blind, same rubric, before
   looking at the judge's verdicts for them. Compute κ. Below 0.6 the accuracy numbers are
   reported as uncalibrated and the rubric is fixed before the frozen run, not the labels.
+  *Superseded 2026-10-09 by the developer's decision:* no time to label, so the step is
+  done haiku.rag's way, a second judge model (`openai-gpt-6-sol`, a different family on the
+  same provider) over the same answers under the same rubric (`eval qa-rejudge`), and κ is
+  model-model agreement. Weaker evidence than hand labels; the report says so beside every
+  accuracy number, and the floor of 0.6 and the "fix the rubric, never the labels" rule
+  apply to it unchanged.
 
 - [ ] **Step 8: The frozen 400**, once per variant, `--frozen`, on an idle GPU. Then
   `eval pair` for `section` against `flat`.

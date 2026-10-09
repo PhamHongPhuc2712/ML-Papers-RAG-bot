@@ -1,0 +1,44 @@
+{
+  "agreement": {
+    "agreement": 0.9550561797752809,
+    "calibrated": true,
+    "confusion": {
+      "both_no": 10,
+      "both_yes": 75,
+      "human_no_judge_yes": 2,
+      "human_yes_judge_no": 2
+    },
+    "judged": 89,
+    "kappa": 0.8073593073593073,
+    "kappa_floor": 0.6,
+    "labels": 89
+  },
+  "cases": 89,
+  "cost_usd": 0.098284,
+  "created_at": "2026-10-09T06:15:24.056703+00:00",
+  "disagreements": [
+    "006b56ae-7929-469b-8c12-0f5aa361ff14",
+    "b9d19cb3-2018-4cc5-99aa-b7e583bb143a",
+    "d30639b4-d312-47b4-a347-c98a640930ad",
+    "dd1772ea-0e31-4981-b7f0-93e544a8cd89"
+  ],
+  "judge_errors": 0,
+  "judge_of_record": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-v1:80576481bcb8",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "judged": 89,
+  "ledger_run": "orb-text-qa-development-20261008T101136Z.flat.rejudge.9ac07e99",
+  "method": "model-model agreement, the developer's substitute for 50 blind hand labels; weaker evidence than a human's labels",
+  "run_id": "orb-text-qa-development-20261008T101136Z",
+  "second_judge": {
+    "identity": "openai-gpt-6-sol=gpt-6-sol#answer-equivalence-v1:80576481bcb8",
+    "key": "openai-gpt-6-sol"
+  },
+  "served_models": [
+    "gpt-6-sol"
+  ],
+  "sheet": "/home/phamphucintern/ml-copilot-data/eval/qa/labels/orb-text-qa-development-20261008T101136Z.flat.rejudge-gpt-6-sol.jsonl",
+  "stopped": null,
+  "variant": "flat"
+}

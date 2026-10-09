@@ -937,6 +937,146 @@ def run_qa(
 # --- The labelling sheet ------------------------------------------------------------------
 
 
+def run_second_judge(
+    run_dir: str | Path,
+    *,
+    judge_key: str,
+    out: Path,
+    max_spend_usd: float,
+    limit: int | None = None,
+    judge: Any | None = None,
+    ledger: Any | None = None,
+    data_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Re-judge a run's judged answers with a second model and measure agreement.
+
+    The developer's substitute (2026-10-09) for the 50 blind hand labels of O5 step 7,
+    haiku.rag's method: an independent judge model reads the same question, reference
+    and answer under the same rubric, and its verdicts stand in for the labels in
+    ``calibration``. It measures model-model agreement, which is weaker evidence than a
+    human's, and the report says so. Abstentions were never judged by the first judge and
+    are not judged here. Every call goes through the ledger under the daily cap; the run
+    is refused when its worst case exceeds ``max_spend_usd`` and stopped once its ledger
+    spend does. The verdict sheet carries benchmark text and lives under ``DATA_DIR``;
+    the returned summary carries none.
+    """
+
+    from ..models.spend import estimate_usd, load_llm_config
+    from .judge import JudgeError
+    from .pairing import calibration
+
+    run_dir = Path(run_dir)
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    if manifest["judge"]["key"] == judge_key:
+        raise QaError("same_judge", judge_key)
+    text_path = (
+        Path(manifest["text_dir"]) / manifest["run_id"] / manifest["variant"] / "cases.jsonl"
+    )
+    rows = [
+        row
+        for row in _load_jsonl(text_path)
+        if isinstance(row.get("equivalent"), bool) and not row.get("abstained") and row["answer"]
+    ]
+    rows.sort(key=lambda row: str(row["query_id"]))
+    if limit is not None:
+        rows = rows[:limit]
+    if not rows:
+        raise QaError("no_cases", str(text_path))
+    model = load_llm_config("configs/llm.yaml").models[judge_key]
+    worst = len(rows) * 2 * estimate_usd(model.price, JUDGE_PROMPT_CHARS, model.max_output_tokens)
+    if worst > max_spend_usd:
+        raise QaError(
+            "run_budget_exceeded",
+            f"worst case ${worst:.4f} for {len(rows)} cases > budget ${max_spend_usd:.4f}",
+        )
+
+    if judge is None or ledger is None:
+        from ..config import Settings
+        from ..db.session import make_engine
+        from ..models.llm import ResponseCache, build_client
+        from ..models.spend import SpendLedger
+        from .judge import AnswerEquivalenceJudge, load_judge_prompt
+
+        settings = Settings()  # type: ignore[call-arg]
+        data_dir = data_dir or Path(settings.data_dir)
+        ledger = SpendLedger(make_engine(settings.database_url), settings.llm_daily_spend_cap_usd)
+        judge = AnswerEquivalenceJudge(
+            build_client(
+                judge_key, settings, ledger, cache=ResponseCache(data_dir / "cache" / "llm")
+            ),
+            load_judge_prompt(manifest["prompts"]["judge"]["path"]),
+        )
+    created = datetime.now(UTC)
+    ledger_run = f"{manifest['run_id']}.{manifest['variant']}.rejudge.{uuid4().hex[:8]}"
+    verdicts: list[dict[str, Any]] = []
+    errors = 0
+    stopped: str | None = None
+    try:
+        for row in rows:
+            record: dict[str, Any] = {
+                "query_id": row["query_id"],
+                "question": row["question"],
+                "reference": row["reference"],
+                "answer": row["answer"],
+                "equivalent": None,
+                "reason": None,
+                "judge_error": None,
+                "served_model": "",
+                "calls": 0,
+                "cost_usd": 0.0,
+            }
+            try:
+                outcome = judge.judge(
+                    row["question"], row["reference"], row["answer"], run_id=ledger_run
+                )
+                record.update(
+                    equivalent=outcome.verdict.equivalent,
+                    reason=outcome.verdict.reason,
+                    served_model=outcome.served_model,
+                    calls=outcome.calls,
+                    cost_usd=outcome.cost_usd,
+                )
+            except JudgeError as error:
+                errors += 1
+                record["judge_error"] = error.code
+            verdicts.append(record)
+            spent = ledger.run_spend(ledger_run)
+            if spent > max_spend_usd:
+                stopped = f"budget: ${spent:.4f} > ${max_spend_usd:.4f}"
+                break
+    finally:
+        judge.close()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in verdicts),
+        encoding="utf-8",
+    )
+    agreement = calibration(out, run_dir / "cases.parquet")
+    summary = {
+        "run_id": manifest["run_id"],
+        "variant": manifest["variant"],
+        "created_at": created.isoformat(),
+        "judge_of_record": manifest["judge"],
+        "second_judge": {"key": judge_key, "identity": getattr(judge, "identity", judge_key)},
+        "method": "model-model agreement, the developer's substitute for 50 blind hand labels; "
+        "weaker evidence than a human's labels",
+        "cases": len(rows),
+        "judged": len(verdicts) - errors,
+        "judge_errors": errors,
+        "stopped": stopped,
+        "ledger_run": ledger_run,
+        "cost_usd": ledger.run_spend(ledger_run),
+        "served_models": sorted({v["served_model"] for v in verdicts if v["served_model"]}),
+        "sheet": str(out),
+        "agreement": {k: v for k, v in agreement.items() if k != "disagreements"},
+        "disagreements": agreement["disagreements"],
+    }
+    (run_dir / f"second-judge.{judge_key}.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return summary
+
+
 def write_label_sheet(
     run_dir: str | Path, *, out: Path, limit: int | None = None, seed: int = 42
 ) -> dict[str, Any]:
