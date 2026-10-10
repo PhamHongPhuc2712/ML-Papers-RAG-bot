@@ -1,0 +1,77 @@
+# The configuration the frozen 400 are scored under (registered 2026-10-10, before any frozen
+# scoring of it; the developer's decision after reports/orb-text.md, "Why answering trailed
+# haiku.rag").
+#
+#   eval qa --config configs/experiments/orb-text-qa-v2.yaml --split development \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/qa/orb-text-v2 --max-spend-usd 1.50
+#   eval qa --config configs/experiments/orb-text-qa-v2.yaml --split frozen --frozen \
+#     --database-url ...copilot_orb --out reports/qa/orb-text-v2 --max-spend-usd <budget>
+#   eval pair --treated reports/qa/orb-text-v2/frozen/<run>.section/cases.parquet \
+#     --baseline reports/qa/orb-text-v2/frozen/<run>.flat/cases.parquet
+#
+# Two changes against orb-text-qa (v1), each read on the development split first:
+#
+# 1. The first stage's reranker reads the title and the chunk that found the paper instead
+#    of the title and abstract, at a 2.5 s rerank deadline (800-token pairs rerank at p95
+#    1.3-1.5 s). Development: gold paper in the top 10 for 99 of 100 against 84; accuracy
+#    0.87 / 0.87 against 0.77 / 0.76 under the v1 rubric (exact McNemar p 0.021 / 0.003).
+#    A quality configuration for this benchmark, not the serving path's 1.5 s deadline.
+# 2. The judge of record reads haiku.rag's answer-equivalence rubric verbatim
+#    (prompts/judge/answer-equivalence-haiku-v1.yaml; the developer's decision, so the
+#    accuracy is measured the way haiku.rag's published 0.92-0.97 is). The same answers
+#    read 0.92 / 0.94 under it on development. Its calibration is a second judge model
+#    (openai-gpt-6-sol) under the same rubric over this configuration's development answers,
+#    κ floor 0.6, before any frozen scoring.
+#
+# Everything else is v1's: corpus orb-v1, generator, generation prompt, evidence
+# configuration, variants. Pre-registered secondary: the frozen answers are re-read by the
+# same judge under the v1 rubric (eval qa-rejudge --prompt), so both numbers are reported.
+schema_version: 1
+name: orb-text-qa-v2
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+search_overrides:
+  rerank: {text: title_chunk}
+  deadlines_seconds: {rerank: 2.5}
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: each hit is sent as its chunk
+  - name: section
+    changes: each hit is widened to its section (haiku.rag's rule), within the token budget
+    evidence:
+      expansion: section
+
+budget:
+  max_spend_usd: 3.00
+
+# Pre-registered, unchanged from v1: `section` is preferred over `flat` only if exact McNemar
+# on the frozen 400 rejects at p < 0.05 in its favour and `cited_map` does not fall by more
+# than 0.03. Development read them as equal (0.87 / 0.87, 3 and 3 discordant).
+decision:
+  primary: section
+  baseline: flat
+  mcnemar_p: 0.05
+  cited_map_max_drop: 0.03

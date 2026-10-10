@@ -629,3 +629,22 @@ eval qa --config configs/experiments/orb-c256-qa.yaml --split development --data
 eval qa --config configs/experiments/orb-text-qa-chunk-rerank.yaml --split development --database-url .../copilot_orb --out reports/qa/orb-text-chunk-rerank --max-spend-usd 1.50
 eval pair --treated <run A>/cases.parquet --baseline <run B>/cases.parquet
 ```
+
+### The frozen-run configuration, registered (2026-10-10)
+
+The developer chose haiku.rag's rubric as the judge of record. The frozen 400 are scored
+under `configs/experiments/orb-text-qa-v2.yaml`: the first stage's reranker reads title and
+chunk at a 2.5 s rerank deadline, the judge reads `answer-equivalence-haiku-v1`, everything
+else is v1's, the decision rule is unchanged, and the frozen answers are re-read under the v1
+rubric as a pre-registered secondary. Registered and committed before any frozen scoring.
+
+Development check of the exact configuration, run `orb-text-qa-v2-development-20261010T084915Z`:
+`flat` 0.92, `section` 0.94, cited MAP 0.98 / 0.98, abstentions 1 / 2, every generation and
+judge call served from the response cache ($0.00), the first stage identical to the retrieval
+run's for 100 of 100 questions (GPU median 18–19% before it, from the Windows-side desktop, no
+Linux compute process). The same figures as the rubric re-judge above, as they must be.
+
+Calibration under the new rubric, the second judge (`openai-gpt-6-sol`) reading the same 99
+judged `flat` answers with the same rubric: **agreement 98.0% (97 of 99), Cohen's κ 0.846**,
+above the 0.6 floor; confusion 91 / 1 / 1 / 6, one disagreement each way; 0 judge errors;
+$0.136. Model-model agreement, weaker evidence than hand labels, as before.

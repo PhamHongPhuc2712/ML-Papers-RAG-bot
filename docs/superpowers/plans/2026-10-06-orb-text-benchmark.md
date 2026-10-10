@@ -617,6 +617,13 @@ Ruff; mypy strict; `eval smoke`.
 
 - [ ] **Step 8: The frozen 400**, once per variant, `--frozen`, on an idle GPU. Then
   `eval pair` for `section` against `flat`.
+  *Amended 2026-10-10 by the developer's decision, before any frozen scoring:* the frozen 400
+  are scored under `configs/experiments/orb-text-qa-v2.yaml`, not `orb-text-qa.yaml`. Two
+  changes, each read on development first (`reports/orb-text.md`, "Why answering trailed
+  haiku.rag"): the first stage's reranker reads title and chunk at a 2.5 s rerank deadline,
+  and the judge of record reads haiku.rag's rubric verbatim. The decision rule is unchanged;
+  the answers are also re-read under the v1 rubric as a pre-registered secondary. The judge's
+  calibration is repeated under the new rubric (second judge model, κ floor 0.6) first.
 
 - [ ] **Step 9: Write the second half of `reports/orb-text.md`:** commands, GPU state, costs
   from the ledger, served models, the two variants' metrics with intervals, the pairing, the
