@@ -1,0 +1,42 @@
+{
+  "abstention_rate": 0.025,
+  "accuracy": {
+    "families": 269,
+    "interval": [
+      0.841960966542751,
+      0.9089219330855018
+    ],
+    "mean": 0.88,
+    "wilson": [
+      0.8444860467508544,
+      0.9082846094421169
+    ]
+  },
+  "by_type": {
+    "abstractive": {
+      "accuracy": 0.89,
+      "cases": 200,
+      "judged": 200
+    },
+    "extractive": {
+      "accuracy": 0.87,
+      "cases": 200,
+      "judged": 200
+    }
+  },
+  "cases": 400,
+  "cited_map": {
+    "cases": 400,
+    "mean": 0.95875,
+    "note": "every case has one gold paper; MAP is 1/rank of the gold among cited"
+  },
+  "correct": 352,
+  "cost_usd": 0.268989,
+  "failures": 0,
+  "gold_in_papers": 0.98,
+  "judge_errors": 0,
+  "judged": 400,
+  "ledger_cost_usd": 0.268989,
+  "provenance_validity": 0.9975,
+  "repairs": 1
+}

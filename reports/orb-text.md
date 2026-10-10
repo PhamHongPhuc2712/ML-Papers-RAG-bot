@@ -648,3 +648,37 @@ Calibration under the new rubric, the second judge (`openai-gpt-6-sol`) reading 
 judged `flat` answers with the same rubric: **agreement 98.0% (97 of 99), Cohen's κ 0.846**,
 above the 0.6 floor; confusion 91 / 1 / 1 / 6, one disagreement each way; 0 judge errors;
 $0.136. Model-model agreement, weaker evidence than hand labels, as before.
+
+### The frozen 400, `flat` (2026-10-10)
+
+Run `orb-text-qa-v2-frozen-20261010T090216Z` (`reports/qa/orb-text-v2/frozen/`), the first and
+only scoring of the frozen sample under `orb-text-qa-v2`, variant `flat`, registered in
+`reports/qa/orb-text-v2/frozen-scorings.json`. GPU 3% busy before it (p50 over 5 s, no Linux
+compute process), 41 minutes, 0 failures, 0 judge errors, 1 repair.
+
+| | `flat`, frozen 400 |
+|---|---|
+| **Accuracy, haiku.rag's rubric (judge of record)** | **0.88** [0.84, 0.91] Wilson; [0.84, 0.91] over 269 families; 352 of 400 |
+| Accuracy, v1 rubric (pre-registered secondary, same judge re-reading) | 0.83 [0.79, 0.86]; 332 of 400 |
+| By type, judge of record | extractive 0.87, abstractive 0.89 (200 each) |
+| Gold paper in the first stage's top 10 | 392 of 400 |
+| Correct given the gold paper | 351 of 392 (89.5%) |
+| Abstained | 10 (6 with the gold paper in hand) |
+| Cited MAP | 0.959 |
+| Provenance validity | 0.9975 |
+| Cost (ledger) | $0.269 answering and judging, $0.029 the secondary re-read |
+
+The two rubrics disagreed on 28 of the 390 judged answers, 24 of them equivalent under
+haiku.rag's and not under v1's. The first stage matched the retrieval run's ranking for 399 of
+400 questions at rank 1 to 10 and for all 400 at rank 1; the one exception differs only at
+ranks 8–10, with the gold paper present in both lists and the answer judged correct, which
+looks like near-tied reranker scores reordering at the tail rather than a fallback (a degraded
+rerank returns the fusion order for the whole list).
+
+Development read 0.92 for this variant on 100 questions; the frozen 400 read 0.88, inside the
+development interval ([0.85, 0.96]) and the frozen one overlapping it. Beside haiku.rag's
+published 0.92–0.97 (all 3,045 queries including the multimodal ones, their 26–30B generators
+and their own judge model) this is close but not level: the remaining errors are mostly
+answers with the gold paper in hand (41 of 48), which the second half of this section reads
+once `section` is scored. `section` is scored next, under the same registration; then
+`eval pair` under the pre-registered rule.
