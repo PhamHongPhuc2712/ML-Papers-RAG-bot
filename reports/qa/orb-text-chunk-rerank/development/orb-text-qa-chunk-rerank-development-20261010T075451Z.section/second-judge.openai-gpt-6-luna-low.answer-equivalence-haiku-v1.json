@@ -1,0 +1,48 @@
+{
+  "agreement": {
+    "agreement": 0.9285714285714286,
+    "calibrated": false,
+    "confusion": {
+      "both_no": 4,
+      "both_yes": 87,
+      "human_no_judge_yes": 0,
+      "human_yes_judge_no": 7
+    },
+    "judged": 98,
+    "kappa": 0.503617945007236,
+    "kappa_floor": 0.6,
+    "labels": 98
+  },
+  "cases": 98,
+  "cost_usd": 0.003784,
+  "created_at": "2026-10-10T08:09:22.528301+00:00",
+  "disagreements": [
+    "27c86209-87c4-47f6-806c-6be1e38cb953",
+    "312c097a-8bcb-446b-b7c4-f6157da942bb",
+    "652eff21-4832-4902-aa80-87110a243006",
+    "b7080097-5c5b-410f-ada2-193485b04438",
+    "d0d1ca42-0c60-4b61-92c3-e3c7603bad79",
+    "d30639b4-d312-47b4-a347-c98a640930ad",
+    "e7bd5477-9967-4ff1-9d07-5251c8375a17"
+  ],
+  "judge_errors": 0,
+  "judge_of_record": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-v1:80576481bcb8",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "judged": 98,
+  "ledger_run": "orb-text-qa-chunk-rerank-development-20261010T075451Z.section.rejudge.b1bbdd15",
+  "method": "model-model agreement, the developer's substitute for 50 blind hand labels; weaker evidence than a human's labels",
+  "run_id": "orb-text-qa-chunk-rerank-development-20261010T075451Z",
+  "second_judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-haiku-v1:49cb4bd6d75c",
+    "key": "openai-gpt-6-luna-low",
+    "prompt": "prompts/judge/answer-equivalence-haiku-v1.yaml"
+  },
+  "served_models": [
+    "gpt-6-luna"
+  ],
+  "sheet": "/home/phamphucintern/ml-copilot-data/eval/qa/labels/orb-text-qa-chunk-rerank-development-20261010T075451Z.section.rejudge-luna-haiku-rubric.jsonl",
+  "stopped": null,
+  "variant": "section"
+}

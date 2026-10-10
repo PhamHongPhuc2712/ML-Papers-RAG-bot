@@ -20,6 +20,7 @@ from copilot.models.spend import MemoryLedger, load_llm_config
 CONFIG = load_llm_config("configs/llm.yaml")
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "llm"
 KEY = SecretStr("sk-test-must-never-appear")
+ROOT_PROMPTS = Path(__file__).resolve().parents[3] / "prompts" / "judge"
 YES = json.dumps({"reason": "Same claim.", "equivalent": True})
 NO = json.dumps({"reason": "Different claim.", "equivalent": False})
 
@@ -185,3 +186,23 @@ def test_a_judge_error_is_recorded_not_fatal(tmp_path):
     sheet = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
     assert sheet[0]["judge_error"] == "judge_error" and sheet[0]["equivalent"] is None
     assert summary["agreement"]["judged"] == 2 and summary["disagreements"] == []
+
+
+def test_another_rubric_lets_the_same_judge_re_read_its_own_verdicts(tmp_path):
+    run_dir = _run(tmp_path)
+    rubric = ROOT_PROMPTS / "answer-equivalence-haiku-v1.yaml"
+    judge, ledger, calls = _judge([YES, YES, YES])
+    summary = run_second_judge(
+        run_dir,
+        judge_key="openai-gpt-6-luna-low",
+        out=tmp_path / "text" / "labels" / "rubric.jsonl",
+        max_spend_usd=1.0,
+        judge=judge,
+        ledger=ledger,
+        prompt=rubric,
+    )
+    assert summary["second_judge"]["prompt"] == str(rubric)
+    assert summary["agreement"]["judged"] == 3 and summary["disagreements"] == ["q2"]
+    assert (
+        run_dir / "second-judge.openai-gpt-6-luna-low.answer-equivalence-haiku-v1.json"
+    ).exists()

@@ -1654,6 +1654,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     qa_rejudge.add_argument("--max-spend-usd", type=float, required=True)
     qa_rejudge.add_argument("--limit", type=int, default=None)
+    qa_rejudge.add_argument(
+        "--prompt", type=Path, default=None, help="another rubric; allows the same judge model"
+    )
     litsearch_snapshot = evaluation_commands.add_parser(
         "litsearch-snapshot",
         help="LitSearch's corpus_clean as a corpus snapshot, for its own release (E3)",
@@ -1811,6 +1814,7 @@ def main(argv: list[str] | None = None) -> int:
                 out=args.out,
                 max_spend_usd=args.max_spend_usd,
                 limit=args.limit,
+                prompt=args.prompt,
             )
         except QaError as error:
             print(json.dumps({"error": error.code, "detail": str(error)}))

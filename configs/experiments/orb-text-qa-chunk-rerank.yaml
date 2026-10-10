@@ -1,0 +1,55 @@
+# Answering over the 800-token corpus with the reranker reading title and chunk (2026-10-09).
+#
+#   eval qa --config configs/experiments/orb-text-qa-chunk-rerank.yaml --split development \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/qa/orb-text-chunk-rerank --max-spend-usd 1.50
+#
+# Why: orb-c256-qa (same day) changed two things against orb-text-qa, the first stage's
+# reranker text and the chunk size, and the two pulled in opposite directions: the
+# chunk-reading reranker put the gold paper in the top 10 for 99 of 100 development
+# questions (13 of the 15 newly found answered correctly), while 256-token chunks gave the
+# generator less context and lost answers on the questions both runs had the paper for
+# (flat 75 -> 66 of 84). This run separates them: the shipped 800-token release orb-v1,
+# the reranker reading title and chunk. At 800 tokens a chunk pair reranks at p95
+# 1.3-1.5 s against the shipped 1.5 s deadline (379 of 1,914 queries degraded in the
+# 2026-10-08 read), so the rerank deadline is 2.5 s: a quality read, not the serving path.
+# Same generator, judge, prompts and evidence configuration; development only, no decision.
+schema_version: 1
+name: orb-text-qa-chunk-rerank
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+search_overrides:
+  rerank: {text: title_chunk}
+  deadlines_seconds: {rerank: 2.5}
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: each hit is sent as its 800-token chunk
+  - name: section
+    changes: each hit is widened to its section (haiku.rag's rule), within the token budget
+    evidence:
+      expansion: section
+
+budget:
+  max_spend_usd: 1.50

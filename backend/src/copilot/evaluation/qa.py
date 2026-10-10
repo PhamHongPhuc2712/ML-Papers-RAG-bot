@@ -87,12 +87,38 @@ class QaExperiment:
     variants: tuple[QaVariant, ...]
     budget_usd: float
     decision: Mapping[str, Any]
+    # (SearchConfig field, value) pairs applied over the shared search file for the whole
+    # experiment: the first stage that hands papers to the evidence retriever. Parsed by the
+    # retrieval harness's own rule, so only a knob it may turn is accepted.
+    search_overrides: tuple[tuple[str, Any], ...] = ()
 
     def variant(self, name: str) -> QaVariant:
         for variant in self.variants:
             if variant.name == name:
                 return variant
         raise QaError("unknown_variant", name)
+
+
+def _qa_search_overrides(raw: object) -> tuple[tuple[str, Any], ...]:
+    from .retrieval import ExperimentError, _search_overrides
+
+    try:
+        return _search_overrides("search_overrides", "hybrid_rerank", raw)
+    except ExperimentError as error:
+        raise QaError("experiment_invalid", str(error)) from error
+
+
+def qa_search_config(experiment: QaExperiment) -> Any:
+    """The shared search file with the experiment's overrides, checked as the harness does."""
+
+    from dataclasses import replace
+
+    from ..search.service import load_search_config
+
+    config = replace(load_search_config(experiment.search), **dict(experiment.search_overrides))
+    if config.rerank_seconds > config.total_seconds:
+        raise QaError("experiment_invalid", "rerank deadline exceeds the total")
+    return config
 
 
 def load_qa_experiment(path: str | Path) -> QaExperiment:
@@ -130,6 +156,7 @@ def load_qa_experiment(path: str | Path) -> QaExperiment:
             variants=variants,
             budget_usd=float((raw.get("budget") or {}).get("max_spend_usd", 0.0)),
             decision=dict(raw.get("decision") or {}),
+            search_overrides=_qa_search_overrides(raw.get("search_overrides")),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise QaError("experiment_invalid", str(error)) from error
@@ -745,7 +772,7 @@ def run_qa(
     from ..models.spend import SpendLedger
     from ..search.chunks import dense_branch, lexical_branch
     from ..search.client import qdrant_client
-    from ..search.service import SearchService, load_search_config
+    from ..search.service import SearchService
     from .judge import AnswerEquivalenceJudge, load_judge_prompt
     from .retrieval import PinnedModels, search_digest
 
@@ -780,7 +807,7 @@ def run_qa(
     factory = PinnedModels(data_dir)
     embedder, max_tokens = factory.embedder(experiment.models)
     reranker = factory.reranker(experiment.models)
-    search_config = load_search_config(experiment.search)
+    search_config = qa_search_config(experiment)
     service = SearchService(
         engine=engine,
         lexical=lexical_branch(engine, client, source="chunks", k=search_config.rrf_k),
@@ -876,6 +903,7 @@ def run_qa(
         "search": {
             "path": str(experiment.search),
             "sha256": search_digest(search_config, "hybrid_rerank", "chunks"),
+            "overrides": dict(experiment.search_overrides),
             "papers": experiment.papers,
             "reranker": str(getattr(reranker, "identity", "none")),
         },
@@ -947,8 +975,12 @@ def run_second_judge(
     judge: Any | None = None,
     ledger: Any | None = None,
     data_dir: Path | None = None,
+    prompt: str | Path | None = None,
 ) -> dict[str, Any]:
     """Re-judge a run's judged answers with a second model and measure agreement.
+
+    ``prompt`` names another rubric; with it the judge of record may re-read its own
+    verdicts under that rubric, and the agreement then measures the rubric, not the model.
 
     The developer's substitute (2026-10-09) for the 50 blind hand labels of O5 step 7,
     haiku.rag's method: an independent judge model reads the same question, reference
@@ -967,7 +999,8 @@ def run_second_judge(
 
     run_dir = Path(run_dir)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    if manifest["judge"]["key"] == judge_key:
+    prompt_path = Path(prompt) if prompt else Path(manifest["prompts"]["judge"]["path"])
+    if manifest["judge"]["key"] == judge_key and prompt is None:
         raise QaError("same_judge", judge_key)
     text_path = (
         Path(manifest["text_dir"]) / manifest["run_id"] / manifest["variant"] / "cases.jsonl"
@@ -1004,10 +1037,11 @@ def run_second_judge(
             build_client(
                 judge_key, settings, ledger, cache=ResponseCache(data_dir / "cache" / "llm")
             ),
-            load_judge_prompt(manifest["prompts"]["judge"]["path"]),
+            load_judge_prompt(prompt_path),
         )
     created = datetime.now(UTC)
     ledger_run = f"{manifest['run_id']}.{manifest['variant']}.rejudge.{uuid4().hex[:8]}"
+    tag = judge_key if prompt is None else f"{judge_key}.{prompt_path.stem}"
     verdicts: list[dict[str, Any]] = []
     errors = 0
     stopped: str | None = None
@@ -1057,7 +1091,11 @@ def run_second_judge(
         "variant": manifest["variant"],
         "created_at": created.isoformat(),
         "judge_of_record": manifest["judge"],
-        "second_judge": {"key": judge_key, "identity": getattr(judge, "identity", judge_key)},
+        "second_judge": {
+            "key": judge_key,
+            "identity": getattr(judge, "identity", judge_key),
+            "prompt": str(prompt_path),
+        },
         "method": "model-model agreement, the developer's substitute for 50 blind hand labels; "
         "weaker evidence than a human's labels",
         "cases": len(rows),
@@ -1071,7 +1109,7 @@ def run_second_judge(
         "agreement": {k: v for k, v in agreement.items() if k != "disagreements"},
         "disagreements": agreement["disagreements"],
     }
-    (run_dir / f"second-judge.{judge_key}.json").write_text(
+    (run_dir / f"second-judge.{tag}.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return summary

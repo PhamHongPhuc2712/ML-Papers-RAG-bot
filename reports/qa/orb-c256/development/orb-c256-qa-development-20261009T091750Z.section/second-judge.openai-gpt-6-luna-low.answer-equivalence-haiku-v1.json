@@ -1,0 +1,47 @@
+{
+  "agreement": {
+    "agreement": 0.9387755102040817,
+    "calibrated": true,
+    "confusion": {
+      "both_no": 8,
+      "both_yes": 84,
+      "human_no_judge_yes": 0,
+      "human_yes_judge_no": 6
+    },
+    "judged": 98,
+    "kappa": 0.6956521739130439,
+    "kappa_floor": 0.6,
+    "labels": 98
+  },
+  "cases": 98,
+  "cost_usd": 0.00672,
+  "created_at": "2026-10-09T09:38:17.190497+00:00",
+  "disagreements": [
+    "0998f6ee-ead8-4f76-b9ad-0f739ab3700c",
+    "312c097a-8bcb-446b-b7c4-f6157da942bb",
+    "60d76455-d26b-4de5-be7c-2aa71401628d",
+    "79309a10-de24-4c93-b417-2ddd8c210597",
+    "b7080097-5c5b-410f-ada2-193485b04438",
+    "dd1772ea-0e31-4981-b7f0-93e544a8cd89"
+  ],
+  "judge_errors": 0,
+  "judge_of_record": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-v1:80576481bcb8",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "judged": 98,
+  "ledger_run": "orb-c256-qa-development-20261009T091750Z.section.rejudge.2693a287",
+  "method": "model-model agreement, the developer's substitute for 50 blind hand labels; weaker evidence than a human's labels",
+  "run_id": "orb-c256-qa-development-20261009T091750Z",
+  "second_judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-haiku-v1:49cb4bd6d75c",
+    "key": "openai-gpt-6-luna-low",
+    "prompt": "prompts/judge/answer-equivalence-haiku-v1.yaml"
+  },
+  "served_models": [
+    "gpt-6-luna"
+  ],
+  "sheet": "/home/phamphucintern/ml-copilot-data/eval/qa/labels/orb-c256-qa-development-20261009T091750Z.section.rejudge-luna-haiku-rubric.jsonl",
+  "stopped": null,
+  "variant": "section"
+}

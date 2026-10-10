@@ -1,0 +1,54 @@
+# Answering over the 256-token corpus with the reranker reading title and chunk (2026-10-09).
+#
+#   eval qa --config configs/experiments/orb-c256-qa.yaml --split development \
+#     --database-url postgresql+psycopg://...copilot_orb_c256 --out reports/qa/orb-c256 --max-spend-usd 1.50
+#
+# Why: the development pass of orb-text-qa (reports/orb-text.md, O5) lost 14 of its 23
+# non-correct answers before the generator saw anything: the shipped first stage, which
+# reranks titles and abstracts, left the gold paper outside its top 10 for 16 of 100
+# questions. The retrieval reads of 2026-10-08/09 put the gold paper in the top 10 for 99
+# of the same 100 questions when the reranker reads the chunk the paper was found by, and
+# release orb-c256 (256-token chunks, haiku.rag's size) does it within the shipped 1.5 s
+# rerank deadline. This experiment changes only the first stage: same generator, judge,
+# prompts and evidence configuration, same two variants. A read of the development split;
+# no decision block. A frozen-split rule is registered here before any frozen scoring.
+schema_version: 1
+name: orb-c256-qa
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-c256
+
+search: configs/search.yaml
+# The first stage's one change against the shipped search file.
+search_overrides:
+  rerank: {text: title_chunk}
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: each hit is sent as its 256-token chunk
+  - name: section
+    changes: each hit is widened to its section (haiku.rag's rule), within the token budget
+    evidence:
+      expansion: section
+
+budget:
+  max_spend_usd: 1.50

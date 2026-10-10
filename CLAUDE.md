@@ -308,6 +308,14 @@ effort `low`) shares the generator's provider: a stated limitation. The develope
 (2026-10-09) replaced the 50 blind hand labels with a second judge model, `openai-gpt-6-sol`,
 over the same answers (`eval qa-rejudge`, then `eval calibration`'s arithmetic, κ floor 0.6):
 model-model agreement, haiku.rag's method, weaker than a human's labels and said so.
+Why answering trailed haiku.rag (2026-10-10, `reports/orb-text.md` last section): the shipped first
+stage, whose reranker reads abstracts, lost the gold paper for 16 of 100 development questions.
+A QA experiment may set `search_overrides` (the retrieval harness's knobs); with the reranker
+reading title and chunk over `orb-v1` at a 2.5 s rerank deadline
+(`configs/experiments/orb-text-qa-chunk-rerank.yaml`) development accuracy is 0.87 / 0.87, and
+0.92 / 0.94 under haiku.rag's rubric verbatim (`prompts/judge/answer-equivalence-haiku-v1.yaml`,
+applied with `eval qa-rejudge --prompt`). 256-token chunks find the paper but cost answers.
+Development reads only: the frozen 400 wait for the developer's choice of first stage and rubric.
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli eval qa --split development --limit 20 --variant flat --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 0.50
@@ -315,6 +323,8 @@ uv run --env-file .env --project backend python -m copilot.cli eval qa --split f
 uv run --project backend python -m copilot.cli eval qa-labels --run reports/qa/orb-text/development/<run>.flat --out ${DATA_DIR}/eval/qa/labels/<run>.jsonl --limit 50
 uv run --project backend python -m copilot.cli eval calibration --labels <labels>.jsonl --cases reports/qa/orb-text/development/<run>.flat/cases.parquet
 uv run --env-file .env --project backend python -m copilot.cli eval qa-rejudge --run reports/qa/orb-text/development/<run>.flat --judge openai-gpt-6-sol --out ${DATA_DIR}/eval/qa/labels/<run>.flat.rejudge.jsonl --max-spend-usd 2.70   # second judge in place of hand labels (2026-10-09)
+uv run --env-file .env --project backend python -m copilot.cli eval qa-rejudge --run <run>.flat --judge openai-gpt-6-luna-low --prompt prompts/judge/answer-equivalence-haiku-v1.yaml --out ${DATA_DIR}/eval/qa/labels/<run>.flat.rejudge-luna-haiku-rubric.jsonl --max-spend-usd 0.50   # the same answers under haiku.rag's rubric
+uv run --env-file .env --project backend python -m copilot.cli eval qa --config configs/experiments/orb-text-qa-chunk-rerank.yaml --split development --database-url ...copilot_orb --out reports/qa/orb-text-chunk-rerank --max-spend-usd 1.50
 uv run --project backend python -m copilot.cli eval pair --treated <run>.section/cases.parquet --baseline <run>.flat/cases.parquet
 uv run --project backend python -m copilot.cli eval qa-smoke        # offline, frozen outputs; --update to re-freeze
 ```

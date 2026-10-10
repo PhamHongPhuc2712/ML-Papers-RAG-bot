@@ -128,3 +128,23 @@ def test_summaries_bootstrap_over_families_and_count_what_they_say():
     assert metrics["cited_map"]["mean"] == pytest.approx(2 / 3)
     assert metrics["by_type"]["extractive"]["accuracy"] == 1.0
     assert metrics["cost_usd"] == pytest.approx(0.005)
+
+
+def test_an_experiment_may_override_the_first_stage_by_the_harness_rule(tmp_path):
+    from copilot.evaluation.qa import qa_search_config
+
+    shipped = load_qa_experiment(EXPERIMENT)
+    assert shipped.search_overrides == ()
+    assert qa_search_config(shipped).rerank_text == "abstract"
+    c256 = load_qa_experiment(ROOT / "configs" / "experiments" / "orb-c256-qa.yaml")
+    assert c256.release == "orb-c256"
+    assert c256.search_overrides == (("rerank_text", "title_chunk"),)
+    assert qa_search_config(c256).rerank_text == "title_chunk"
+    # Only a knob the retrieval harness may turn is accepted.
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(
+        EXPERIMENT.read_text(encoding="utf-8") + "search_overrides:\n  fusion: {rrf_k: 10}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(QaError, match="experiment_invalid"):
+        load_qa_experiment(bad)

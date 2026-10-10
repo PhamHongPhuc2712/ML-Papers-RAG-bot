@@ -508,3 +508,124 @@ search validate-index --release orb-c256 --database-url .../copilot_orb_c256
 eval retrieval --config configs/experiments/orb-c256-retrieval.yaml --split retrieval --database-url .../copilot_orb_c256 --out reports/retrieval/orb-c256
 eval orb-sections --run reports/retrieval/orb-c256 --database-url .../copilot_orb_c256
 ```
+
+## Why answering trailed haiku.rag, investigated (2026-10-09/10)
+
+**Question.** Development accuracy read 0.77 / 0.76 against haiku.rag's published 0.92–0.97
+on ORB. Where are the points lost, and what of haiku.rag's design closes the gap? Read from
+haiku.rag 0.95.0's source: its judge rubric (`evaluations/evaluators/judge.py`), its search
+(`client/search.py`, `store/repositories/chunk.py`), context expansion (`context.py`) and
+the RAG agent's instructions (`capabilities/instructions/rag.md`). Everything below is on
+the 100 development questions; the frozen 400 were not touched.
+
+**1. Where the shipped run lost its 23 answers** (`flat`, judge of record):
+
+| Stage | Questions | Correct |
+|---|---|---|
+| Gold paper outside the first stage's top 10 | 16 | 2 |
+| Gold paper inside it | 84 | 75 (89%) |
+
+Inside the top 10, the evidence was not the problem: re-retrieving each judged case's evidence
+(the retriever is deterministic) and intersecting it with the gold section's chunks, the gold
+section reached the generator in 51 of the 57 such cases whose section maps onto our chunks,
+and the gold paper filled its three-piece cap in every case it was present. Of the 9 misses
+with the paper in hand, 1 abstained and 8 were judged wrong, six of them on an omitted
+qualifier (the pattern both judges split on in the calibration above).
+
+**2. The judges' rubrics differ.** haiku.rag's rubric tells its judge not to penalise a
+generated answer when "the expected answer is incomplete or narrow" and to "be tolerant of
+different levels of detail if the core answer is preserved"; ours marks an answer that
+"omits something that changes its meaning" not equivalent, and forbids the judge its own
+knowledge of the subject. `prompts/judge/answer-equivalence-haiku-v1.yaml` is their rubric
+verbatim (MIT, attributed) inside our reason-first output contract, and `eval qa-rejudge
+--prompt` lets the judge of record re-read its own answers under it. Across the six runs
+below, 38 verdicts moved to equivalent and 2 the other way; one of those two faulted a
+correct answer from the judge's own knowledge, which their rubric does not forbid. κ between
+the two rubrics on the same answers: 0.50–0.73.
+
+**3. The first stage is the gap.** The answering run took its papers from the shipped search,
+whose reranker reads titles and abstracts. The chunk-reading reranker of the 2026-10-08 read
+puts the gold paper in the top 10 for 99 of the 100 questions (15 of the 16 misses), at either
+chunk size. Two experiments, pre-registered as development reads with no decision block,
+changed only the first stage (same generator, judge, prompts, evidence configuration and
+variants), through a new `search_overrides` block in the QA experiment, parsed by the
+retrieval harness's own rule and recorded in the manifest:
+
+- `configs/experiments/orb-c256-qa.yaml`: release `orb-c256` (256-token chunks), reranker
+  reads title and chunk, shipped 1.5 s deadline. Run `orb-c256-qa-development-20261009T091750Z`.
+- `configs/experiments/orb-text-qa-chunk-rerank.yaml`: release `orb-v1` (800-token chunks),
+  reranker reads title and chunk, 2.5 s rerank deadline (800-token pairs rerank at p95
+  1.3–1.5 s). Run `orb-text-qa-chunk-rerank-development-20261010T075451Z`. A first attempt
+  (`…20261009T094353Z`) was cut off by a laptop shutdown after its `flat` variant and wrote
+  nothing; the rerun served `flat` from the response cache (same evidence, same request
+  digests) and paid only for `section`.
+
+Every run read exactly the first stage its retrieval run measured: each case's recorded top 10
+equals that query's ranking in `reports/retrieval/orb-rerank-text/` or `…/orb-c256/` for 100 of
+100 questions, so no search degraded. The two new runs waited behind an idle-GPU gate; the
+second ran with the Windows-side desktop spiking the GPU for a second at a time (median 4%
+over 30 s, no Linux compute process), which the runner's own rule does not count as busy.
+
+| First stage | Chunks | Gold in top 10 | `flat`, our rubric | `flat`, haiku.rag's | `section`, our rubric | `section`, haiku.rag's | Cited MAP | Abstained |
+|---|---|---|---|---|---|---|---|---|
+| Shipped: reranker reads abstracts | 800 | 84 | 0.77 [0.68, 0.84] | 0.81 | 0.76 [0.67, 0.83] | 0.82 | 0.83 / 0.84 | 11 / 8 |
+| Reranker reads title + chunk, 1.5 s | 256 | 99 | 0.79 [0.70, 0.86] | 0.87 | 0.84 [0.76, 0.90] | 0.90 | 0.955 / 0.97 | 2 / 2 |
+| **Reranker reads title + chunk, 2.5 s** | 800 | 99 | **0.87** [0.79, 0.92] | **0.92** | **0.87** [0.79, 0.92] | **0.94** | 0.98 / 0.98 | 1 / 2 |
+
+Wilson intervals; haiku.rag-rubric accuracy is the judge of record re-reading the same answers.
+
+Paired on the same 100 questions, exact McNemar on the judge of record's verdicts, sign test
+on cited MAP:
+
+| Comparison | Accuracy | Right only in the first / only in the second | McNemar p | Cited MAP |
+|---|---|---|---|---|
+| Title + chunk at 800 vs shipped, `flat` | 0.77 → 0.87 | 13 / 3 | **0.021** | 0.83 → 0.98, 15–0, p 0.0001 |
+| Title + chunk at 800 vs shipped, `section` | 0.76 → 0.87 | 12 / 1 | **0.003** | 0.84 → 0.98, 14–0, p 0.0001 |
+| 800-token vs 256-token chunks, `flat` | 0.79 → 0.87 | 11 / 3 | 0.057 | 0.955 → 0.98, 3–0 |
+| 800-token vs 256-token chunks, `section` | 0.84 → 0.87 | 7 / 4 | 0.55 | 0.97 → 0.98, 1–0 |
+| `section` vs `flat`, title + chunk at 800 | 0.87 → 0.87 | 3 / 3 | 1.00 | 0.98 → 0.98 |
+
+Findings, a read of the development split and no decision:
+
+1. **The first stage was the gap.** Reading the chunk instead of the abstract lifts accuracy
+   by 10–11 points and cited MAP from 0.83 to 0.98, the largest change any setting made, and
+   McNemar rejects at p < 0.05 for both variants.
+2. **Small chunks find the paper and starve the generator.** With 256-token chunks the gold
+   paper is found as often (99 of 100), but on the 84 questions the shipped run already had the
+   paper for, `flat` falls from 75 to 66 correct and its answers shorten (median 29.5 words
+   against 39), dropping a clause or a second conclusion the reference holds. Section
+   expansion recovers part of it (`section` 0.84), not all. haiku.rag pairs small chunks with
+   expansion to 5,000 characters; our expansion shares one 6,000-token budget across 12 pieces.
+3. **Given the paper, our pipeline is at haiku.rag's level.** With the chunk-reading reranker
+   over 800-token chunks, 87 of the 99 questions with the gold paper in the top 10 are answered
+   correctly under our rubric and 92–94 under haiku.rag's own, against their published
+   0.92–0.97 over all 3,045 queries with 26–30B generators. Their agent loop (up to five
+   searches), larger models and Docling are not where the points were: one question abstained
+   with the paper in hand.
+4. **The remaining difference in the headline number is the rubric**, about 5–7 points on the
+   same answers. Which rubric the frozen run reports under is a methodology choice for the
+   developer; both are recorded here.
+5. **Serving cost.** The winning configuration needs a 2.5 s rerank deadline at 800 tokens; the
+   shipped deadline is 1.5 s, which only 256-token pairs fit. Ranking on small chunks and
+   handing the generator their 800-token parents would keep both properties; it is not built
+   or measured.
+
+Costs from the ledger (`llm spend --day`): 2026-10-09 $0.299 in all (the `orb-c256-qa` run
+with its two re-judges $0.115, the interrupted first attempt $0.070, the `gpt-6-sol`
+calibration $0.100, the rubric re-judges of the shipped run $0.013); 2026-10-10 $0.045 (the
+rerun's `section` variant and its two re-judges; `flat` came from the cache). One call of the
+interrupted attempt stayed `reserved` in the ledger, counted against 2026-10-09's cap only.
+Per-case text and verdict sheets are under `${DATA_DIR}/eval/qa/`; the repository holds the
+text-free `cases.parquet`, metrics and `second-judge.*.json` summaries.
+
+What it means for the frozen 400: the pre-registered `orb-text-qa` rule compares `section`
+with `flat` under the shipped first stage, which this read shows to be the weak part. Scoring
+the frozen sample under the chunk-reading first stage instead needs that configuration
+registered before any frozen scoring, and the rubric chosen; both are the developer's call.
+
+```text
+eval qa-rejudge --run <run>.flat --judge openai-gpt-6-luna-low --prompt prompts/judge/answer-equivalence-haiku-v1.yaml --out ${DATA_DIR}/eval/qa/labels/<run>.flat.rejudge-luna-haiku-rubric.jsonl --max-spend-usd 0.50
+eval qa --config configs/experiments/orb-c256-qa.yaml --split development --database-url .../copilot_orb_c256 --out reports/qa/orb-c256 --max-spend-usd 1.50
+eval qa --config configs/experiments/orb-text-qa-chunk-rerank.yaml --split development --database-url .../copilot_orb --out reports/qa/orb-text-chunk-rerank --max-spend-usd 1.50
+eval pair --treated <run A>/cases.parquet --baseline <run B>/cases.parquet
+```

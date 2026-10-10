@@ -1,0 +1,119 @@
+{
+  "budget_usd": 1.5,
+  "cases": 100,
+  "code": {
+    "diff_sha256": "76bb86f3c55433f965921d80bef20e1114600f0d82e5f41f0003542f58e5f246",
+    "dirty": true,
+    "git_sha": "f8b6f4dcd0fc11b6a2c77f0edd5ba46a1958d9f8"
+  },
+  "corpus": {
+    "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+    "manifest_sha256": "9acfda69810a5369982d02e1aeb8ef34556550ab075a0cbd672ebaf434403bde",
+    "release": "orb-c256"
+  },
+  "created_at": "2026-10-09T09:17:50.249522+00:00",
+  "dataset": {
+    "path": "data/fixtures/orb",
+    "sha256": "c0ec514fbde7b69c0f2ed7048bf73c18668f789e22609376b5abb67853f75b36"
+  },
+  "evidence": {
+    "flat": {
+      "chunk_candidates": 40,
+      "evidence": 12,
+      "expansion": "none",
+      "expansion_max_chars": 6000,
+      "expansion_min_share": 0.2,
+      "include_references": false,
+      "min_rerank_score": null,
+      "papers": 10,
+      "per_paper": 3,
+      "rrf_k": 60,
+      "token_budget": 6000,
+      "tokenizer": "model:BAAI/bge-m3@5617a9f61b02"
+    },
+    "section": {
+      "chunk_candidates": 40,
+      "evidence": 12,
+      "expansion": "section",
+      "expansion_max_chars": 6000,
+      "expansion_min_share": 0.2,
+      "include_references": false,
+      "min_rerank_score": null,
+      "papers": 10,
+      "per_paper": 3,
+      "rrf_k": 60,
+      "token_budget": 6000,
+      "tokenizer": "model:BAAI/bge-m3@5617a9f61b02"
+    }
+  },
+  "experiment": {
+    "name": "orb-c256-qa",
+    "path": "configs/experiments/orb-c256-qa.yaml",
+    "sha256": "a230fa1bba1048deb689f346d32405c642b836ff70340ca17d922487a73de2af"
+  },
+  "frozen_scorings": {},
+  "generator": {
+    "identity": "openai-gpt-6-luna=gpt-6-luna#grounded-claims-v1:e9c0986c2ca3",
+    "key": "openai-gpt-6-luna"
+  },
+  "gpu_before_run": {
+    "available": true,
+    "busy": false,
+    "memory_mib": 1756,
+    "samples": 5,
+    "utilization_percent_p50": 0.0
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-v1:80576481bcb8",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "limit": null,
+  "preflight_worst_usd": 1.42404,
+  "prompts": {
+    "generate": {
+      "path": "prompts/generate/grounded-claims-v1.yaml",
+      "sha256": "e9c0986c2ca35cc751991eb2f74dc8fa3677e4f266a5447d8828d834b5cccc44"
+    },
+    "judge": {
+      "path": "prompts/judge/answer-equivalence-v1.yaml",
+      "sha256": "80576481bcb8e741800c2f10e761c19d825a35189dbe95981be81916b12ef0d6"
+    }
+  },
+  "run_id": "orb-c256-qa-development-20261009T091750Z",
+  "search": {
+    "overrides": {
+      "rerank_text": "title_chunk"
+    },
+    "papers": 10,
+    "path": "configs/search.yaml",
+    "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+    "sha256": "dd913819426aea2f8f223c657f52197266d51edc06848b4573114fe0c1f88c63"
+  },
+  "seed": 42,
+  "split": "development",
+  "stopped": {},
+  "text_dir": "/home/phamphucintern/ml-copilot-data/eval/qa",
+  "variant": "flat",
+  "variants": {
+    "flat": {
+      "changes": "each hit is sent as its 256-token chunk",
+      "evidence_overrides": {},
+      "ledger_run_id": "orb-c256-qa-development-20261009T091750Z.flat.6705e4ff"
+    },
+    "section": {
+      "changes": "each hit is widened to its section (haiku.rag's rule), within the token budget",
+      "evidence_overrides": {
+        "expansion": "section"
+      },
+      "ledger_run_id": "orb-c256-qa-development-20261009T091750Z.section.bc7a479b"
+    }
+  }
+}
