@@ -1,0 +1,104 @@
+{
+  "budget_usd": 3.0,
+  "cases": 400,
+  "code": {
+    "diff_sha256": "d28485cad7268f7bc66fa7bf3406fd6e53c3d83f6da9ad94179e0a2f22d8e226",
+    "dirty": true,
+    "git_sha": "c8f4967b2cb9063b9026ad80ab5a4268fb646e18"
+  },
+  "corpus": {
+    "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+    "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+    "release": "orb-v1"
+  },
+  "created_at": "2026-10-10T16:40:24.023914+00:00",
+  "dataset": {
+    "path": "data/fixtures/orb",
+    "sha256": "c0ec514fbde7b69c0f2ed7048bf73c18668f789e22609376b5abb67853f75b36"
+  },
+  "evidence": {
+    "section": {
+      "chunk_candidates": 40,
+      "evidence": 12,
+      "expansion": "section",
+      "expansion_max_chars": 6000,
+      "expansion_min_share": 0.2,
+      "include_references": false,
+      "min_rerank_score": null,
+      "papers": 10,
+      "per_paper": 3,
+      "rrf_k": 60,
+      "token_budget": 6000,
+      "tokenizer": "model:BAAI/bge-m3@5617a9f61b02"
+    }
+  },
+  "experiment": {
+    "name": "orb-text-qa-v2",
+    "path": "configs/experiments/orb-text-qa-v2.yaml",
+    "sha256": "2620356762f631845ef328cd9e7dc18b81341bc6396922631b044de9665722d4"
+  },
+  "frozen_scorings": {
+    "flat": 1,
+    "section": 1
+  },
+  "generator": {
+    "identity": "openai-gpt-6-luna=gpt-6-luna#grounded-claims-v1:e9c0986c2ca3",
+    "key": "openai-gpt-6-luna"
+  },
+  "gpu_before_run": {
+    "available": true,
+    "busy": true,
+    "memory_mib": 2618,
+    "samples": 5,
+    "utilization_percent_p50": 31.0
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-haiku-v1:49cb4bd6d75c",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "limit": null,
+  "preflight_worst_usd": 2.84808,
+  "prompts": {
+    "generate": {
+      "path": "prompts/generate/grounded-claims-v1.yaml",
+      "sha256": "e9c0986c2ca35cc751991eb2f74dc8fa3677e4f266a5447d8828d834b5cccc44"
+    },
+    "judge": {
+      "path": "prompts/judge/answer-equivalence-haiku-v1.yaml",
+      "sha256": "49cb4bd6d75cb6cf49cf6a95859d4ce2a8cceea558411e291ccb2e970bbcddae"
+    }
+  },
+  "run_id": "orb-text-qa-v2-frozen-20261010T164024Z",
+  "search": {
+    "overrides": {
+      "rerank_seconds": 2.5,
+      "rerank_text": "title_chunk"
+    },
+    "papers": 10,
+    "path": "configs/search.yaml",
+    "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+    "sha256": "1a7f35e19e5b5baa8a3424fd2532ae68766b80b94442354028efc2a0f3aa58a5"
+  },
+  "seed": 42,
+  "split": "frozen",
+  "stopped": {},
+  "text_dir": "/home/phamphucintern/ml-copilot-data/eval/qa",
+  "variant": "section",
+  "variants": {
+    "section": {
+      "changes": "each hit is widened to its section (haiku.rag's rule), within the token budget",
+      "evidence_overrides": {
+        "expansion": "section"
+      },
+      "ledger_run_id": "orb-text-qa-v2-frozen-20261010T164024Z.section.94388711"
+    }
+  }
+}

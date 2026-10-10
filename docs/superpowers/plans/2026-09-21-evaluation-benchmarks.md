@@ -401,6 +401,12 @@ a reason; `source_chunk_ids` resolve to live chunks.
 > E7's rule: 50 blind hand labels, Cohen's κ, floor 0.6, every disagreement read
 > (`docs/judge-rubric.md`, `eval calibration`). The judge-swap run below needs a second
 > provider and stays open.
+> **Revised again (2026-10-10), the developer's decisions.** Calibration used a second judge
+> model, `openai-gpt-6-sol`, over the same answers in place of the 50 hand labels (model-model
+> agreement, weaker evidence, stated as such): κ 0.807 under the v1 rubric and 0.846 under
+> haiku.rag's rubric (`prompts/judge/answer-equivalence-haiku-v1.yaml`), which became ORB's
+> judge of record for the frozen run. `eval qa-rejudge` runs either check. E7's hand-labelled
+> calibration remains open for E5's set.
 
 Judge model `claude-opus-5`, pinned in `configs/evaluation.yaml` with the prompt version
 hashes. §11 asks for a judge separate from the generator; the project funds one provider, so

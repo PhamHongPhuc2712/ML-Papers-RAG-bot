@@ -682,3 +682,76 @@ and their own judge model) this is close but not level: the remaining errors are
 answers with the gold paper in hand (41 of 48), which the second half of this section reads
 once `section` is scored. `section` is scored next, under the same registration; then
 `eval pair` under the pre-registered rule.
+
+### The frozen 400, `section`, the pairing and the failures (2026-10-10)
+
+Run `orb-text-qa-v2-frozen-20261010T164024Z`, the first and only scoring of the frozen sample
+under `orb-text-qa-v2`, variant `section` (`frozen-scorings.json` now lists one run per
+variant). 42 minutes, 0 failures, 0 judge errors, 1 repair, $0.264 answering and judging and
+$0.028 the v1-rubric re-read. **The run's own GPU sample before it read busy** (p50 31% over
+5 s, 2,618 MiB), against the gate's 8% median over the 30 s before; no Linux compute process
+was present, so the load was the Windows-side desktop. The policy for a contended run is to set
+it aside and redo it, but a redo would be a second scoring of the frozen sample, which the plan
+forbids; what the policy protects was checked instead: the first stage matched the retrieval
+run's ranking at rank 1 for all 400 questions and in the top 10 for 398 (one reordering inside
+ranks 4–7 with the same ten papers, one tail difference shared with the `flat` run), the gold
+paper present and the answer judged correct in both. The run stands, with this caveat recorded.
+The spend ledger counts days in UTC, so both variants fell on 2026-10-10's ledger day: $0.772 in
+the day, under the $3 cap.
+
+| Frozen 400 | `flat` | `section` |
+|---|---|---|
+| **Accuracy, haiku.rag's rubric (judge of record)** | **0.880** [0.844, 0.908] | 0.865 [0.828, 0.895] |
+| Accuracy, v1 rubric (pre-registered secondary) | 0.830 [0.790, 0.864] | 0.815 [0.774, 0.850] |
+| Extractive / abstractive (judge of record) | 0.870 / 0.890 | 0.855 / 0.875 |
+| Gold paper in the top 10 | 392 | 392 |
+| Abstained | 10 | 9 |
+| Cited MAP | 0.959 | 0.959 |
+| Provenance validity | 0.9975 | 0.9975 |
+| Evidence pieces, median | 8 | 5 |
+| Seconds per case, median | 5.4 | 5.5 |
+| Cost, ledger | $0.269 + $0.029 | $0.264 + $0.028 |
+
+**The pre-registered rule keeps `flat`.** Exact McNemar on the 400: `section` right where `flat`
+is wrong on 7, the reverse on 13, both right on 339, neither on 41, p = 0.26; it does not reject
+in `section`'s favour, and cited MAP is equal (sign test 1 / 1). Section expansion, haiku.rag's
+rule, is not preferred over sending each hit as its chunk on this benchmark, as development
+already suggested (3 / 3 discordant).
+
+**Where `flat`'s 48 errors are** (judge of record):
+
+| Category | Cases |
+|---|---|
+| Retrieval miss: gold paper outside the top 10, answered | 3 |
+| Retrieval miss, abstained | 4 |
+| Abstained with the gold paper in hand | 6 |
+| Answered wrong with the gold paper in hand | 35 (34 cite the gold paper first; 4 judged right under the v1 rubric) |
+
+Five of the 35 read in full (seeded draw), described here without the benchmark's text: an
+answer that restates a formula in words and drops two of its terms; an objective stated without
+the constraint that defines it; a mechanism described in general terms where the reference gives
+the specific sampling procedure; a yes/no question answered "yes" with an explanation that
+supports the reference's "no"; a two-way relationship stated in one direction only. All five
+cite the gold paper first and are judged wrong under both rubrics. None is a retrieval error and
+none a judge disagreement: what remains is the precision of synthesis from evidence the
+generator already holds, which a stronger generator, a mathematics-preserving answer format or
+a self-check of yes/no polarity would address, none of them measured here.
+
+**Against haiku.rag.** Our frozen `flat` reads 0.88 [0.84, 0.91] under their rubric, on the
+1,914-question text slice's 400-question sample, with a 568M reranker, BGE-M3, pypdf and
+`gpt-6-luna` at effort `none`; theirs read 0.92–0.97 over all 3,045 questions, with Docling,
+1B–8B retrieval models, 26–30B generators in an agent loop and their own judge model. The first
+stage is now level with theirs in mechanism and nearly in effect (gold paper in the top 10 for
+98% of the frozen sample); the remaining gap is the generator's precision with the evidence in
+hand. Development read 0.92 for the same configuration on 100 questions, inside the frozen
+interval's neighbourhood ([0.85, 0.96]); the frozen figure is the one to quote.
+
+The ORB plan (O1–O5) is complete. Spend over the plan's answering work, from the ledger:
+2026-10-08 $0.135, 2026-10-09 $0.299, 2026-10-10 $0.772.
+
+```text
+eval qa --config configs/experiments/orb-text-qa-v2.yaml --split frozen --frozen --variant flat --database-url .../copilot_orb --out reports/qa/orb-text-v2 --max-spend-usd 3.00
+eval qa --config configs/experiments/orb-text-qa-v2.yaml --split frozen --frozen --variant section --database-url .../copilot_orb --out reports/qa/orb-text-v2 --max-spend-usd 3.00
+eval qa-rejudge --run reports/qa/orb-text-v2/frozen/<run>.<variant> --judge openai-gpt-6-luna-low --prompt prompts/judge/answer-equivalence-v1.yaml --out ${DATA_DIR}/eval/qa/labels/<run>.<variant>.rejudge-luna-v1-rubric.jsonl --max-spend-usd 2.00
+eval pair --treated reports/qa/orb-text-v2/frozen/<section run>/cases.parquet --baseline reports/qa/orb-text-v2/frozen/<flat run>/cases.parquet
+```

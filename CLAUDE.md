@@ -315,7 +315,10 @@ reading title and chunk over `orb-v1` at a 2.5 s rerank deadline
 (`configs/experiments/orb-text-qa-chunk-rerank.yaml`) development accuracy is 0.87 / 0.87, and
 0.92 / 0.94 under haiku.rag's rubric verbatim (`prompts/judge/answer-equivalence-haiku-v1.yaml`,
 applied with `eval qa-rejudge --prompt`). 256-token chunks find the paper but cost answers.
-Development reads only: the frozen 400 wait for the developer's choice of first stage and rubric.
+The frozen 400 were then scored once per variant under `configs/experiments/orb-text-qa-v2.yaml`
+(that first stage, haiku.rag's rubric as judge of record, the developer's choices): `flat` 0.880
+[0.844, 0.908], `section` 0.865, `flat` kept by the registered rule. **The frozen sample is spent for
+v2's variants; the ORB plan is complete.**
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli eval qa --split development --limit 20 --variant flat --database-url ...copilot_orb --out reports/qa/orb-text --max-spend-usd 0.50

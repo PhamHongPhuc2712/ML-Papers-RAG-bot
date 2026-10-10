@@ -1,0 +1,67 @@
+{
+  "agreement": {
+    "agreement": 0.9335038363171355,
+    "calibrated": true,
+    "confusion": {
+      "both_no": 42,
+      "both_yes": 323,
+      "human_no_judge_yes": 23,
+      "human_yes_judge_no": 3
+    },
+    "judged": 391,
+    "kappa": 0.7264262648008609,
+    "kappa_floor": 0.6,
+    "labels": 391
+  },
+  "cases": 391,
+  "cost_usd": 0.027987,
+  "created_at": "2026-10-10T17:22:21.412521+00:00",
+  "disagreements": [
+    "035fae13-78c8-4707-8355-f7189c04841f",
+    "12274cc4-3a40-45ec-96a3-c54cc5f0871e",
+    "162974f6-b344-4bba-a7e6-e67a51d9ef4e",
+    "16fd0b9b-5a17-49fc-b317-a096df5f680c",
+    "181adc75-e279-4ebc-a137-e84b4e923fb2",
+    "19b5550b-f7f8-495b-babc-d51d07401242",
+    "1b4d4eeb-b2d9-4e5b-b3e5-fd52badb184c",
+    "353fb0ef-0fb0-4720-b54f-df9f0238ae3c",
+    "41d68de9-7ef9-4dbd-8a08-31075b374b30",
+    "63c6dbdc-ec25-460e-b50d-dba724cec3f8",
+    "664d0770-1127-4fd4-9c86-afccdad64e1e",
+    "68264023-9a8d-4daa-a1df-e6d4e8ff781e",
+    "6ab4ae51-f88b-4d32-a710-278196617bce",
+    "6ab65e2e-5a07-4002-931e-882a4648bba5",
+    "7b789975-1cd2-4ec2-8ad1-c2d0883be2a2",
+    "7ddb6e39-986a-41f3-84a4-1b3376ff253f",
+    "8a7b90a0-79b8-4133-965d-6be6e4281f65",
+    "9dd09779-a368-4e11-bbb4-d21ef3d52449",
+    "a80eea5b-6d26-4f21-a545-0876cf4d2ab9",
+    "b2ea508c-5015-4ec2-81a4-b76a25e68df0",
+    "b35fa7c0-7af9-464b-9637-badb30603bcf",
+    "b41fd980-eda6-4998-8bc6-24b0cab9ecb0",
+    "c34798db-ba68-4173-8215-5c67e88ea57d",
+    "c611ebdc-2d42-48ce-a6a8-5e08d0483694",
+    "e0ee8b54-bdaf-46e7-a2a6-5a333e80a664",
+    "fa5abf3c-299a-47c8-9f78-5a03c0b7f61a"
+  ],
+  "judge_errors": 0,
+  "judge_of_record": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-haiku-v1:49cb4bd6d75c",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "judged": 391,
+  "ledger_run": "orb-text-qa-v2-frozen-20261010T164024Z.section.rejudge.ea884f98",
+  "method": "model-model agreement, the developer's substitute for 50 blind hand labels; weaker evidence than a human's labels",
+  "run_id": "orb-text-qa-v2-frozen-20261010T164024Z",
+  "second_judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-v1:80576481bcb8",
+    "key": "openai-gpt-6-luna-low",
+    "prompt": "prompts/judge/answer-equivalence-v1.yaml"
+  },
+  "served_models": [
+    "gpt-6-luna"
+  ],
+  "sheet": "/home/phamphucintern/ml-copilot-data/eval/qa/labels/orb-text-qa-v2-frozen-20261010T164024Z.section.rejudge-luna-v1-rubric.jsonl",
+  "stopped": null,
+  "variant": "section"
+}
