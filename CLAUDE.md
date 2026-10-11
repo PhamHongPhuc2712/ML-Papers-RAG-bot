@@ -11,8 +11,12 @@ are removed; spec §1 records the developer's answers. The roadmap is three plan
 `ChatOpenAI` structured output behind the ledger, a LangGraph turn over a LangChain
 retriever, SSE, follow-up evaluation), `2026-10-11-web-app.md` (M4: W1–W4, Next.js) and
 `2026-10-11-search-upgrade-and-release.md` (M5: S1–S2 the search reranker's text on our
-corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C3 are done (accounts, chat
-history, `ChatOpenAI` behind the ledger). **Next: C4.**
+corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7 are done and **G3 passes**
+(2026-10-11): accounts, chat history, `ChatOpenAI` structured output behind the ledger
+(`StructuredGenerator`, adopted on ORB's frozen 400: 0.884 vs 0.880), the LangGraph turn, `POST
+/v1/chats/stream` (SSE) and the follow-up evaluation, whose rule turned condensing **off**
+(`configs/chat.yaml`; 43 frozen conversations, underpowered: `reports/chat-followups.md`).
+`copilot_v2` is migrated to `0009_llm_call_purpose_chat`. **Next: W1.**
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
@@ -23,8 +27,9 @@ labels, exact BM25), P2.2 (indexes and release switching), P2.3 (fusion, bounded
 reranking, deadlines), P2.4 (the search API), P2.5 (retrieval ablations) and P2.6 (the
 recall gaps) are done, and release `m2-20260924T095724Z` is **active** in Qdrant — 85,729
 paper and 3,426,221 chunk points.
-`copilot_v2` is migrated to `0006_search_ordering_mode`: the hosted-LLM spend ledger
-(`0005`), then a wider ordering mode for `hybrid_rerank_llm`. E3 (LitSearch's own corpus, the primary G2 evidence) selects
+`copilot_v2` is migrated to `0009_llm_call_purpose_chat` (accounts, chats, the `chat` ledger
+purpose, 2026-10-11), after the hosted-LLM spend ledger (`0005`) and a wider ordering mode for
+`hybrid_rerank_llm` (`0006`). E3 (LitSearch's own corpus, the primary G2 evidence) selects
 `hybrid_rerank` under the pre-registered rule, superseding P2.5's underpowered "retain
 BM25" (`reports/e3-litsearch-baselines.md`).
 
@@ -390,10 +395,12 @@ never runs in the ASGI event loop.
   no private collections: uploads were removed on 2026-10-11.
 - **Search** (§7): 100 BM25 + 100 dense candidates → RRF `sum(1/(60+rank))` in
   application code → cross-encoder rerank of at most 50 → 20 results. Degrades explicitly.
-- **Chat** (§9, revised 2026-10-11, planned): a LangGraph turn — condense a follow-up into
+- **Chat** (§9, revised 2026-10-11, built in C1–C7): a LangGraph turn — condense a follow-up into
   one standalone query, one search for 10 papers, evidence chunks inside them, structured
   claims whose evidence ids are validated before the answer is stored and sent whole over
   SSE. History in PostgreSQL; every model call under the spend ledger (purpose `chat`).
+  Condensing is configured off since C7; turn timings show retrieval dominating (2.6–8.8 s), and a
+  cold Qdrant page cache can fail a first turn with `candidates_unavailable` (`reports/m3-chat.md`).
   No recommendations (§8 removed), no uploads, no general mode, no agent.
 - **Corpus pipeline** (§4): versioned per-venue-year manifests; identity resolution with
   contradictory strong-ID collisions held as conflicts; parse into heading-aware sections

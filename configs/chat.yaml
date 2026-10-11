@@ -31,8 +31,10 @@ history:
   turns: 3
   max_chars: 6000
 
-# C7's pre-registered rule decides this; until then the graph condenses follow-ups.
-condense: true
+# Set by C7's pre-registered rule (2026-10-11): off. On 43 frozen ORB follow-ups condensing read
+# 0.791 against 0.674 searched as typed, McNemar p = 0.227 (8 / 3), short of p < 0.05; gold paper
+# in the top 10 1.00 against 0.81. Underpowered: reports/chat-followups.md.
+condense: false
 
 timeouts_seconds:
   condense: 15

@@ -136,6 +136,8 @@ def run_conversation(
 # --- The run: every condition over the same conversations, under one budget ---------------
 
 RUNNABLE_SPLITS = ("development", "frozen")
+# ORB-derived text (CC-BY-NC-4.0): kept in the copy under DATA_DIR, never in the repository's.
+TEXT_FIELDS = ("answer", "query")
 GENERATION_CHARS_PER_TOKEN = 4
 GENERATION_OVERHEAD_CHARS = 2_000
 CONDENSE_OVERHEAD_CHARS = 1_500
@@ -527,7 +529,7 @@ def run_chat_eval(
     for condition, rows in results.items():
         directory = out_dir / split / f"{run_id}.{condition}"
         directory.mkdir(parents=True, exist_ok=True)
-        public = [{k: v for k, v in row.items() if k != "answer"} for row in rows]
+        public = [{k: v for k, v in row.items() if k not in TEXT_FIELDS} for row in rows]
         pq.write_table(pa.Table.from_pylist(public), directory / "cases.parquet")
         (directory / "metrics.json").write_text(
             json.dumps(metrics[condition], indent=2, sort_keys=True) + "\n", encoding="utf-8"

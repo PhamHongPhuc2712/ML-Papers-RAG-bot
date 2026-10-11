@@ -1,0 +1,79 @@
+{
+  "budget_usd": 1.95,
+  "chat": {
+    "path": "configs/chat.yaml",
+    "sha256": "390eac3c3763385deb144db8c5e9c12275be122354e7af0fe20e0ec56a7d7ba2"
+  },
+  "code": {
+    "diff_sha256": "856bd3af07f06216bd67ddbef3e6997310cf58c56a134aa7b1a3cb1220df4672",
+    "dirty": true,
+    "git_sha": "1e5f5f3999851ce9fde2f65d686ab125d77bb747"
+  },
+  "condition": "standalone",
+  "configuration_sha256": "be3e8e8af93ccf7b13a54c79840e291ae05a4aa62a293910cb76a7fed82ff499",
+  "conversations": 99,
+  "created_at": "2026-10-11T17:16:18.699180+00:00",
+  "dataset": {
+    "path": "data/fixtures/chat/conversations.jsonl",
+    "sha256": "1932c1ffa9fa584a501f540b7e06131c66adc46b108e90bcc0eeccca08af0a2b"
+  },
+  "experiment": {
+    "name": "orb-chat-followups",
+    "path": "configs/experiments/orb-chat-followups.yaml",
+    "sha256": "968dd66aae7e2d4449f19b249a41c12210fad04277799dfaa53dd493f5cbc494"
+  },
+  "failures": [],
+  "frozen_scorings": {},
+  "gpu_before_run": {
+    "available": true,
+    "busy": false,
+    "memory_mib": 1707,
+    "samples": 5,
+    "utilization_percent_p50": 0.0
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "identity": {
+    "condense_prompt": "condense-v1:cec3070310d9",
+    "corpus": {
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+      "release": "orb-v1"
+    },
+    "evidence": {
+      "chunk_candidates": 40,
+      "evidence": 12,
+      "expansion": "none",
+      "expansion_max_chars": 6000,
+      "expansion_min_share": 0.2,
+      "include_references": false,
+      "min_rerank_score": null,
+      "papers": 10,
+      "per_paper": 3,
+      "rrf_k": 60,
+      "token_budget": 6000,
+      "tokenizer": "model:BAAI/bge-m3@5617a9f61b02"
+    },
+    "generator": "openai-gpt-6-luna=gpt-6-luna#grounded-claims-v1:e9c0986c2ca3+json_schema",
+    "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+    "search": "1a7f35e19e5b5baa8a3424fd2532ae68766b80b94442354028efc2a0f3aa58a5"
+  },
+  "judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-haiku-v1:49cb4bd6d75c",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "ledger_cost_usd": 0.238758,
+  "ledger_run_id": "orb-chat-followups-development-20261011T171618Z.118ea999",
+  "limit": null,
+  "preflight_worst_usd": 1.8906821999999999,
+  "run_id": "orb-chat-followups-development-20261011T171618Z",
+  "split": "development",
+  "stopped": null,
+  "text_dir": "/home/phamphucintern/ml-copilot-data/eval/chat"
+}

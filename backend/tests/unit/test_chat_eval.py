@@ -210,7 +210,7 @@ def test_the_run_writes_three_paired_conditions(tmp_path):
     for condition in CONDITIONS:
         directory = tmp_path / "reports" / "development" / f"{result['run_id']}.{condition}"
         table = pq.read_table(directory / "cases.parquet").to_pylist()
-        assert "answer" not in table[0]
+        assert "answer" not in table[0] and "query" not in table[0]
         ids.append([row["query_id"] for row in table])
         metrics = json.loads((directory / "metrics.json").read_text())
         assert metrics["cases"] == 3 and len(metrics["accuracy"]["wilson"]) == 2
