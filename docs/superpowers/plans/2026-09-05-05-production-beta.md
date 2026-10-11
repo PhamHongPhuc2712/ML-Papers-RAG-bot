@@ -1,5 +1,10 @@
 # Production Beta and Portfolio Evidence Implementation Plan
 
+> **Superseded 2026-10-11** by the [search upgrade and release plan](2026-10-11-search-upgrade-and-release.md)
+> (S1–S2, R1–R4) and the web app plan's W4 (CI). P5.3's staged deployment and RPO/RTO drill, and
+> P5.2's public rate limits and per-user quotas, stay **deferred, not deleted**. Kept as the
+> record of what was planned; do not execute it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prove the product reliable on the local self-hosted stack and substantiate the ML engineering story; reliability for external researchers follows a funded deployment, which is deferred.

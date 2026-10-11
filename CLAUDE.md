@@ -4,6 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
+**Scope revised 2026-10-11: paper search and a grounded chatbot only** (like Consensus and
+haiku.rag). Recommendations, the library, uploads, the general chat mode, the agent and M6
+are removed; spec §1 records the developer's answers. The roadmap is three plans:
+`docs/superpowers/plans/2026-10-11-chat-backend.md` (M3: C1–C7 accounts, chat history,
+`ChatOpenAI` structured output behind the ledger, a LangGraph turn over a LangChain
+retriever, SSE, follow-up evaluation), `2026-10-11-web-app.md` (M4: W1–W4, Next.js) and
+`2026-10-11-search-upgrade-and-release.md` (M5: S1–S2 the search reranker's text on our
+corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. **Next: C1.**
+
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
 chunker, durable job queue with source adapters, and immutable corpus snapshots with a
@@ -40,7 +49,7 @@ idle GPU. **The locked test split was run once on 2026-10-06** with the user's g
 (`reports/m2-locked-test.md`): G2 is met and the M2 release is `hybrid_rerank` over
 chunk-level candidates. The test split is spent for this release. Open item: right after a
 cold start the chunk-level dense branch exceeds its 1 s deadline for about a dozen queries
-until Qdrant's page cache warms. Next: P3.1.
+until Qdrant's page cache warms.
 
 **Open RAG Bench, O1–O3 done (2026-10-07; plan `docs/superpowers/plans/2026-10-06-orb-text-benchmark.md`,
 evidence `reports/orb-text.md`).** The benchmark is pinned, its 1,914 text queries frozen,
@@ -110,9 +119,10 @@ suite then targets the developer database.
 1. `docs/superpowers/specs/2026-09-05-ml-research-copilot-design.md` — architecture,
    schemas (§5), contracts (§6), ranking formulas (§7–8), evidence pipeline (§9), API
    (§10), evaluation gates (§11), operations (§12). The contract source of truth.
-2. `docs/superpowers/plans/2026-09-05-0N-*.md` — six milestone plans (M1–M6). Each task
-   section names the files it owns, its interfaces, a regression example, acceptance
-   cases, the suites to run and the exact commit message.
+2. `docs/superpowers/plans/` — M1–M2 in `2026-09-05-0{1,2}-*.md`; the revised M3–M5 in the
+   three `2026-10-11-*.md` plans (the 2026-09-05 M3–M6 plans are superseded records). Each
+   task names the files it owns, its interfaces, its tests, the suites to run and the exact
+   commit message.
 3. `docs/superpowers/progress.md` — live status, gate board, recorded decisions and the
    session log. Update it when a task or decision changes.
 4. `reports/` — measured evidence per task: foundation, identity, parser audit,
@@ -177,7 +187,7 @@ forward without a demonstrated need.
 ## Commands
 
 Backend package is `copilot` under `backend/src`, managed by uv with `backend/.venv` as
-the only environment. Frontend (M3) does not exist yet.
+the only environment. The frontend (`frontend/`, M4 web app plan) does not exist yet beyond `openapi.json`.
 
 ```bash
 uv sync --project backend --frozen --group dev
@@ -375,15 +385,15 @@ never runs in the ASGI event loop.
 - **Qdrant** is a rebuildable serving index. Each corpus release gets immutable
   `paper_abstracts_<release>` / `paper_chunks_<release>` collections with named dense
   (BGE-M3, 1024-d, cosine) and exact-BM25 sparse vectors; the pointer switches
-  transactionally only after count, dimension, checksum and canary validation. Private
-  uploads live in a separate collection, dense-only, filtered by server-derived `user_id`.
+  transactionally only after count, dimension, checksum and canary validation. There are
+  no private collections: uploads were removed on 2026-10-11.
 - **Search** (§7): 100 BM25 + 100 dense candidates → RRF `sum(1/(60+rank))` in
   application code → cross-encoder rerank of at most 50 → 20 results. Degrades explicitly.
-- **Recommendations** (§8): content-based profile from decayed positive feedback plus
-  topic/seed priors; bounded heuristic score; MMR diversification; reasons come from real
-  score components, never from an LLM.
-- **Evidence and chat** (§9): research mode retrieves papers then chunks within them;
-  claims carry evidence IDs validated structurally before any answer text streams.
+- **Chat** (§9, revised 2026-10-11, planned): a LangGraph turn — condense a follow-up into
+  one standalone query, one search for 10 papers, evidence chunks inside them, structured
+  claims whose evidence ids are validated before the answer is stored and sent whole over
+  SSE. History in PostgreSQL; every model call under the spend ledger (purpose `chat`).
+  No recommendations (§8 removed), no uploads, no general mode, no agent.
 - **Corpus pipeline** (§4): versioned per-venue-year manifests; identity resolution with
   contradictory strong-ID collisions held as conflicts; parse into heading-aware sections
   with page spans; chunk under a versioned policy; Parquet exports carrying

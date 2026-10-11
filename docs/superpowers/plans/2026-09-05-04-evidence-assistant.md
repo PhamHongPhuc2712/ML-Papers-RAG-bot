@@ -1,5 +1,12 @@
 # Evidence Assistant and Multimodal Documents Implementation Plan
 
+> **Superseded 2026-10-11.** P4.1's public-corpus evidence retrieval and P4.2's generation
+> adapter were delivered by the ORB plan's O4. P4.2's routing, streams and API, and P4.4's chat
+> UI, are replaced by the [chat backend plan](2026-10-11-chat-backend.md) (C2–C6, one search
+> per turn, no modes) and the [web app plan](2026-10-11-web-app.md) (W3); P4.5's evaluation by
+> C4 and C7. Private uploads, image questions (P4.3) and the general mode are dropped (spec §9).
+> Kept as the record of what was planned; do not execute it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add grounded research chat, private PDF QA and image interpretation with traceable evidence.

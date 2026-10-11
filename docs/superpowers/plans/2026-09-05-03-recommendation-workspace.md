@@ -1,5 +1,11 @@
 # Research Workspace and Recommendations Implementation Plan
 
+> **Superseded 2026-10-11.** The developer narrowed the product to paper search and a grounded
+> chatbot; recommendations, the library and preferences are removed (spec §1, §8). P3.1's
+> identity survives, simplified, as C1 of the [chat backend plan](2026-10-11-chat-backend.md);
+> P3.4's workspace is replaced by the [web app plan](2026-10-11-web-app.md); P3.2, P3.3 and P3.5
+> are dropped. This file is kept as the record of what was planned; do not execute it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver all three discovery workflows and a measurable content-based personalized feed.

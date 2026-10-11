@@ -1,5 +1,9 @@
 # Research Expansion and Advanced Ranking Implementation Plan
 
+> **Removed 2026-10-11** with the scope revision (spec §1, §13): venue expansion, graph
+> recommendation, learned ranking, the bounded agent and landscape synthesis are not planned.
+> Kept as the record of what was planned; do not execute it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend the research product through measured graph, learned-ranking and synthesis experiments.

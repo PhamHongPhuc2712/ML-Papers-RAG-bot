@@ -343,6 +343,11 @@ query whose golds are partially present is excluded from recall and counted sepa
 
 ## E5: Build the reference-free question set
 
+> **Not built (2026-10-11).** The developer has no time to hand-label; grounded answering is
+> measured on ORB's frozen 400 and on follow-up conversations from ORB's unused questions
+> ([chat backend plan](2026-10-11-chat-backend.md) C4, C7), with the judge calibrated by a second
+> model. E5's unanswerable and multi-paper cases are a known gap, stated in the case study.
+
 **Depends on:** the corpus rebuild. No model calls.
 
 **Files:**
