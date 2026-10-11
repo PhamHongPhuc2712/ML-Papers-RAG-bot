@@ -7,9 +7,16 @@
 # (configs/chat.yaml condense: true) if `condensed` is more accurate than `raw` with exact
 # McNemar p < 0.05; otherwise it is turned off. Reported, deciding nothing: `condensed` against
 # `standalone` (the price of a follow-up), gold paper in the top 10 per condition, cost per turn.
+#
+# Amended 2026-10-11 after the development read and before any frozen scoring: the
+# conversations are rebuilt with prompts/chat/followup-rewrite-v2.yaml, which replaces only the
+# names the first question also uses, and the builder rejects a rewrite that drops a
+# distinctive term of B the first question never names. v1's rewrites had removed B's own
+# subject in at least 30 of 99 development and 40 of 197 frozen conversations
+# (reports/chat-followups.md).
 schema_version: 1
 name: orb-chat-followups
-dataset: {path: data/fixtures/chat/conversations.jsonl, texts: eval/chat/conversations-v1.jsonl}
+dataset: {path: data/fixtures/chat/conversations.jsonl, texts: eval/chat/conversations-v2.jsonl}
 corpus: {release: orb-v1}
 chat: configs/chat.yaml
 judge: openai-gpt-6-luna-low

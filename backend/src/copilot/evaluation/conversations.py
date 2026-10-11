@@ -111,10 +111,14 @@ def leaks(rewrite: str, terms: set[str], title: str) -> bool:
 
 # --- Building the conversations (spends: one rewrite per kept pair, one retry at most) -----
 
-REWRITE_PROMPT = "prompts/chat/followup-rewrite-v1.yaml"
-TEXTS = "eval/chat/conversations-v1.jsonl"
+REWRITE_PROMPT = "prompts/chat/followup-rewrite-v2.yaml"
+TEXTS = "eval/chat/conversations-v2.jsonl"
 FIXTURE = "data/fixtures/chat/conversations.jsonl"
 RETRY = "Your follow-up still names {term}; refer to it instead."
+KEEP = (
+    "Your follow-up drops {term}, which the previous question does not mention;"
+    " keep it so the follow-up still says what it asks about."
+)
 DEFAULT_DEVELOPMENT = 100
 DEFAULT_FROZEN = 200
 
@@ -134,6 +138,24 @@ def leaked_term(rewrite: str, terms: set[str], title: str) -> str | None:
     return None
 
 
+def dropped_subject(rewrite: str, first: str, second: str) -> str | None:
+    """A distinctive term of B that A never uses and the rewrite lost, or None.
+
+    Such a term is B's own subject: without it the follow-up cannot say what it asks about,
+    and the history cannot supply it.
+    """
+
+    # One character (a bare digit) is never a subject on its own.
+    own = sorted(
+        t for t in _marked(second) - {t.lower() for t in _TOKEN.findall(first)} if len(t) > 1
+    )
+    kept = {t.lower() for t in _TOKEN.findall(rewrite)}
+    for term in own:
+        if term not in kept:
+            return term
+    return None
+
+
 def _one_line(text: str) -> str:
     lines = text.strip().splitlines()
     return " ".join(lines[0].split()).strip("\"'“”` ") if lines else ""
@@ -146,7 +168,8 @@ def _fill(template: str, values: dict[str, str]) -> str:
 def rewrite_followup(
     complete: Any, prompt: Mapping[str, str], title: str, first: str, second: str
 ) -> tuple[str | None, int]:
-    """B rewritten to lean on A, or None when it still names the paper after one retry.
+    """B rewritten to lean on A, or None when after one retry it still names what A names or
+    drops B's own subject.
 
     ``complete(messages) -> ChatResult``. Returns the rewrite and how many calls it took.
     """
@@ -157,18 +180,32 @@ def rewrite_followup(
         {"role": "user", "content": _fill(prompt["user"], {"first": first, "second": second})},
     ]
     reply = _one_line(complete(messages).text)
-    term = leaked_term(reply, terms, title) if reply else "the paper"
-    if reply and term is None:
+    problem = _problem(reply, terms, title, first, second)
+    if problem is None:
         return reply, 1
     retry = [
         *messages,
         {"role": "assistant", "content": reply},
-        {"role": "user", "content": RETRY.format(term=term)},
+        {"role": "user", "content": problem},
     ]
     second_reply = _one_line(complete(retry).text)
-    if second_reply and leaked_term(second_reply, terms, title) is None:
+    if _problem(second_reply, terms, title, first, second) is None:
         return second_reply, 2
     return None, 2
+
+
+def _problem(reply: str, terms: set[str], title: str, first: str, second: str) -> str | None:
+    """The retry message a rewrite earns, or None when it is usable."""
+
+    if not reply:
+        return RETRY.format(term="the paper")
+    leaked = leaked_term(reply, terms, title)
+    if leaked is not None:
+        return RETRY.format(term=leaked)
+    dropped = dropped_subject(reply, first, second)
+    if dropped is not None:
+        return KEEP.format(term=dropped)
+    return None
 
 
 def build_conversations(

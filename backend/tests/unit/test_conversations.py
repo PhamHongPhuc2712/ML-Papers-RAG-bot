@@ -192,3 +192,24 @@ def test_the_command_refuses_a_budget_below_its_worst_case(capsys):
     argv = ["eval", "chat-conversations", "--database-url", "unused", "--max-spend-usd", "0.01"]
     assert main(argv) == 1
     assert '"error": "run_budget_exceeded"' in capsys.readouterr().out
+
+
+def test_a_rewrite_that_drops_b_s_own_subject_is_retried_then_refused():
+    from types import SimpleNamespace
+
+    from copilot.evaluation.conversations import dropped_subject, rewrite_followup
+
+    first = "What loss does SimCSE use?"
+    second = "What does SimCSE gain over BERT-flow on STS-B?"
+    assert dropped_subject("What does it gain over BERT-flow on STS-B?", first, second) is None
+    assert dropped_subject("What does it gain over that baseline?", first, second) == "bert-flow"
+    replies = iter(["What does it gain over that baseline?", "And over that one?"])
+    calls = []
+
+    def complete(messages):
+        calls.append(messages)
+        return SimpleNamespace(text=next(replies))
+
+    prompt = {"system": "s", "user": "{first} / {second}"}
+    assert rewrite_followup(complete, prompt, "SimCSE", first, second) == (None, 2)
+    assert "drops bert-flow" in calls[1][-1]["content"]

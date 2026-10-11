@@ -147,7 +147,7 @@ def _write_conversations(tmp_path, ids):
     import hashlib
     import json
 
-    texts = tmp_path / "data" / "eval" / "chat" / "conversations-v1.jsonl"
+    texts = tmp_path / "data" / "eval" / "chat" / "conversations-v2.jsonl"
     texts.parent.mkdir(parents=True)
     fixture = tmp_path / "conversations.jsonl"
     rows = []
