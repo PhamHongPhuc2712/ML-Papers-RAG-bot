@@ -1,0 +1,40 @@
+# One chat turn (spec §9, revised 2026-10-11): condense a follow-up into one standalone query,
+# one search, evidence inside the top papers, one grounded answer whose citations validate.
+# Every value is part of a turn's identity, recorded on each assistant message.
+schema_version: 1
+
+# configs/llm.yaml key for the condenser and the generator.
+model: openai-gpt-6-luna
+# Set by C4's pre-registered rule: structured (StructuredGenerator) or http (ChatGenerator).
+generator: structured
+
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  condense: prompts/chat/condense-v1.yaml
+
+search:
+  # Papers the evidence retriever looks inside: the answering harness's value.
+  papers: 10
+  # The first stage the frozen ORB answering result was measured under (orb-text-qa-v2,
+  # flat 0.880 [0.844, 0.908]): the reranker reads the title and the chunk that found the
+  # paper, at a 2.5 s rerank deadline. The search page keeps configs/search.yaml's shipped
+  # values until the release plan's S2 decides for it.
+  overrides:
+    rerank: {text: title_chunk}
+    deadlines_seconds: {rerank: 2.5}
+
+evidence: configs/evidence.yaml
+
+history:
+  # Previous exchanges the condenser reads, newest kept first, and their character budget.
+  turns: 3
+  max_chars: 6000
+
+# C7's pre-registered rule decides this; until then the graph condenses follow-ups.
+condense: true
+
+timeouts_seconds:
+  condense: 15
+  generate: 60
+  # A turn still pending after twice this is interrupted (server died mid-turn).
+  turn: 120
