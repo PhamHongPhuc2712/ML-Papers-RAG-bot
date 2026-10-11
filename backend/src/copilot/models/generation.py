@@ -306,6 +306,9 @@ class StructuredGenerator(_Grounded):
             f"{model.model.key}={model.model.model}#{prompt.name}:{prompt.sha256[:12]}+json_schema"
         )
 
+    def close(self) -> None:
+        """Nothing to release: ChatOpenAI owns and reuses its own HTTP clients."""
+
     def _attempt(
         self, messages: list[dict[str, str]], *, request_id: UUID | None, run_id: str | None
     ) -> _Attempt:

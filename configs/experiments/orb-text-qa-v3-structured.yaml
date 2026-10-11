@@ -1,0 +1,53 @@
+# The chat's generator, measured before it serves (registered 2026-10-11, before any scoring
+# of it). Identical to orb-text-qa-v2 except the client: StructuredGenerator (ChatOpenAI,
+# response_format json_schema strict) in place of ChatGenerator. Only `flat`, v2's kept variant.
+#
+# Pre-registered rule, read on the frozen 400 against v2's frozen `flat` run (same cases), with
+# `eval pair --treated <v3 flat> --baseline <v2 flat>`: the chat uses StructuredGenerator unless
+#   (a) exact McNemar rejects at p < 0.05 with v3 worse, or
+#   (b) cited_map falls by more than 0.03, or
+#   (c) the share of answers valid on the first attempt (provenance_valid) falls by more than 0.05.
+# If any holds, the chat uses ChatGenerator (configs/chat.yaml generator: http) and v3 is
+# recorded as not adopted. Development is read first and decides nothing.
+#
+#   eval qa --config configs/experiments/orb-text-qa-v3-structured.yaml --split development \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/qa/orb-text-v3 --max-spend-usd 0.60
+#   eval qa --config configs/experiments/orb-text-qa-v3-structured.yaml --split frozen --frozen \
+#     --database-url ...copilot_orb --out reports/qa/orb-text-v3 --max-spend-usd 1.50
+schema_version: 1
+name: orb-text-qa-v3-structured
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+search_overrides:
+  rerank: {text: title_chunk}
+  deadlines_seconds: {rerank: 2.5}
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+generator_client: langchain
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: each hit is sent as its chunk
+
+budget:
+  max_spend_usd: 1.50

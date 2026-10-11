@@ -33,7 +33,7 @@ import pyarrow.parquet as pq
 import yaml
 
 from ..contracts import Evidence, GroundedAnswer
-from ..models.generation import GenerationOutcome
+from ..models.generation import ChatGenerator, GenerationOutcome, StructuredGenerator
 from ..models.llm import LlmError
 from .judge import JudgeError, JudgeOutcome
 from .pairing import wilson
@@ -91,6 +91,10 @@ class QaExperiment:
     # experiment: the first stage that hands papers to the evidence retriever. Parsed by the
     # retrieval harness's own rule, so only a knob it may turn is accepted.
     search_overrides: tuple[tuple[str, Any], ...] = ()
+    # Which client generates (2026-10-11): "http" is ChatGenerator over our own HTTP client,
+    # the configuration every result before v3 was measured with; "langchain" is
+    # StructuredGenerator, ChatOpenAI with the answer's JSON schema enforced.
+    generator_client: str = "http"
 
     def variant(self, name: str) -> QaVariant:
         for variant in self.variants:
@@ -119,6 +123,24 @@ def qa_search_config(experiment: QaExperiment) -> Any:
     if config.rerank_seconds > config.total_seconds:
         raise QaError("experiment_invalid", "rerank deadline exceeds the total")
     return config
+
+
+def build_generator(
+    experiment: QaExperiment, settings: Any, ledger: Any, cache: Any
+) -> ChatGenerator | StructuredGenerator:
+    """The experiment's generator, every call under the ledger of record."""
+
+    from ..models.generation import load_generation_prompt
+    from ..models.lc_chat import build_ledger_chat_model
+    from ..models.llm import build_client
+
+    prompt = load_generation_prompt(experiment.generate_prompt)
+    if experiment.generator_client == "langchain":
+        model = build_ledger_chat_model(
+            experiment.generator, settings, ledger, timeout=60.0, cache=cache
+        )
+        return StructuredGenerator(model, prompt)
+    return ChatGenerator(build_client(experiment.generator, settings, ledger, cache=cache), prompt)
 
 
 def load_qa_experiment(path: str | Path) -> QaExperiment:
@@ -157,12 +179,15 @@ def load_qa_experiment(path: str | Path) -> QaExperiment:
             budget_usd=float((raw.get("budget") or {}).get("max_spend_usd", 0.0)),
             decision=dict(raw.get("decision") or {}),
             search_overrides=_qa_search_overrides(raw.get("search_overrides")),
+            generator_client=str(raw.get("generator_client", "http")),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise QaError("experiment_invalid", str(error)) from error
     names = [variant.name for variant in experiment.variants]
     if not names or len(names) != len(set(names)):
         raise QaError("experiment_invalid", "variant names must be unique")
+    if experiment.generator_client not in ("http", "langchain"):
+        raise QaError("experiment_invalid", "generator_client must be http or langchain")
     if experiment.benchmark != "orb":
         raise QaError("experiment_invalid", "dataset.benchmark")
     return experiment
@@ -767,7 +792,6 @@ def run_qa(
     from ..corpus.releases import load_release
     from ..db.session import make_engine
     from ..evidence.retrieve import EvidenceRetriever, load_evidence_config
-    from ..models.generation import ChatGenerator, load_generation_prompt
     from ..models.llm import ResponseCache, build_client
     from ..models.spend import SpendLedger
     from ..search.chunks import dense_branch, lexical_branch
@@ -836,10 +860,7 @@ def run_qa(
     # The ledger of record is the main database's, so one daily cap covers every run.
     ledger = SpendLedger(make_engine(settings.database_url), settings.llm_daily_spend_cap_usd)
     cache = ResponseCache(data_dir / "cache" / "llm")
-    generator = ChatGenerator(
-        build_client(experiment.generator, settings, ledger, cache=cache),
-        load_generation_prompt(experiment.generate_prompt),
-    )
+    generator = build_generator(experiment, settings, ledger, cache)
     judge = AnswerEquivalenceJudge(
         build_client(experiment.judge, settings, ledger, cache=cache),
         load_judge_prompt(experiment.judge_prompt),
@@ -908,7 +929,11 @@ def run_qa(
             "reranker": str(getattr(reranker, "identity", "none")),
         },
         "evidence": {name: retriever.config.identity() for name, retriever in retrievers.items()},
-        "generator": {"key": experiment.generator, "identity": generator.identity},
+        "generator": {
+            "key": experiment.generator,
+            "identity": generator.identity,
+            "generator_client": experiment.generator_client,
+        },
         "judge": {"key": experiment.judge, "identity": judge.identity},
         "prompts": {
             "generate": {

@@ -148,3 +148,19 @@ def test_an_experiment_may_override_the_first_stage_by_the_harness_rule(tmp_path
     )
     with pytest.raises(QaError, match="experiment_invalid"):
         load_qa_experiment(bad)
+
+
+def test_an_experiment_names_its_generator_client(tmp_path):
+    from copilot.evaluation.qa import load_qa_experiment
+
+    source = Path("configs/experiments/orb-text-qa-v2.yaml").read_text()
+    shipped = tmp_path / "v2.yaml"
+    shipped.write_text(source)
+    assert load_qa_experiment(shipped).generator_client == "http"
+    structured = tmp_path / "v3.yaml"
+    structured.write_text(source + "\ngenerator_client: langchain\n")
+    assert load_qa_experiment(structured).generator_client == "langchain"
+    wrong = tmp_path / "bad.yaml"
+    wrong.write_text(source + "\ngenerator_client: other\n")
+    with pytest.raises(QaError, match="generator_client"):
+        load_qa_experiment(wrong)
