@@ -557,3 +557,19 @@ class LlmCall(Base):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class User(Base):
+    """An account (spec §10). The token names it; ``disabled_at`` ends every session at once."""
+
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("email = lower(email)", name="ck_users_email_lower"),
+        UniqueConstraint("email", name="uq_users_email"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

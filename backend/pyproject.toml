@@ -9,11 +9,13 @@ description = "ML Research Copilot backend"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic==1.16.5",
+  "argon2-cffi==25.1.0",
   "fastapi==0.116.1",
   "httpx==0.28.1",
   "psycopg[binary]==3.2.9",
   "pyarrow==21.0.0",
   "pydantic-settings==2.10.1",
+  "pyjwt==2.15.0",
   "pypdf==6.10.0",
   "pyyaml==6.0.3",
   "qdrant-client==1.19.0",

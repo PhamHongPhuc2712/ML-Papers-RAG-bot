@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     llm_rerank_model: str | None = Field(
         default=None, validation_alias=AliasChoices("LLM_RERANK_MODEL")
     )
+    # How long an access token from POST /v1/auth/token lives (spec §10). There is no refresh
+    # token: when it expires the user signs in again.
+    access_token_ttl_seconds: int = Field(
+        default=43_200,
+        ge=300,
+        le=604_800,
+        validation_alias=AliasChoices("ACCESS_TOKEN_TTL_SECONDS"),
+    )
 
     @field_validator(
         "openai_api_key",

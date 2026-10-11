@@ -5,14 +5,17 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
+from sqlalchemy import text
 
 from copilot.app import create_app
 from copilot.config import Settings
 from copilot.db.session import (
+    assert_safe_test_database,
     cleanup_test_namespace,
     cleanup_test_vectors,
     make_engine,
@@ -102,3 +105,39 @@ def api_client(
         yield client
     cleanup_test_namespace(test_settings, migrated_database)
     cleanup_test_vectors(test_settings, test_qdrant)
+
+
+PASSWORD = "correct horse battery staple"
+
+
+@pytest.fixture
+def make_user(test_settings: Settings, migrated_database) -> Iterator[object]:
+    """Create accounts for one test and delete them (and their chats) afterwards."""
+
+    from copilot.identity.users import UserStore
+
+    store = UserStore(migrated_database)
+    created: list[UUID] = []
+
+    def make(email: str | None = None, password: str = PASSWORD) -> tuple[UUID, str]:
+        address = email or f"user-{uuid4().hex[:12]}@example.org"
+        user_id = store.create(address, password)
+        created.append(user_id)
+        return user_id, address.strip().lower()
+
+    yield make
+    assert_safe_test_database(test_settings)
+    with migrated_database.begin() as connection:
+        connection.execute(text("delete from users where id = any(:ids)"), {"ids": created})
+
+
+@pytest.fixture
+def auth_headers(test_settings: Settings) -> object:
+    from copilot.identity.tokens import TokenIssuer
+
+    issuer = TokenIssuer(test_settings.secret_key, ttl_seconds=600)
+
+    def headers(user_id: UUID) -> dict[str, str]:
+        return {"Authorization": f"Bearer {issuer.issue(user_id).token}"}
+
+    return headers

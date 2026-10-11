@@ -19,6 +19,10 @@ from .config import Settings
 from .corpus.api import router as corpus_router
 from .db.models import CorpusRelease
 from .db.session import get_active_release, make_engine
+from .identity.api import Identity
+from .identity.api import router as identity_router
+from .identity.tokens import TokenIssuer
+from .identity.users import UserStore
 from .search.api import SearchApi, install_error_handlers
 from .search.api import router as search_router
 from .search.client import qdrant_client
@@ -132,6 +136,10 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
     artifacts = app_overrides.get("artifacts_config") or "configs/artifacts.yaml"
     app.include_router(corpus_router(engine, str(artifacts)))
     app.include_router(search_router())
+    app.include_router(identity_router())
+    app.state.identity = Identity(
+        UserStore(engine), TokenIssuer(settings.secret_key, settings.access_token_ttl_seconds)
+    )
     install_error_handlers(app)
     app.state.search_api = search_api
     app.state.settings = settings

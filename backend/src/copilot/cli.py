@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import socket
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -1325,6 +1326,29 @@ def run_llm_spend(*, database_url: str, day: str | None, run_id: str | None) -> 
         engine.dispose()
 
 
+def run_users_create(*, database_url: str, email: str, password: str) -> dict[str, Any]:
+    """Create an account. Signup is closed (spec §10): the operator makes accounts here."""
+
+    from .identity.users import UserStore, normalize_email
+
+    engine = make_engine(database_url)
+    try:
+        user_id = UserStore(engine).create(email, password)
+    finally:
+        engine.dispose()
+    return {"user_id": str(user_id), "email": normalize_email(email)}
+
+
+def run_users_disable(*, database_url: str, email: str) -> dict[str, Any]:
+    from .identity.users import UserStore
+
+    engine = make_engine(database_url)
+    try:
+        return {"email": email.strip().lower(), "disabled": UserStore(engine).disable(email)}
+    finally:
+        engine.dispose()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="copilot")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1556,6 +1580,19 @@ def _parser() -> argparse.ArgumentParser:
     spend_scope.add_argument("--day", default=None, help="UTC day, YYYY-MM-DD; default today")
     spend_scope.add_argument("--run", default=None, help="an evaluation run id")
     spend.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+
+    users = subparsers.add_parser("users")
+    user_commands = users.add_subparsers(dest="users_command", required=True)
+    create_user = user_commands.add_parser(
+        "create", help="create an account; the password is read from stdin, never an argument"
+    )
+    create_user.add_argument("--email", required=True)
+    create_user.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+    disable_user = user_commands.add_parser(
+        "disable", help="disable an account; its tokens stop working at once"
+    )
+    disable_user.add_argument("--email", required=True)
+    disable_user.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
 
     evaluation = subparsers.add_parser("eval")
     evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
@@ -2093,6 +2130,19 @@ def main(argv: list[str] | None = None) -> int:
             once=args.once,
             max_jobs=args.max_jobs,
         )
+    elif args.command == "users" and args.users_command == "create":
+        import getpass
+
+        password = (
+            getpass.getpass("Password: ")
+            if sys.stdin.isatty()
+            else sys.stdin.readline().rstrip("\n")
+        )
+        result = run_users_create(
+            database_url=_database_url(args.database_url), email=args.email, password=password
+        )
+    elif args.command == "users" and args.users_command == "disable":
+        result = run_users_disable(database_url=_database_url(args.database_url), email=args.email)
     else:
         raise ValueError("unsupported_command")
     print(json.dumps(result, sort_keys=True, default=str))
