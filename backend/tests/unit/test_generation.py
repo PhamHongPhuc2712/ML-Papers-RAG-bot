@@ -261,3 +261,32 @@ def test_an_answer_with_unescaped_latex_backslashes_still_parses():
     )
     claims, _ = parse_answer(text)
     assert "\\varphi" in claims[0].text and claims[0].evidence_ids == ["E1"]
+
+
+def test_the_structured_generator_repairs_through_the_same_loop():
+    from copilot.models.generation import StructuredGenerator
+    from copilot.models.lc_chat import LedgerChatModel
+
+    replies = [FABRICATED, GOOD]
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=_answer_body(replies.pop(0)))
+
+    model = CONFIG.models["openai-gpt-6-luna"]
+    chat = LedgerChatModel(
+        model,
+        CONFIG.providers[model.provider],
+        KEY,
+        CountingLedger(),
+        timeout=30.0,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=lambda _seconds: None,
+    )
+    generator = StructuredGenerator(chat, load_generation_prompt(PROMPT_PATH))
+    outcome = generator.generate("How is the encoder trained?", EVIDENCE)
+    assert outcome.repair_attempted and outcome.calls == 2
+    assert outcome.answer.claims[0].evidence_ids == ["E1"]
+    assert all(b["response_format"]["json_schema"]["name"] == "grounded_answer" for b in bodies)
+    assert generator.identity.endswith("+json_schema")

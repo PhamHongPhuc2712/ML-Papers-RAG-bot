@@ -27,6 +27,7 @@ import yaml
 
 from ..contracts import Claim, Evidence, GroundedAnswer
 from ..evidence.citations import check_claims
+from .lc_chat import GROUNDED_ANSWER_SCHEMA, LedgerChatModel
 from .llm import ChatClient
 
 PROMPT_PATH = Path("prompts/generate/grounded-claims-v1.yaml")
@@ -281,6 +282,37 @@ class ChatGenerator(_Grounded):
             messages,
             timeout=self.timeout,
             purpose=self.purpose,
+            request_id=request_id,
+            run_id=run_id,
+        )
+        return _Attempt(result.text, result.cost_usd, result.served_model, result.cached)
+
+
+class StructuredGenerator(_Grounded):
+    """The same validation loop, the model constrained to the answer's JSON schema.
+
+    Constrained decoding removes malformed JSON and code fences; it does not check that a
+    cited id exists or supports its claim, so the answer is still parsed and validated by
+    ``_check`` exactly as ``ChatGenerator``'s is, with the same single repair.
+    """
+
+    def __init__(
+        self, model: LedgerChatModel, prompt: GenerationPrompt, *, purpose: str = "evaluation"
+    ) -> None:
+        super().__init__(prompt)
+        self._model = model
+        self.purpose = purpose
+        self.identity = (
+            f"{model.model.key}={model.model.model}#{prompt.name}:{prompt.sha256[:12]}+json_schema"
+        )
+
+    def _attempt(
+        self, messages: list[dict[str, str]], *, request_id: UUID | None, run_id: str | None
+    ) -> _Attempt:
+        result = self._model.complete(
+            messages,
+            purpose=self.purpose,
+            schema=GROUNDED_ANSWER_SCHEMA,
             request_id=request_id,
             run_id=run_id,
         )

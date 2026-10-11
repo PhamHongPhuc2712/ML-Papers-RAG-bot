@@ -527,7 +527,9 @@ class LlmCall(Base):
 
     __tablename__ = "llm_calls"
     __table_args__ = (
-        CheckConstraint("purpose in ('search', 'evaluation')", name="ck_llm_calls_purpose"),
+        CheckConstraint(
+            "purpose in ('search', 'evaluation', 'chat')", name="ck_llm_calls_purpose"
+        ),
         CheckConstraint(
             "status in ('reserved', 'succeeded', 'failed')", name="ck_llm_calls_status"
         ),

@@ -30,7 +30,7 @@ from uuid import UUID, uuid4
 import yaml
 from sqlalchemy import Engine, text
 
-PURPOSES = ("search", "evaluation")
+PURPOSES = ("search", "evaluation", "chat")
 SETTLED = ("succeeded", "failed")
 USAGE_STYLES = ("openai", "deepseek")
 TOKEN_PARAMETERS = ("max_tokens", "max_completion_tokens")
