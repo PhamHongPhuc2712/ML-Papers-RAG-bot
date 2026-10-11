@@ -1694,6 +1694,26 @@ def _parser() -> argparse.ArgumentParser:
     qa_rejudge.add_argument(
         "--prompt", type=Path, default=None, help="another rubric; allows the same judge model"
     )
+    chat_conversations = evaluation_commands.add_parser(
+        "chat-conversations",
+        help="follow-up conversations from ORB's unused questions (C7); spends money",
+    )
+    chat_conversations.add_argument("--database-url", required=True, help="the ORB database")
+    chat_conversations.add_argument("--max-spend-usd", type=float, required=True)
+    chat_conversations.add_argument(
+        "--out", type=Path, default=Path("data/fixtures/chat/conversations.jsonl")
+    )
+    chat_eval = evaluation_commands.add_parser(
+        "chat",
+        help="follow-up answering on ORB conversations under three conditions (C7); spends money",
+    )
+    chat_eval.add_argument("--config", default="configs/experiments/orb-chat-followups.yaml")
+    chat_eval.add_argument("--split", choices=["development", "frozen"], required=True)
+    chat_eval.add_argument("--frozen", action="store_true", help="score the frozen split, once")
+    chat_eval.add_argument("--database-url", default=None, help="the ORB database")
+    chat_eval.add_argument("--out", type=Path, default=Path("reports/chat"))
+    chat_eval.add_argument("--max-spend-usd", type=float, required=True)
+    chat_eval.add_argument("--limit", type=int, default=None)
     litsearch_snapshot = evaluation_commands.add_parser(
         "litsearch-snapshot",
         help="LitSearch's corpus_clean as a corpus snapshot, for its own release (E3)",
@@ -1854,6 +1874,34 @@ def main(argv: list[str] | None = None) -> int:
                 prompt=args.prompt,
             )
         except QaError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
+            return 1
+    elif args.command == "eval" and args.eval_command == "chat-conversations":
+        from .evaluation.conversations import ConversationBuildError, run_build_conversations
+
+        try:
+            result = run_build_conversations(
+                database_url=args.database_url,
+                max_spend_usd=args.max_spend_usd,
+                out_fixture=args.out,
+            )
+        except ConversationBuildError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
+            return 1
+    elif args.command == "eval" and args.eval_command == "chat":
+        from .evaluation.chat_eval import ChatEvalError, run_chat_eval
+
+        try:
+            result = run_chat_eval(
+                args.config,
+                args.split,
+                args.out,
+                max_spend_usd=args.max_spend_usd,
+                frozen=args.frozen,
+                limit=args.limit,
+                database_url=args.database_url,
+            )
+        except ChatEvalError as error:
             print(json.dumps({"error": error.code, "detail": str(error)}))
             return 1
     elif args.command == "eval" and args.eval_command == "qa-smoke":
