@@ -11,7 +11,8 @@ are removed; spec §1 records the developer's answers. The roadmap is three plan
 `ChatOpenAI` structured output behind the ledger, a LangGraph turn over a LangChain
 retriever, SSE, follow-up evaluation), `2026-10-11-web-app.md` (M4: W1–W4, Next.js) and
 `2026-10-11-search-upgrade-and-release.md` (M5: S1–S2 the search reranker's text on our
-corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. **Next: C1.**
+corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C3 are done (accounts, chat
+history, `ChatOpenAI` behind the ledger). **Next: C4.**
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
