@@ -213,3 +213,17 @@ def test_a_rewrite_that_drops_b_s_own_subject_is_retried_then_refused():
     prompt = {"system": "s", "user": "{first} / {second}"}
     assert rewrite_followup(complete, prompt, "SimCSE", first, second) == (None, 2)
     assert "drops bert-flow" in calls[1][-1]["content"]
+
+
+def test_pairs_need_a_name_b_shares_with_a():
+    from copilot.evaluation.conversations import pair_sharing_names
+
+    questions = [
+        ("p1", "a", "What loss does SimCSE use?"),
+        ("p1", "b", "What batch size does SimCSE use?"),
+        ("p2", "c", "What dataset was used?"),
+        ("p2", "d", "How long was training?"),
+    ]
+    pairs = pair_sharing_names(questions, seed=42)
+    assert pairs == pair_sharing_names(questions, seed=42)
+    assert [paper for paper, _, _ in pairs] == ["p1"]

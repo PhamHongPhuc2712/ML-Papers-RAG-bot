@@ -66,6 +66,37 @@ def pair_by_paper(questions: Sequence[tuple[str, str]], *, seed: int) -> list[tu
     return pairs
 
 
+def shared_names(first: str, second: str) -> set[str]:
+    """B's distinctive terms that A also uses: what a follow-up replaces with a reference."""
+
+    return _marked(second) & {token.lower() for token in _TOKEN.findall(first)}
+
+
+def pair_sharing_names(
+    questions: Sequence[tuple[str, str, str]], *, seed: int
+) -> list[tuple[str, str, str]]:
+    """Per paper, one (A, B) whose B shares a distinctive name with A, drawn by ``seed``.
+
+    ``questions`` are (paper, query id, text). A paper with no such pair gives none: a
+    follow-up there would have nothing to refer back to, so it would not depend on turn 1.
+    """
+
+    by_paper: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for paper, query_id, text in questions:
+        by_paper[paper].append((query_id, text))
+    rng = random.Random(seed)
+    pairs = []
+    for paper in sorted(by_paper):
+        items = sorted(by_paper[paper])
+        candidates = [
+            (a[0], b[0]) for a in items for b in items if a[0] != b[0] and shared_names(a[1], b[1])
+        ]
+        if candidates:
+            first, second = rng.choice(candidates)
+            pairs.append((paper, first, second))
+    return pairs
+
+
 def split_by_paper(
     pairs: Sequence[tuple[str, str, str]], *, development: int, frozen: int, seed: int
 ) -> dict[str, list[tuple[str, str, str]]]:
@@ -119,7 +150,9 @@ KEEP = (
     "Your follow-up drops {term}, which the previous question does not mention;"
     " keep it so the follow-up still says what it asks about."
 )
-DEFAULT_DEVELOPMENT = 100
+# ORB's unused questions rarely share a name within a paper (78 of 315 papers with two or
+# more), so development takes 25 and frozen everything left.
+DEFAULT_DEVELOPMENT = 25
 DEFAULT_FROZEN = 200
 
 
@@ -222,7 +255,8 @@ def build_conversations(
     spent: Any = None,
     max_spend_usd: float | None = None,
 ) -> dict[str, Any]:
-    """Pair ``retrieval_only`` questions by gold paper, split, rewrite, keep what does not leak.
+    """Pair ``retrieval_only`` questions sharing a name, split by paper, rewrite, keep what
+    does not leak and keeps B's own subject.
 
     ``paper_ids`` maps an ORB document id to the loaded corpus's paper id; a question whose
     gold paper is not loaded is left out. Texts go to ``data_dir/TEXTS``; the repository's
@@ -241,9 +275,12 @@ def build_conversations(
         for q in text_slice(load_orb(paths))
         if assignment.get(q.query_id) == "retrieval_only" and q.doc_id in paper_ids
     }
-    questions = [(q.doc_id, q.query_id) for q in queries.values()]
+    questions = [(q.doc_id, q.query_id, q.query) for q in queries.values()]
     splits = split_by_paper(
-        pair_by_paper(questions, seed=seed), development=development, frozen=frozen, seed=seed
+        pair_sharing_names(questions, seed=seed),
+        development=development,
+        frozen=frozen,
+        seed=seed,
     )
     titles: dict[str, str] = {}
     kept: list[dict[str, Any]] = []
