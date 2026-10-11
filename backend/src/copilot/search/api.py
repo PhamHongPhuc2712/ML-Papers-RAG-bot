@@ -21,6 +21,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -34,7 +35,14 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import OperationalError
 
 from ..config import Settings
-from ..contracts import ContractModel, PaperFilters, PaperSummary, SearchRequest, SearchResponse
+from ..contracts import (
+    ContractModel,
+    PaperFilters,
+    PaperSummary,
+    Reranker,
+    SearchRequest,
+    SearchResponse,
+)
 from ..corpus.releases import ReleaseRecord, capture_release
 from .cache import CursorError, OrderingCache, decode_cursor, encode_cursor, query_key, ranking_key
 from .client import qdrant_client
@@ -45,8 +53,11 @@ from .service import (
     Ordering,
     PaperRow,
     PaperStore,
+    SearchConfig,
     SearchService,
     SearchUnavailable,
+    StageRunner,
+    ThreadedStageRunner,
     load_search_config,
 )
 
@@ -267,6 +278,46 @@ def default_listwise(
         return None
 
 
+@dataclass(frozen=True)
+class ServingModels:
+    """The models one API process loads once and every service shares. None: failed to load."""
+
+    embedder: Any | None
+    max_tokens: int | None
+    reranker: Reranker | None
+
+
+def load_serving_models(
+    settings: Settings, *, models_path: str | Path = DEFAULT_MODELS_PATH
+) -> ServingModels:
+    """Fixtures in mock mode, the pinned models otherwise; a model that cannot load is None
+    and every service built on it degrades typed (spec §12)."""
+
+    from ..models.embeddings import FixtureEmbedding, load_embedding_spec
+    from .rerank import FixtureReranker, load_reranker_spec
+
+    if settings.model_mode == "mock" or settings.mock_mode:
+        return ServingModels(FixtureEmbedding(), None, FixtureReranker())
+    embedder: Any | None = None
+    max_tokens: int | None = None
+    try:
+        from ..models.embeddings import TransformerEmbedding
+
+        spec = load_embedding_spec(models_path)
+        embedder = TransformerEmbedding(spec, settings.data_dir)
+        max_tokens = spec.max_tokens["papers"]
+    except Exception as error:  # noqa: BLE001 - any load failure degrades, typed
+        logger.warning("embedding model unavailable; dense search will degrade", exc_info=error)
+    reranker: Reranker | None = None
+    try:
+        from .rerank import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker(load_reranker_spec(models_path), settings.data_dir)
+    except Exception as error:  # noqa: BLE001 - any load failure degrades, typed
+        logger.warning("reranker unavailable; hybrid_rerank will degrade", exc_info=error)
+    return ServingModels(embedder, max_tokens, reranker)
+
+
 def default_search_service(
     settings: Settings,
     engine: Engine,
@@ -274,6 +325,10 @@ def default_search_service(
     *,
     models_path: str | Path = DEFAULT_MODELS_PATH,
     search_path: str | Path = DEFAULT_SEARCH_PATH,
+    models: ServingModels | None = None,
+    config: SearchConfig | None = None,
+    runner: StageRunner | None = None,
+    listwise: bool = True,
 ) -> SearchService:
     """The service from configuration: fixture models in mock mode, pinned models otherwise.
 
@@ -284,54 +339,35 @@ def default_search_service(
     never builds the hosted-LLM reranker, so no test can spend money.
     """
 
-    from ..models.embeddings import FixtureEmbedding, load_embedding_spec
     from .chunks import dense_branch, lexical_branch
-    from .rerank import FixtureReranker, load_reranker_spec
 
-    config = load_search_config(search_path)
+    config = config or load_search_config(search_path)
+    models = models or load_serving_models(settings, models_path=models_path)
     # Both branches read the configured candidate source (spec §7): the chunk
     # collection, each paper scored by its best evidence chunk, as decided in P2.6.
     lexical = lexical_branch(engine, client, source=config.candidates_source, k=config.rrf_k)
-    dense: CandidateRetriever
-    if settings.model_mode == "mock" or settings.mock_mode:
-        return SearchService(
-            engine=engine,
-            lexical=lexical,
-            dense=dense_branch(
-                engine, client, FixtureEmbedding(), source=config.candidates_source, k=config.rrf_k
-            ),
-            reranker=FixtureReranker(),
-            config=config,
-        )
-    try:
-        from ..models.embeddings import TransformerEmbedding
-
-        spec = load_embedding_spec(models_path)
-        dense = dense_branch(
+    dense: CandidateRetriever = (
+        UnavailableBranch("model_unavailable")
+        if models.embedder is None
+        else dense_branch(
             engine,
             client,
-            TransformerEmbedding(spec, settings.data_dir),
+            models.embedder,
             source=config.candidates_source,
-            max_tokens=spec.max_tokens["papers"],
+            max_tokens=models.max_tokens,
             k=config.rrf_k,
         )
-    except Exception as error:  # noqa: BLE001 - any load failure degrades, typed
-        logger.warning("embedding model unavailable; dense search will degrade", exc_info=error)
-        dense = UnavailableBranch("model_unavailable")
-    reranker = None
-    try:
-        from .rerank import CrossEncoderReranker
-
-        reranker = CrossEncoderReranker(load_reranker_spec(models_path), settings.data_dir)
-    except Exception as error:  # noqa: BLE001 - any load failure degrades, typed
-        logger.warning("reranker unavailable; hybrid_rerank will degrade", exc_info=error)
+    )
+    mock = settings.model_mode == "mock" or settings.mock_mode
     return SearchService(
         engine=engine,
         lexical=lexical,
         dense=dense,
-        reranker=reranker,
+        reranker=models.reranker,
         config=config,
-        listwise=default_listwise(settings, engine),
+        runner=runner,
+        # Mock mode never builds the hosted-LLM reranker, so no test can spend money.
+        listwise=None if mock or not listwise else default_listwise(settings, engine),
     )
 
 
@@ -357,6 +393,7 @@ class SearchApi:
         models_path: str | Path = DEFAULT_MODELS_PATH,
         search_path: str | Path = DEFAULT_SEARCH_PATH,
         clock: Callable[[], int] | None = None,
+        models: ServingModels | None = None,
     ) -> None:
         self._settings = settings
         self._engine = engine
@@ -366,6 +403,8 @@ class SearchApi:
         self._owns_service = service is None
         self._models_path = models_path
         self._search_path = search_path
+        self._models = models
+        self._runner = ThreadedStageRunner()
         self._clock = clock or (lambda: int(time.time()))
         self._secret = cursor_secret(settings.secret_key)
         self._prefix = settings.qdrant_collection_prefix
@@ -381,12 +420,18 @@ class SearchApi:
                     self._settings.qdrant_url, api_key=self._settings.qdrant_api_key, timeout=10
                 )
             if self._service is None:
+                if self._models is None:
+                    self._models = load_serving_models(
+                        self._settings, models_path=self._models_path
+                    )
                 self._service = default_search_service(
                     self._settings,
                     self._engine,
                     self._client,
                     models_path=self._models_path,
                     search_path=self._search_path,
+                    models=self._models,
+                    runner=self._runner,
                 )
             self._cache = OrderingCache(self._engine, self._service.config.cache_ttl_seconds)
             service = self._service
@@ -413,7 +458,15 @@ class SearchApi:
             raise ApiError(503, "search_unavailable", "search is not started", retryable=True)
         return self._service, self._cache, self._client
 
-    def _release(self) -> ReleaseRecord:
+    def serving(self) -> tuple[QdrantClient, ServingModels, ThreadedStageRunner]:
+        """What a second service in this process shares: one client, one set of models, and
+        one runner, so GPU stages from search and chat queue on the same model lanes."""
+
+        if self._client is None or self._models is None:
+            raise ApiError(503, "search_unavailable", "search is not started", retryable=True)
+        return self._client, self._models, self._runner
+
+    def active_release(self) -> ReleaseRecord:
         """The active release, if its collections are this deployment's public ones."""
 
         release = capture_release(self._engine)
@@ -452,7 +505,7 @@ class SearchApi:
                 raise ApiError(422, "cursor_mismatch", "the cursor belongs to a different search")
             offset = int(claims["offset"])
         else:
-            release = self._release()
+            release = self.active_release()
             key = ranking_key(body, release.id, release.model_revision, service.identity(body.mode))
             entry = cache.find(key, now)
             if entry is None:
@@ -520,7 +573,7 @@ class SearchApi:
         canonical = self._directory.resolve(paper_id)
         if canonical is None:
             raise ApiError(404, "paper_not_found", "no paper has this id")
-        release = self._release()
+        release = self.active_release()
         seed = str(canonical)
         try:
             points = client.retrieve(

@@ -15,7 +15,9 @@ from qdrant_client import QdrantClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from .chat.api import ChatApi
 from .chat.api import router as chat_router
+from .chat.graph import ChatGraph
 from .chat.store import ChatStore
 from .config import Settings
 from .corpus.api import router as corpus_router
@@ -118,14 +120,22 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
         search_path=str(app_overrides.get("search_config") or "configs/search.yaml"),
         clock=cast(Callable[[], int], clock) if callable(clock) else None,
     )
+    chat_api = ChatApi(
+        settings=settings,
+        engine=engine,
+        search=search_api,
+        graph=cast(ChatGraph | None, app_overrides.get("chat_graph")),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # Real models load here, once, before the first request is accepted.
         search_api.start()
+        chat_api.start()
         try:
             yield
         finally:
+            chat_api.close()
             search_api.close()
             if owns_engine:
                 engine.dispose()
@@ -146,6 +156,7 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
     app.state.chat_store = ChatStore(engine)
     install_error_handlers(app)
     app.state.search_api = search_api
+    app.state.chat_api = chat_api
     app.state.settings = settings
     app.state.overrides = app_overrides
     app.state.db_engine = engine

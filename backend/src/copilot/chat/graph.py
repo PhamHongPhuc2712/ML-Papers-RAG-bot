@@ -120,3 +120,105 @@ def build_chat_graph(
     graph.add_edge("retrieve", "generate")
     graph.add_edge("generate", END)
     return graph.compile()
+
+
+def build_default_chat_graph(
+    settings: Any, engine: Any, search: Any, config_path: str = "configs/chat.yaml"
+) -> ChatGraph:
+    """The configured turn on the models and Qdrant client search already loaded.
+
+    Mock mode answers with ``FakeGenerator`` and never condenses with a model, so a local
+    stack without an API key still runs end to end and spends nothing. Otherwise an
+    unconfigured key or cap raises ``LlmError("llm_unconfigured")`` and chat is unavailable.
+    """
+
+    from ..evidence.retrieve import EvidenceRetriever, load_evidence_config
+    from ..models.generation import (
+        ChatGenerator,
+        FakeGenerator,
+        StructuredGenerator,
+        load_generation_prompt,
+    )
+    from ..models.lc_chat import build_ledger_chat_model
+    from ..models.llm import LlmError, ResponseCache, build_client
+    from ..models.spend import SpendLedger
+    from ..search.api import default_search_service
+    from .condense import load_condense_prompt
+    from .config import chat_search_config, load_chat_config
+    from .retriever import CorpusRetriever, ServicePaperSearch
+
+    config = load_chat_config(config_path)
+    client, models, runner = search.serving()
+    if models.embedder is None:
+        raise LlmError("models_unavailable")
+    service = default_search_service(
+        settings,
+        engine,
+        client,
+        models=models,
+        config=chat_search_config(config),
+        runner=runner,
+        listwise=False,
+    )
+    evidence_config = load_evidence_config(config.evidence)
+    evidence = EvidenceRetriever(
+        engine=engine,
+        client=client,
+        embedder=models.embedder,
+        reranker=models.reranker,
+        config=evidence_config,
+        data_dir=settings.data_dir,
+        max_tokens=models.max_tokens,
+    )
+    retriever = CorpusRetriever(
+        search=ServicePaperSearch(service, search.active_release, config.papers),
+        evidence=evidence.retrieve,
+    )
+    prompt = load_generation_prompt(config.generate_prompt)
+    condense_prompt = load_condense_prompt(config.condense_prompt)
+    mock = settings.model_mode == "mock" or settings.mock_mode
+    generator: Any
+    if mock:
+        condenser = Condenser(None, condense_prompt, max_chars=config.history_max_chars)
+        generator = FakeGenerator(prompt)
+    else:
+        ledger = SpendLedger(engine, settings.llm_daily_spend_cap_usd)
+        cache = ResponseCache(settings.data_dir / "cache" / "llm")
+        condenser = Condenser(
+            build_ledger_chat_model(
+                config.model, settings, ledger, timeout=config.condense_timeout, cache=cache
+            ),
+            condense_prompt,
+            max_chars=config.history_max_chars,
+        )
+        if config.generator == "structured":
+            generator = StructuredGenerator(
+                build_ledger_chat_model(
+                    config.model, settings, ledger, timeout=config.generate_timeout, cache=cache
+                ),
+                prompt,
+                purpose="chat",
+            )
+        else:
+            generator = ChatGenerator(
+                build_client(config.model, settings, ledger, cache=cache),
+                prompt,
+                timeout=config.generate_timeout,
+                purpose="chat",
+            )
+    graph = build_chat_graph(
+        condenser=condenser,
+        retriever=retriever,
+        generator=generator,
+        condense_enabled=config.condense,
+    )
+    identity = {
+        "chat_config_sha256": config.sha256,
+        "generator": generator.identity,
+        "condense_prompt": f"{condense_prompt.name}:{condense_prompt.sha256[:12]}",
+        "search": service.identity("hybrid_rerank"),
+        "evidence": evidence_config.identity(),
+    }
+    return ChatGraph(
+        graph=graph, identity=identity, condense=config.condense, history_turns=config.history_turns
+    )
