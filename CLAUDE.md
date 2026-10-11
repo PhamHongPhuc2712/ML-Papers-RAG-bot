@@ -51,8 +51,8 @@ reproduced on a second corpus; `hybrid` 0.948, MRR@5 0.937 beside haiku.rag's 0.
 with 4B models); the cross-encoder, which scores titles and abstracts, **loses** 0.163
 nDCG@10 against plain fusion on these section-level questions — a recorded finding, not a
 decision, pointing at a pre-registered "rerank the candidate's best chunk" ablation on our
-corpus; `section_hit@1` 66.8% at 66.7% coverage. **O4 and O5 (the grounded generator and
-the judged answering run, about $1.50) are not started and need the developer's go-ahead.**
+corpus; `section_hit@1` 66.8% at 66.7% coverage. **O4 and O5 are done (2026-10-08/10): the
+grounded generator and the judged answering run; frozen 400 `flat` 0.880 under haiku.rag's rubric.**
 The `retrieval` split is a benchmark read as a whole: no decision is ever computed from it.
 
 The GPU is shared: with a Windows-side workload WSL cannot see (`nvidia-smi` lists it as
