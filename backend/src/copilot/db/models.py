@@ -573,3 +573,100 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Chat(Base):
+    """One user's conversation (spec §5). Deleting the user deletes their chats."""
+
+    __tablename__ = "chats"
+    __table_args__ = (Index("ix_chats_user_updated", "user_id", "updated_at"),)
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_chats_user_id_users"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ChatMessageRow(Base):
+    """A user message or an assistant answer, ordered within its chat (spec §5).
+
+    ``user_id`` is denormalized so a request id is unique per user, which lets a retried
+    new-chat request find its chat instead of creating a second one.
+    """
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        CheckConstraint("role in ('user', 'assistant')", name="ck_chat_messages_role"),
+        CheckConstraint(
+            "status in ('pending', 'complete', 'insufficient', 'failed', 'interrupted')",
+            name="ck_chat_messages_status",
+        ),
+        UniqueConstraint("chat_id", "ordinal", name="uq_chat_messages_ordinal"),
+        UniqueConstraint(
+            "user_id", "request_id", "role", name="uq_chat_messages_user_request_role"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True)
+    chat_id: Mapped[UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("chats.id", ondelete="CASCADE", name="fk_chat_messages_chat_id_chats"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_chat_messages_user_id_users"),
+        nullable=False,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    request_id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    claims: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    standalone_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    corpus_release_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    identity: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    trace: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MessageEvidence(Base):
+    """A passage an answer saw, snapshotted: no foreign key to papers, so history survives
+    a corpus change (spec §5)."""
+
+    __tablename__ = "message_evidence"
+
+    message_id: Mapped[UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey(
+            "chat_messages.id",
+            ondelete="CASCADE",
+            name="fk_message_evidence_message_id_chat_messages",
+        ),
+        primary_key=True,
+    )
+    evidence_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    paper_id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunk_id: Mapped[UUID | None] = mapped_column(SAUUID(as_uuid=True), nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    venue: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section: Mapped[str] = mapped_column(Text, nullable=False)
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    abstract_only: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    cited: Mapped[bool] = mapped_column(Boolean, nullable=False)

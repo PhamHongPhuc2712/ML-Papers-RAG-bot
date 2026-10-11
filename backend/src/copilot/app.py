@@ -15,6 +15,8 @@ from qdrant_client import QdrantClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from .chat.api import router as chat_router
+from .chat.store import ChatStore
 from .config import Settings
 from .corpus.api import router as corpus_router
 from .db.models import CorpusRelease
@@ -140,6 +142,8 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
     app.state.identity = Identity(
         UserStore(engine), TokenIssuer(settings.secret_key, settings.access_token_ttl_seconds)
     )
+    app.include_router(chat_router())
+    app.state.chat_store = ChatStore(engine)
     install_error_handlers(app)
     app.state.search_api = search_api
     app.state.settings = settings

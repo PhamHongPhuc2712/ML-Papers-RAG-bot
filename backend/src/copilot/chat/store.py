@@ -1,0 +1,418 @@
+"""Chats, messages and evidence snapshots in PostgreSQL, owned by one user each.
+
+Every read and write names the principal's user id; a chat that is someone else's is
+``ChatNotFound``, exactly like one that does not exist. A turn is a user message and an
+assistant message inserted together, the assistant ``pending`` until the turn completes,
+fails or is interrupted. A request id is unique per user: the same request again replays a
+finished answer, runs a failed or interrupted one again, and is refused while it is running.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
+from uuid import UUID, uuid4
+
+from sqlalchemy import Connection, Engine, text
+from sqlalchemy.exc import IntegrityError
+
+from ..contracts import ChatMessage, ChatRequest, ChatSummary, Claim, Principal, StoredEvidence
+from .turns import INSUFFICIENT_TEXT, HistoryItem, TurnResult, answer_text, chat_title
+
+ANSWERED = ("complete", "insufficient")
+
+
+class ChatNotFound(Exception):
+    pass
+
+
+class TurnConflict(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True)
+class Turn:
+    chat_id: UUID
+    user_message_id: UUID
+    assistant_message_id: UUID
+    ordinal: int
+    replay: ChatMessage | None
+
+
+_MESSAGE_COLUMNS = (
+    "id, ordinal, role, status, text, claims, standalone_query, warnings, error_code,"
+    " corpus_release_id, created_at"
+)
+
+
+class ChatStore:
+    def __init__(
+        self, engine: Engine, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    ) -> None:
+        self._engine = engine
+        self._clock = clock
+
+    # --- Reads ---------------------------------------------------------------------------
+
+    def list_chats(self, principal: Principal, *, limit: int) -> list[ChatSummary]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "select id, title, created_at, updated_at from chats where user_id = :user"
+                    " order by updated_at desc, id limit :limit"
+                ),
+                {"user": principal.user_id, "limit": limit},
+            ).all()
+        return [ChatSummary.model_validate(row._asdict()) for row in rows]
+
+    def get_chat(
+        self, principal: Principal, chat_id: UUID
+    ) -> tuple[ChatSummary, list[ChatMessage]]:
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "select id, title, created_at, updated_at from chats"
+                    " where id = :chat and user_id = :user"
+                ),
+                {"chat": chat_id, "user": principal.user_id},
+            ).first()
+            if row is None:
+                raise ChatNotFound()
+            rows = connection.execute(
+                text(
+                    f"select {_MESSAGE_COLUMNS} from chat_messages where chat_id = :chat"
+                    " order by ordinal"
+                ),
+                {"chat": chat_id},
+            ).all()
+            evidence = _evidence_for(connection, [r.id for r in rows])
+        messages = [_message(r, evidence.get(r.id, [])) for r in rows]
+        return ChatSummary.model_validate(row._asdict()), messages
+
+    def history(self, chat_id: UUID, *, before_ordinal: int, turns: int) -> list[HistoryItem]:
+        """The last ``turns`` answered exchanges before ``before_ordinal``, oldest first."""
+
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "select ordinal, role, status, text from chat_messages"
+                    " where chat_id = :chat and ordinal < :before order by ordinal"
+                ),
+                {"chat": chat_id, "before": before_ordinal},
+            ).all()
+        pairs: list[tuple[str, str]] = []
+        for user, assistant in zip(rows[0::2], rows[1::2], strict=False):
+            if assistant.status not in ANSWERED:
+                continue
+            reply = assistant.text if assistant.status == "complete" else INSUFFICIENT_TEXT
+            pairs.append((user.text, reply))
+        kept = pairs[-turns:] if turns > 0 else []
+        items: list[HistoryItem] = []
+        for question, reply in kept:
+            items += [HistoryItem("user", question), HistoryItem("assistant", reply)]
+        return items
+
+    # --- Writes --------------------------------------------------------------------------
+
+    def delete_chat(self, principal: Principal, chat_id: UUID) -> None:
+        with self._engine.begin() as connection:
+            deleted = connection.execute(
+                text("delete from chats where id = :chat and user_id = :user"),
+                {"chat": chat_id, "user": principal.user_id},
+            ).rowcount
+        if not deleted:
+            raise ChatNotFound()
+
+    def interrupt_stale(self, *, stale_after: timedelta) -> int:
+        now = self._clock()
+        with self._engine.begin() as connection:
+            return _interrupt(connection, now=now, before=now - stale_after, chat_id=None)
+
+    def begin_turn(
+        self, principal: Principal, request: ChatRequest, *, stale_after: timedelta
+    ) -> Turn:
+        now = self._clock()
+        try:
+            with self._engine.begin() as connection:
+                return self._begin(connection, principal.user_id, request, now, stale_after)
+        except IntegrityError as error:
+            # A concurrent copy of this request won the insert.
+            raise TurnConflict("request_in_progress") from error
+
+    def _begin(
+        self,
+        connection: Connection,
+        user_id: UUID,
+        request: ChatRequest,
+        now: datetime,
+        stale_after: timedelta,
+    ) -> Turn:
+        chat_id = request.chat_id
+        if chat_id is None:
+            chat_id = connection.execute(
+                text(
+                    "select chat_id from chat_messages where user_id = :user"
+                    " and request_id = :request and role = 'user'"
+                ),
+                {"user": user_id, "request": request.request_id},
+            ).scalar_one_or_none()
+        if chat_id is None:
+            chat_id = uuid4()
+            connection.execute(
+                text(
+                    "insert into chats (id, user_id, title, created_at, updated_at)"
+                    " values (:id, :user, :title, :now, :now)"
+                ),
+                {"id": chat_id, "user": user_id, "title": chat_title(request.message), "now": now},
+            )
+        owned = connection.execute(
+            text("select id from chats where id = :chat and user_id = :user for update"),
+            {"chat": chat_id, "user": user_id},
+        ).first()
+        if owned is None:
+            raise ChatNotFound()
+        _interrupt(connection, now=now, before=now - stale_after, chat_id=chat_id)
+        existing = connection.execute(
+            text(
+                "select id, ordinal, role, status, text from chat_messages"
+                " where chat_id = :chat and user_id = :user and request_id = :request"
+                " order by ordinal"
+            ),
+            {"chat": chat_id, "user": user_id, "request": request.request_id},
+        ).all()
+        if existing:
+            user_row, assistant_row = existing[0], existing[1]
+            if user_row.text != request.message:
+                raise TurnConflict("request_id_reused")
+            if assistant_row.status in ANSWERED:
+                replay = _load_message(connection, assistant_row.id)
+                return Turn(chat_id, user_row.id, assistant_row.id, assistant_row.ordinal, replay)
+            if assistant_row.status == "pending":
+                raise TurnConflict("request_in_progress")
+            connection.execute(
+                text(
+                    "update chat_messages set status = 'pending', error_code = null, text = '',"
+                    " claims = null, standalone_query = null, warnings = '[]'::jsonb,"
+                    " started_at = :now, completed_at = null where id = :id"
+                ),
+                {"id": assistant_row.id, "now": now},
+            )
+            connection.execute(
+                text("delete from message_evidence where message_id = :id"),
+                {"id": assistant_row.id},
+            )
+            _touch(connection, chat_id, now)
+            return Turn(chat_id, user_row.id, assistant_row.id, assistant_row.ordinal, None)
+        busy = connection.execute(
+            text(
+                "select 1 from chat_messages where chat_id = :chat and role = 'assistant'"
+                " and status = 'pending' limit 1"
+            ),
+            {"chat": chat_id},
+        ).first()
+        if busy is not None:
+            raise TurnConflict("chat_busy")
+        last = connection.execute(
+            text("select coalesce(max(ordinal), -1) from chat_messages where chat_id = :chat"),
+            {"chat": chat_id},
+        ).scalar_one()
+        user_message, assistant_message = uuid4(), uuid4()
+        insert = text(
+            "insert into chat_messages (id, chat_id, user_id, ordinal, role, request_id, status,"
+            " text, created_at, started_at) values (:id, :chat, :user, :ordinal, :role,"
+            " :request, :status, :text, :now, :started)"
+        )
+        common = {"chat": chat_id, "user": user_id, "request": request.request_id, "now": now}
+        connection.execute(
+            insert,
+            {
+                **common,
+                "id": user_message,
+                "ordinal": last + 1,
+                "role": "user",
+                "status": "complete",
+                "text": request.message,
+                "started": None,
+            },
+        )
+        connection.execute(
+            insert,
+            {
+                **common,
+                "id": assistant_message,
+                "ordinal": last + 2,
+                "role": "assistant",
+                "status": "pending",
+                "text": "",
+                "started": now,
+            },
+        )
+        _touch(connection, chat_id, now)
+        return Turn(chat_id, user_message, assistant_message, last + 2, None)
+
+    def complete_turn(self, turn: Turn, result: TurnResult) -> ChatMessage:
+        answer = result.answer
+        status = "insufficient" if answer.insufficient_evidence or not answer.claims else "complete"
+        cited = {label for claim in answer.claims for label in claim.evidence_ids}
+        now = self._clock()
+        with self._engine.begin() as connection:
+            updated = connection.execute(
+                text(
+                    "update chat_messages set status = :status, text = :text,"
+                    " claims = cast(:claims as jsonb), standalone_query = :standalone,"
+                    " warnings = cast(:warnings as jsonb), corpus_release_id = :release,"
+                    " identity = cast(:identity as jsonb), trace = cast(:trace as jsonb),"
+                    " cost_usd = :cost, completed_at = :now where id = :id and status = 'pending'"
+                ),
+                {
+                    "id": turn.assistant_message_id,
+                    "status": status,
+                    "text": answer_text(answer) if status == "complete" else "",
+                    "claims": json.dumps([c.model_dump(mode="json") for c in answer.claims]),
+                    "standalone": result.standalone_query,
+                    "warnings": json.dumps(list(result.warnings)),
+                    "release": result.corpus_release_id,
+                    "identity": json.dumps(dict(result.identity), default=str),
+                    "trace": json.dumps(dict(result.trace)),
+                    "cost": round(result.cost_usd, 6),
+                    "now": now,
+                },
+            ).rowcount
+            if not updated:
+                raise TurnConflict("turn_superseded")
+            papers = _paper_facts(connection, sorted({str(e.source_id) for e in result.evidence}))
+            for position, item in enumerate(result.evidence):
+                facts = papers.get(str(item.source_id), {})
+                connection.execute(
+                    text(
+                        "insert into message_evidence (message_id, evidence_id, position,"
+                        " paper_id, version_id, chunk_id, title, venue, year, section,"
+                        " page_start, page_end, text, abstract_only, cited) values (:message,"
+                        " :evidence, :position, :paper, :version, :chunk, :title, :venue, :year,"
+                        " :section, :page_start, :page_end, :text, :abstract_only, :cited)"
+                    ),
+                    {
+                        "message": turn.assistant_message_id,
+                        "evidence": item.id,
+                        "position": position,
+                        "paper": item.source_id,
+                        "version": item.version_id,
+                        "chunk": item.chunk_id,
+                        "title": facts.get("title") or "Untitled paper",
+                        "venue": facts.get("venue"),
+                        "year": facts.get("year"),
+                        "section": item.section,
+                        "page_start": item.page_start,
+                        "page_end": item.page_end,
+                        "text": item.text,
+                        "abstract_only": item.abstract_only,
+                        "cited": item.id in cited,
+                    },
+                )
+            _touch(connection, turn.chat_id, now)
+            message = _load_message(connection, turn.assistant_message_id)
+        assert message is not None
+        return message
+
+    def fail_turn(
+        self, turn: Turn, *, status: Literal["failed", "interrupted"], error_code: str
+    ) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                text(
+                    "update chat_messages set status = :status, error_code = :code,"
+                    " completed_at = :now where id = :id and status = 'pending'"
+                ),
+                {
+                    "id": turn.assistant_message_id,
+                    "status": status,
+                    "code": error_code,
+                    "now": self._clock(),
+                },
+            )
+
+
+def _touch(connection: Connection, chat_id: UUID, now: datetime) -> None:
+    connection.execute(
+        text("update chats set updated_at = :now where id = :chat"), {"chat": chat_id, "now": now}
+    )
+
+
+def _interrupt(
+    connection: Connection, *, now: datetime, before: datetime, chat_id: UUID | None
+) -> int:
+    scope = "" if chat_id is None else " and chat_id = :chat"
+    return connection.execute(
+        text(
+            "update chat_messages set status = 'interrupted', error_code = 'turn_interrupted',"
+            f" completed_at = :now where status = 'pending' and started_at < :before{scope}"
+        ),
+        {"now": now, "before": before, "chat": chat_id},
+    ).rowcount
+
+
+def _paper_facts(connection: Connection, paper_ids: list[str]) -> dict[str, dict[str, Any]]:
+    if not paper_ids:
+        return {}
+    rows = connection.execute(
+        text(
+            "select p.id::text as paper_id, p.title, p.publication_year as year, v.name as venue"
+            " from papers p left join venues v on v.id = p.venue_id"
+            " where p.id = any(cast(:ids as uuid[]))"
+        ),
+        {"ids": paper_ids},
+    ).mappings()
+    return {row["paper_id"]: dict(row) for row in rows}
+
+
+def _evidence_for(
+    connection: Connection, message_ids: list[UUID]
+) -> dict[UUID, list[StoredEvidence]]:
+    if not message_ids:
+        return {}
+    rows = connection.execute(
+        text(
+            "select message_id, evidence_id as id, paper_id, title, venue, year, section,"
+            " page_start, page_end, text, abstract_only, cited from message_evidence"
+            " where message_id = any(:ids) order by message_id, position"
+        ),
+        {"ids": message_ids},
+    ).mappings()
+    grouped: dict[UUID, list[StoredEvidence]] = {}
+    for row in rows:
+        values = dict(row)
+        grouped.setdefault(values.pop("message_id"), []).append(
+            StoredEvidence.model_validate(values)
+        )
+    return grouped
+
+
+def _message(row: Any, evidence: list[StoredEvidence]) -> ChatMessage:
+    return ChatMessage(
+        id=row.id,
+        ordinal=row.ordinal,
+        role=row.role,
+        status=row.status,
+        text=row.text,
+        claims=[Claim.model_validate(item) for item in (row.claims or [])],
+        evidence=evidence,
+        standalone_query=row.standalone_query,
+        warnings=list(row.warnings or []),
+        error_code=row.error_code,
+        corpus_release_id=row.corpus_release_id,
+        created_at=row.created_at,
+    )
+
+
+def _load_message(connection: Connection, message_id: UUID) -> ChatMessage | None:
+    row = connection.execute(
+        text(f"select {_MESSAGE_COLUMNS} from chat_messages where id = :id"), {"id": message_id}
+    ).first()
+    if row is None:
+        return None
+    return _message(row, _evidence_for(connection, [message_id]).get(message_id, []))
