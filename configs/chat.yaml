@@ -5,7 +5,8 @@ schema_version: 1
 
 # configs/llm.yaml key for the condenser and the generator.
 model: openai-gpt-6-luna
-# Set by C4's pre-registered rule: structured (StructuredGenerator) or http (ChatGenerator).
+# Set by C4's pre-registered rule (2026-10-11): structured. Frozen 400: 0.884 against
+# ChatGenerator's 0.880, McNemar p = 0.82 (reports/orb-text.md, "Structured generation").
 generator: structured
 
 prompts:

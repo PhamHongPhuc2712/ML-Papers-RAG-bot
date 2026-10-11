@@ -1,0 +1,100 @@
+{
+  "budget_usd": 0.75,
+  "cases": 100,
+  "code": {
+    "diff_sha256": "817f79555fca8fea2b45270a8d5650d029904b9b715931ca02bf4ee7843b823a",
+    "dirty": true,
+    "git_sha": "20821159e8b016f536ba51cc13dc73a252be4f9c"
+  },
+  "corpus": {
+    "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+    "manifest_sha256": "313a85c1f3de5a3c8da389eaf38b4d48d076fe8ff82d22019568a2a40fb5a979",
+    "release": "orb-v1"
+  },
+  "created_at": "2026-10-11T15:16:37.508342+00:00",
+  "dataset": {
+    "path": "data/fixtures/orb",
+    "sha256": "c0ec514fbde7b69c0f2ed7048bf73c18668f789e22609376b5abb67853f75b36"
+  },
+  "evidence": {
+    "flat": {
+      "chunk_candidates": 40,
+      "evidence": 12,
+      "expansion": "none",
+      "expansion_max_chars": 6000,
+      "expansion_min_share": 0.2,
+      "include_references": false,
+      "min_rerank_score": null,
+      "papers": 10,
+      "per_paper": 3,
+      "rrf_k": 60,
+      "token_budget": 6000,
+      "tokenizer": "model:BAAI/bge-m3@5617a9f61b02"
+    }
+  },
+  "experiment": {
+    "name": "orb-text-qa-v3-structured",
+    "path": "configs/experiments/orb-text-qa-v3-structured.yaml",
+    "sha256": "d98e7fc8db4ea074d193683f790f980bee5c7b2c416098fe9b0958413920e4b1"
+  },
+  "frozen_scorings": {},
+  "generator": {
+    "generator_client": "langchain",
+    "identity": "openai-gpt-6-luna=gpt-6-luna#grounded-claims-v1:e9c0986c2ca3+json_schema",
+    "key": "openai-gpt-6-luna"
+  },
+  "gpu_before_run": {
+    "available": true,
+    "busy": false,
+    "memory_mib": 1844,
+    "samples": 5,
+    "utilization_percent_p50": 0.0
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "judge": {
+    "identity": "openai-gpt-6-luna-low=gpt-6-luna#answer-equivalence-haiku-v1:49cb4bd6d75c",
+    "key": "openai-gpt-6-luna-low"
+  },
+  "limit": null,
+  "preflight_worst_usd": 0.71202,
+  "prompts": {
+    "generate": {
+      "path": "prompts/generate/grounded-claims-v1.yaml",
+      "sha256": "e9c0986c2ca35cc751991eb2f74dc8fa3677e4f266a5447d8828d834b5cccc44"
+    },
+    "judge": {
+      "path": "prompts/judge/answer-equivalence-haiku-v1.yaml",
+      "sha256": "49cb4bd6d75cb6cf49cf6a95859d4ce2a8cceea558411e291ccb2e970bbcddae"
+    }
+  },
+  "run_id": "orb-text-qa-v3-structured-development-20261011T151637Z",
+  "search": {
+    "overrides": {
+      "rerank_seconds": 2.5,
+      "rerank_text": "title_chunk"
+    },
+    "papers": 10,
+    "path": "configs/search.yaml",
+    "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+    "sha256": "1a7f35e19e5b5baa8a3424fd2532ae68766b80b94442354028efc2a0f3aa58a5"
+  },
+  "seed": 42,
+  "split": "development",
+  "stopped": {},
+  "text_dir": "/home/phamphucintern/ml-copilot-data/eval/qa",
+  "variant": "flat",
+  "variants": {
+    "flat": {
+      "changes": "each hit is sent as its chunk",
+      "evidence_overrides": {},
+      "ledger_run_id": "orb-text-qa-v3-structured-development-20261011T151637Z.flat.101a7462"
+    }
+  }
+}

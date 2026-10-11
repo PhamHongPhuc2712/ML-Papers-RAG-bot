@@ -755,3 +755,51 @@ eval qa --config configs/experiments/orb-text-qa-v2.yaml --split frozen --frozen
 eval qa-rejudge --run reports/qa/orb-text-v2/frozen/<run>.<variant> --judge openai-gpt-6-luna-low --prompt prompts/judge/answer-equivalence-v1.yaml --out ${DATA_DIR}/eval/qa/labels/<run>.<variant>.rejudge-luna-v1-rubric.jsonl --max-spend-usd 2.00
 eval pair --treated reports/qa/orb-text-v2/frozen/<section run>/cases.parquet --baseline reports/qa/orb-text-v2/frozen/<flat run>/cases.parquet
 ```
+
+## Structured generation (C4, 2026-10-11)
+
+**Question.** The chat generates through `ChatOpenAI` with `response_format` `json_schema`
+(strict) behind the spend ledger (`StructuredGenerator`, C3), where v2 generated through our own
+HTTP client with the schema in the prompt (`ChatGenerator`). Does the chat lose anything by it?
+Registered in `configs/experiments/orb-text-qa-v3-structured.yaml` (commit `2082115`, before any
+scoring): identical to `orb-text-qa-v2` except `generator_client: langchain`, only `flat`. Rule,
+on the frozen 400 against v2's frozen `flat` (same cases): keep `StructuredGenerator` unless
+(a) exact McNemar rejects at p < 0.05 with v3 worse, (b) cited MAP falls by more than 0.03, or
+(c) the share valid on the first attempt falls by more than 0.05.
+
+| Run | Accuracy [Wilson 95%] | Judged | Cited MAP | Valid first attempt | Abstained | Gold in top 10 | Ledger cost |
+|---|---|---|---|---|---|---|---|
+| v2 `flat`, development (100) | 0.920 [0.850, 0.959] | 100 | 0.98 | 1.00 | 0.01 | — | — |
+| v3 `flat`, development (100) | 0.930 | 100 | 0.97 | 0.99 | 0.03 | — | $0.0666 |
+| v2 `flat`, frozen (400) | 0.880 [0.844, 0.908] | 400 | 0.959 | 0.9975 | 0.025 | 0.98 | $0.2690 |
+| **v3 `flat`, frozen (400)** | **0.884 [0.849, 0.912]** | 397 | 0.965 | 0.9925 | 0.020 | 0.98 | $0.2721 |
+
+Pairing, frozen (`eval pair`, 397 cases judged in both): both right 340, neither 37, v3 only 11,
+v2 only 9, exact McNemar p = 0.824; cited MAP sign test 3 up / 2 down / 395 ties (p = 1.0).
+Development pairing: 92 / 7 / 1 / 0, p = 1.0 (read first, decided nothing).
+
+**Decision: (a), (b) and (c) all fail to hold, so the chat uses `StructuredGenerator`**
+(`configs/chat.yaml generator: structured`). The provider accepted the strict schema on every
+call; no request was refused for its `response_format`.
+
+Not judged in v3's frozen run: two generation calls failed with `llm_client_error` (an exception
+outside the SDK's status errors, which `_llm_error` does not classify further; the ledger
+records both as failed, 5.1 s and 5.7 s) and one judge reply was invalid
+(`judge:llm_response_invalid`). v2 had none. Both runs saw the gold paper in the top 10 for 98%
+of cases, so the first stage is the same; the change is the client alone.
+
+GPU before the frozen run: the idle gate (30 one-second samples, median ≤ 20%, no Linux compute
+process) passed; the run's own 5 s sample read a 19% median, `busy: false`. Development's read
+0%.
+
+Deviations from the plan: the plan's `--max-spend-usd` values (0.60 development, 1.50 frozen)
+sit below the runner's own preflight worst case (two generation and two judge calls per case
+at the full output budget: $0.712 per 100 cases). Development was refused at 0.60 before
+spending anything and rerun at 0.75; frozen ran at 2.90 (worst case $2.848). Measured spend was
+$0.067 and $0.272.
+
+```text
+eval qa --config configs/experiments/orb-text-qa-v3-structured.yaml --split development --database-url .../copilot_orb --out reports/qa/orb-text-v3 --max-spend-usd 0.75
+eval qa --config configs/experiments/orb-text-qa-v3-structured.yaml --split frozen --frozen --database-url .../copilot_orb --out reports/qa/orb-text-v3 --max-spend-usd 2.90
+eval pair --treated reports/qa/orb-text-v3/frozen/orb-text-qa-v3-structured-frozen-20261011T152833Z.flat/cases.parquet --baseline reports/qa/orb-text-v2/frozen/orb-text-qa-v2-frozen-20261010T090216Z.flat/cases.parquet
+```
