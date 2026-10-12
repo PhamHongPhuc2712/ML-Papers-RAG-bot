@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, Query, Request
@@ -363,12 +363,21 @@ def default_search_service(
         engine=engine,
         lexical=lexical,
         dense=dense,
-        reranker=models.reranker,
+        reranker=_with_pair_budget(models.reranker, config.rerank_pair_max_tokens),
         config=config,
         runner=runner,
         # Mock mode never builds the hosted-LLM reranker, so no test can spend money.
         listwise=None if mock or not listwise else default_listwise(settings, engine),
     )
+
+
+def _with_pair_budget(reranker: Reranker | None, budget: int | None) -> Reranker | None:
+    """The cross-encoder under ``rerank.pair_max_tokens``; any other reranker as it is."""
+
+    resize = getattr(reranker, "with_pair_budget", None)
+    if budget is None or resize is None:
+        return reranker
+    return cast(Reranker, resize(budget))
 
 
 def cursor_secret(secret_key: str) -> bytes:

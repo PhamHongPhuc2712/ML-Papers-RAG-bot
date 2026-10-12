@@ -812,6 +812,18 @@ def test_the_search_file_names_its_rerank_text_and_refuses_an_unknown_one(tmp_pa
     assert load_search_config(path).rerank_text == "title_chunk"
 
 
+def test_the_reranker_pair_budget_is_optional_and_validated(tmp_path):
+    from copilot.search.service import load_search_config
+
+    shipped = load_search_config("configs/search.yaml")
+    assert shipped.rerank_pair_max_tokens is None
+    text = Path("configs/search.yaml").read_text(encoding="utf-8")
+    path = tmp_path / "search.yaml"
+    path.write_text(text.replace("  text: abstract", "  text: abstract\n  pair_max_tokens: 512"))
+    assert load_search_config(path).rerank_pair_max_tokens == 512
+    path.write_text(text.replace("  text: abstract", "  text: abstract\n  pair_max_tokens: 0"))
+    with pytest.raises(ValueError):
+        load_search_config(path)
 def test_the_manifest_records_the_experiment_s_own_parsing_policy(tmp_path):
     """A corpus re-chunked for one read is recorded under its policy, not the shipped one."""
 

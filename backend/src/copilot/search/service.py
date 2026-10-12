@@ -78,6 +78,9 @@ class SearchConfig:
     # What the cross-encoder reads for each candidate (decided as an ablation, see
     # ``RERANK_TEXTS``): the title and abstract, or the chunk that found the paper.
     rerank_text: str = "abstract"
+    # The reranker's (query, text) pair length in tokens; None keeps the model's pinned
+    # budget from configs/models.yaml.
+    rerank_pair_max_tokens: int | None = None
     branch_seconds: float = 1.0
     rerank_seconds: float = 1.5
     total_seconds: float = 3.0
@@ -95,6 +98,8 @@ class SearchConfig:
             # Only a chunk-level first stage knows which chunk found a paper; a paper
             # found through its abstract has no evidence chunk to rerank.
             raise ValueError(f"rerank_text {self.rerank_text} requires candidates_source chunks")
+        if self.rerank_pair_max_tokens is not None and self.rerank_pair_max_tokens < 1:
+            raise ValueError("rerank_pair_max_tokens must be at least 1")
 
 
 CANDIDATE_SOURCES = ("papers", "chunks", "both")
@@ -114,12 +119,14 @@ def load_search_config(path: str | Path) -> SearchConfig:
     rerank_text = str((raw.get("rerank") or {}).get("text", ABSTRACT_TEXT))
     if rerank_text not in RERANK_TEXTS:
         raise ValueError(f"rerank.text must be one of {', '.join(RERANK_TEXTS)}")
+    pair = (raw.get("rerank") or {}).get("pair_max_tokens")
     return SearchConfig(
         candidates_per_branch=int((raw.get("candidates") or {}).get("per_branch", 100)),
         candidates_source=source,
         rrf_k=int((raw.get("fusion") or {}).get("rrf_k", RRF_K)),
         rerank_depth=int((raw.get("rerank") or {}).get("depth", 50)),
         rerank_text=rerank_text,
+        rerank_pair_max_tokens=None if pair is None else int(pair),
         branch_seconds=float(deadlines.get("branch", 1.0)),
         rerank_seconds=float(deadlines.get("rerank", 1.5)),
         total_seconds=float(deadlines.get("total", 3.0)),
@@ -527,6 +534,8 @@ class SearchService:
             if config.rerank_text != ABSTRACT_TEXT:
                 # The same model over other text is another ranker.
                 identity["rerank_text"] = config.rerank_text
+            if config.rerank_pair_max_tokens is not None:
+                identity["rerank_pair_max_tokens"] = config.rerank_pair_max_tokens
         if mode == "hybrid_rerank_llm":
             identity["listwise"] = str(getattr(self._listwise, "identity", "none"))
         return identity
