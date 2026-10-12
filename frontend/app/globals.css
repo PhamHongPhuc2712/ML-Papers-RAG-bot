@@ -42,3 +42,9 @@ input, textarea, select { background: var(--bg); border: 1px solid var(--border)
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 header.site { display: flex; gap: 16px; align-items: center; padding: 10px var(--gutter); border-bottom: 1px solid var(--border); }
 header.site nav { display: flex; gap: 12px; flex: 1; }
+
+@media (max-width: 640px) {
+  main[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+}

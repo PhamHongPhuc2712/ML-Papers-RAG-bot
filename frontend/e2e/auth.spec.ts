@@ -26,8 +26,7 @@ test("signing in keeps the token out of page scripts", async ({ page, context })
   expect(leak).toBe(404);
 });
 
-// Enabled in W3, when /chat exists to redirect from.
-test.fixme("chat needs a session and signing out ends it", async ({ page }) => {
+test("chat needs a session and signing out ends it", async ({ page }) => {
   await page.goto("/chat");
   await expect(page).toHaveURL(/\/login\?next=%2Fchat/);
   await signIn(page);
