@@ -1,0 +1,649 @@
+{
+  "comparisons": {
+    "title_chunk_1024_vs_title_chunk_512": {
+      "baseline": "title_chunk_512",
+      "candidate": "title_chunk_1024",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.6306787802840436,
+          "candidate": 0.67281328320802,
+          "difference": 0.042134502923976615,
+          "high": 0.08167773600668338,
+          "losses": 22,
+          "low": 0.0026784147869674687,
+          "metric": "mrr@10",
+          "ties": 143,
+          "wins": 25
+        },
+        "ndcg@10": {
+          "baseline": 0.6635014240677944,
+          "candidate": 0.6979023117377465,
+          "difference": 0.03440088766995204,
+          "high": 0.06922149010045028,
+          "losses": 22,
+          "low": -9.280666649559048e-05,
+          "metric": "ndcg@10",
+          "ties": 143,
+          "wins": 25
+        },
+        "recall@10": {
+          "baseline": 0.7684210526315789,
+          "candidate": 0.7736842105263158,
+          "difference": 0.005263157894736842,
+          "high": 0.042105263157894736,
+          "losses": 6,
+          "low": -0.031578947368421054,
+          "metric": "recall@10",
+          "ties": 177,
+          "wins": 7
+        },
+        "recall@50": {
+          "baseline": 0.8421052631578947,
+          "candidate": 0.8421052631578947,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 190,
+          "wins": 0
+        }
+      }
+    },
+    "title_chunk_512_vs_hybrid_rerank": {
+      "baseline": "hybrid_rerank",
+      "candidate": "title_chunk_512",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.295062656641604,
+          "candidate": 0.6306787802840436,
+          "difference": 0.3356161236424394,
+          "high": 0.4000970133667503,
+          "losses": 17,
+          "low": 0.2728516081871345,
+          "metric": "mrr@10",
+          "ties": 72,
+          "wins": 101
+        },
+        "ndcg@10": {
+          "baseline": 0.34978490001543844,
+          "candidate": 0.6635014240677944,
+          "difference": 0.31371652405235595,
+          "high": 0.37598839757968266,
+          "losses": 17,
+          "low": 0.2529348098992511,
+          "metric": "ndcg@10",
+          "ties": 72,
+          "wins": 101
+        },
+        "recall@10": {
+          "baseline": 0.5263157894736842,
+          "candidate": 0.7684210526315789,
+          "difference": 0.24210526315789474,
+          "high": 0.32105263157894737,
+          "losses": 11,
+          "low": 0.16828947368421066,
+          "metric": "recall@10",
+          "ties": 122,
+          "wins": 57
+        },
+        "recall@50": {
+          "baseline": 0.8421052631578947,
+          "candidate": 0.8421052631578947,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 190,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "decision": {
+    "ablations": [],
+    "chosen": {
+      "adopted_ablations": [],
+      "mode": "hybrid_rerank",
+      "variant": "hybrid_rerank"
+    },
+    "primary": "ndcg@10",
+    "rules": {
+      "latency_p95_seconds": 3.0,
+      "max_drop": 0.03,
+      "order": [
+        "hybrid_rerank",
+        "title_chunk_512",
+        "title_chunk_1024"
+      ],
+      "primary": "ndcg@10",
+      "require_undegraded": true
+    },
+    "split": "validation",
+    "steps": [
+      {
+        "clean": false,
+        "comparison": {
+          "baseline": 0.34978490001543844,
+          "candidate": 0.6635014240677944,
+          "difference": 0.31371652405235595,
+          "high": 0.37598839757968266,
+          "losses": 17,
+          "low": 0.2529348098992511,
+          "metric": "ndcg@10",
+          "ties": 72,
+          "wins": 101
+        },
+        "degraded": 0,
+        "fits_budget": true,
+        "from": "hybrid_rerank",
+        "gain_supported": true,
+        "guards": [],
+        "guards_hold": true,
+        "p95_seconds": 0.7112,
+        "promoted": false,
+        "to": "title_chunk_512"
+      },
+      {
+        "clean": false,
+        "comparison": {
+          "baseline": 0.34978490001543844,
+          "candidate": 0.6979023117377465,
+          "difference": 0.348117411722308,
+          "high": 0.407665593300315,
+          "losses": 10,
+          "low": 0.29208377822630943,
+          "metric": "ndcg@10",
+          "ties": 74,
+          "wins": 106
+        },
+        "degraded": 0,
+        "fits_budget": true,
+        "from": "hybrid_rerank",
+        "gain_supported": true,
+        "guards": [],
+        "guards_hold": true,
+        "p95_seconds": 1.2845,
+        "promoted": false,
+        "to": "title_chunk_1024"
+      }
+    ]
+  },
+  "manifest": {
+    "bootstrap": {
+      "confidence": 0.95,
+      "resamples": 1000,
+      "seed": 42,
+      "unit": "query family"
+    },
+    "code": {
+      "diff_sha256": "a515d28ee526e73f6ad680e1f867eeceb9aa5fd886715e81e960e51ab4d5a4d1",
+      "dirty": true,
+      "git_sha": "f7d2f2e46b334cc313fd86143c364095c6274171"
+    },
+    "corpus": {
+      "chunker_version": "paragraph-pack-v1",
+      "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+      "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "papers": "database",
+      "parser_version": "pypdf-text-v2",
+      "release_id": "m2-20260924T095724Z",
+      "releases": {
+        "m2-20260924T095724Z": {
+          "bm25_vocabulary_sha256": "499a7ffb0dbb12da4d192047a8bf9992809c01c0dfa48101b908c30e69a726b2",
+          "dense_dimensions": 1024,
+          "dense_vector_bytes": 351145984,
+          "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+          "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+          "paper_collection": "dev_paper_abstracts_m2-20260924T095724Z",
+          "points": 85729
+        }
+      }
+    },
+    "cost": {
+      "metered_usd": 0.0,
+      "note": "self-hosted models and services; no priced model call is made"
+    },
+    "created_at": "2026-10-12T10:14:03.995609+00:00",
+    "dataset": {
+      "digest": "57e034f2272a8c316d0670c651acd53ce99b244b44fe1431057097ef4470de2c",
+      "labels": "paper_id",
+      "limited_to": null,
+      "path": "data/fixtures/retrieval-sections",
+      "queries": 190,
+      "slice": "all",
+      "sources": [
+        "copilot_v2@m2-20260924T095724Z"
+      ],
+      "split": "validation"
+    },
+    "experiment": {
+      "config_sha256": "7df3f4a7df7c49b9538e3d8c517c39ff2b1aa06da0ca6fd7bcb194d0c2e29aae",
+      "name": "m5-rerank-text",
+      "path": "configs/experiments/m5-rerank-text.yaml"
+    },
+    "hardware": {
+      "cores": 12,
+      "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cuda": "13.0",
+      "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+      "ram_gb": 25.2,
+      "torch": "2.14.0+cu130"
+    },
+    "locked_test": false,
+    "run_id": "m5-rerank-text-validation-20261012T101403Z",
+    "search": {
+      "config_sha256": "edc6d0160b8d3eaa77e45aa12dc197f1627a15c404eee9bb59cbc0ec0be04b96",
+      "path": "configs/search.yaml",
+      "values": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "rerank_depth": 50,
+        "rerank_pair_max_tokens": null,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      }
+    },
+    "seed": 42,
+    "timing": {
+      "gpu": {
+        "available": true,
+        "before_run": {
+          "available": true,
+          "busy": false,
+          "memory_mib": 2152,
+          "samples": 5,
+          "utilization_percent_p50": 0.0
+        },
+        "compute_processes_seen": [],
+        "memory_mib": {
+          "max": 6457,
+          "min": 4490
+        },
+        "samples": 516,
+        "utilization_percent": {
+          "max": 100,
+          "p50": 98.0
+        }
+      },
+      "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+    },
+    "variants": {
+      "hybrid_rerank": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": null,
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {},
+        "search_sha256": "ae8de0521687836b0f15b62e07ce0ffcb5f6feb60547bd297214b9d24c7a3a8e",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 20.729
+      },
+      "title_chunk_1024": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": "the reranker reads title + the chunk that found the paper, 1,024-token pairs, 2.5 s rerank deadline",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk"
+        },
+        "search_sha256": "c904fa8cdfb4bb60bfc4b2bb555da7b41e8e310c8815be15099e7c6141e97b18",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 19.5
+      },
+      "title_chunk_512": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": "as title_chunk_1024 with 512-token pairs under the shipped 1.5 s deadline",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair512",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_text": "title_chunk"
+        },
+        "search_sha256": "cebf405135315d8590e4e7829d96b7eb2adc967c5a15ec3dca173961db45a3a0",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 15.402
+      }
+    }
+  },
+  "variants": {
+    "hybrid_rerank": {
+      "summary": {
+        "by_query_set": {
+          "sections_v1": {
+            "mrr@10": 0.295062656641604,
+            "ndcg@10": 0.34978490001543844,
+            "queries": 190,
+            "recall@10": 0.5263157894736842,
+            "recall@50": 0.8421052631578947
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.295062656641604,
+            "ndcg@10": 0.34978490001543844,
+            "queries": 190,
+            "recall@10": 0.5263157894736842,
+            "recall@50": 0.8421052631578947
+          }
+        },
+        "candidate_recall": 0.9105263157894737,
+        "degraded": {
+          "count": 1,
+          "warnings": {
+            "lexical:timeout,dense:timeout": 1
+          }
+        },
+        "failures": {
+          "codes": {
+            "candidates_unavailable": 1
+          },
+          "count": 1
+        },
+        "judged@10": {
+          "mean": 0.05291005291005291,
+          "unknown": 1
+        },
+        "judged@50": {
+          "mean": 0.016931216931216932,
+          "unknown": 1
+        },
+        "latency": {
+          "max_ms": 1934.1,
+          "p50_ms": 611.7,
+          "p95_ms": 725.3
+        },
+        "mrr@10": {
+          "high": 0.3506705304928989,
+          "low": 0.23664645989974942,
+          "mean": 0.295062656641604
+        },
+        "ndcg@10": {
+          "high": 0.404467544593638,
+          "low": 0.28894664397921654,
+          "mean": 0.34978490001543844
+        },
+        "queries": 190,
+        "recall@10": {
+          "high": 0.5947368421052631,
+          "low": 0.4577631578947369,
+          "mean": 0.5263157894736842
+        },
+        "recall@50": {
+          "high": 0.8947368421052632,
+          "low": 0.7894736842105263,
+          "mean": 0.8421052631578947
+        },
+        "rerank_pool_recall": 0.8421052631578947,
+        "stages": {
+          "dense": {
+            "max_ms": 269.6,
+            "p50_ms": 87.4,
+            "p95_ms": 178.9
+          },
+          "hydrate": {
+            "max_ms": 37.3,
+            "p50_ms": 12.3,
+            "p95_ms": 29.8
+          },
+          "lexical": {
+            "max_ms": 196.4,
+            "p50_ms": 62.3,
+            "p95_ms": 104.9
+          },
+          "rerank": {
+            "max_ms": 685.6,
+            "p50_ms": 505.1,
+            "p95_ms": 558.3
+          }
+        }
+      }
+    },
+    "title_chunk_1024": {
+      "summary": {
+        "by_query_set": {
+          "sections_v1": {
+            "mrr@10": 0.67281328320802,
+            "ndcg@10": 0.6979023117377464,
+            "queries": 190,
+            "recall@10": 0.7736842105263158,
+            "recall@50": 0.8421052631578947
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.67281328320802,
+            "ndcg@10": 0.6979023117377464,
+            "queries": 190,
+            "recall@10": 0.7736842105263158,
+            "recall@50": 0.8421052631578947
+          }
+        },
+        "candidate_recall": 0.9105263157894737,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07736842105263157,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016842105263157894,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1370.9,
+          "p50_ms": 1117.7,
+          "p95_ms": 1284.5
+        },
+        "mrr@10": {
+          "high": 0.7335729949874685,
+          "low": 0.6124979636591479,
+          "mean": 0.67281328320802
+        },
+        "ndcg@10": {
+          "high": 0.7562939748880168,
+          "low": 0.6388665464703732,
+          "mean": 0.6979023117377465
+        },
+        "queries": 190,
+        "recall@10": {
+          "high": 0.8263157894736842,
+          "low": 0.7105263157894737,
+          "mean": 0.7736842105263158
+        },
+        "recall@50": {
+          "high": 0.8947368421052632,
+          "low": 0.7894736842105263,
+          "mean": 0.8421052631578947
+        },
+        "rerank_pool_recall": 0.8421052631578947,
+        "stages": {
+          "dense": {
+            "max_ms": 80.5,
+            "p50_ms": 43.0,
+            "p95_ms": 56.0
+          },
+          "hydrate": {
+            "max_ms": 120.9,
+            "p50_ms": 31.0,
+            "p95_ms": 37.1
+          },
+          "lexical": {
+            "max_ms": 64.8,
+            "p50_ms": 26.0,
+            "p95_ms": 35.1
+          },
+          "rerank": {
+            "max_ms": 1302.3,
+            "p50_ms": 1041.4,
+            "p95_ms": 1190.3
+          }
+        }
+      }
+    },
+    "title_chunk_512": {
+      "summary": {
+        "by_query_set": {
+          "sections_v1": {
+            "mrr@10": 0.6306787802840434,
+            "ndcg@10": 0.6635014240677944,
+            "queries": 190,
+            "recall@10": 0.7684210526315789,
+            "recall@50": 0.8421052631578947
+          }
+        },
+        "by_specificity": {
+          "1": {
+            "mrr@10": 0.6306787802840434,
+            "ndcg@10": 0.6635014240677944,
+            "queries": 190,
+            "recall@10": 0.7684210526315789,
+            "recall@50": 0.8421052631578947
+          }
+        },
+        "candidate_recall": 0.9105263157894737,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07684210526315788,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016842105263157894,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 725.5,
+          "p50_ms": 686.7,
+          "p95_ms": 711.2
+        },
+        "mrr@10": {
+          "high": 0.691763888888889,
+          "low": 0.5666106411862991,
+          "mean": 0.6306787802840436
+        },
+        "ndcg@10": {
+          "high": 0.7217199338109739,
+          "low": 0.6037210546512326,
+          "mean": 0.6635014240677944
+        },
+        "queries": 190,
+        "recall@10": {
+          "high": 0.8263157894736842,
+          "low": 0.7052631578947368,
+          "mean": 0.7684210526315789
+        },
+        "recall@50": {
+          "high": 0.8947368421052632,
+          "low": 0.7894736842105263,
+          "mean": 0.8421052631578947
+        },
+        "rerank_pool_recall": 0.8421052631578947,
+        "stages": {
+          "dense": {
+            "max_ms": 61.1,
+            "p50_ms": 40.8,
+            "p95_ms": 50.4
+          },
+          "hydrate": {
+            "max_ms": 22.6,
+            "p50_ms": 11.9,
+            "p95_ms": 17.4
+          },
+          "lexical": {
+            "max_ms": 37.9,
+            "p50_ms": 24.1,
+            "p95_ms": 30.9
+          },
+          "rerank": {
+            "max_ms": 668.9,
+            "p50_ms": 631.8,
+            "p95_ms": 651.6
+          }
+        }
+      }
+    }
+  }
+}

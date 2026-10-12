@@ -19,7 +19,12 @@ corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7
 `copilot_v2` is migrated to `0009_llm_call_purpose_chat`. W1 (the Next.js workspace, cookie
 session and API proxy) W2 (search and paper pages), W3 (the chat pages) and
 W4 (frontend CI job, real-stack walkthrough: `reports/m4-web.md`) are done; G4 waits only on the
-CI job's first green run. **Next: R1–R4 / S1–S2** (`2026-10-11-search-upgrade-and-release.md`).
+CI job's first green run. S1 (571 model-written passage questions from our corpus,
+`data/fixtures/retrieval-sections/`, text under `${DATA_DIR}/benchmarks/sections-v1/`) and S2 are
+done (2026-10-12): the title+chunk reranker gains +0.35 nDCG@10 on passage questions but fails the
+paper-level guard, so by the registered rule `rerank.text` stays `abstract`
+(`reports/m5-rerank-text.md`); S1's test split is unread. **Next: R1–R4**
+(`2026-10-11-search-upgrade-and-release.md`).
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
