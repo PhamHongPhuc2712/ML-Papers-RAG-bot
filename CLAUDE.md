@@ -16,7 +16,8 @@ corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7
 (`StructuredGenerator`, adopted on ORB's frozen 400: 0.884 vs 0.880), the LangGraph turn, `POST
 /v1/chats/stream` (SSE) and the follow-up evaluation, whose rule turned condensing **off**
 (`configs/chat.yaml`; 43 frozen conversations, underpowered: `reports/chat-followups.md`).
-`copilot_v2` is migrated to `0009_llm_call_purpose_chat`. **Next: W1.**
+`copilot_v2` is migrated to `0009_llm_call_purpose_chat`. W1 (the Next.js workspace, cookie
+session and API proxy) is done. **Next: W2.**
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
@@ -193,7 +194,11 @@ forward without a demonstrated need.
 ## Commands
 
 Backend package is `copilot` under `backend/src`, managed by uv with `backend/.venv` as
-the only environment. The frontend (`frontend/`, M4 web app plan) does not exist yet beyond `openapi.json`.
+the only environment. The frontend (`frontend/`, M4 web app plan) is a Next 16 app since W1: `cd frontend && npm ci`,
+then `npm run lint | typecheck | test | build | e2e`. Regenerate `package-lock.json` with
+`npx -y npm@11.20.0 install` — the bundled npm 10.9.8 crashes resolving vitest's peers — and
+`lib/api-types.ts` with `npm run api-types` after re-exporting `openapi.json`. The browser tests
+need Chromium's system libraries (`sudo npx playwright install-deps chromium`, done once).
 
 ```bash
 uv sync --project backend --frozen --group dev
