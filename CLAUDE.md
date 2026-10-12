@@ -17,7 +17,7 @@ corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7
 /v1/chats/stream` (SSE) and the follow-up evaluation, whose rule turned condensing **off**
 (`configs/chat.yaml`; 43 frozen conversations, underpowered: `reports/chat-followups.md`).
 `copilot_v2` is migrated to `0009_llm_call_purpose_chat`. W1 (the Next.js workspace, cookie
-session and API proxy) is done. **Next: W2.**
+session and API proxy) and W2 (search and paper pages) are done. **Next: W3.**
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
