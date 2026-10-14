@@ -8,7 +8,11 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from copilot.observability import install_request_log, send_request_log_to_stdout
+from copilot.observability import (
+    install_request_log,
+    send_app_logs_to_stderr,
+    send_request_log_to_stdout,
+)
 from copilot.search.api import request_id
 
 
@@ -67,6 +71,22 @@ def test_the_served_app_prints_request_lines_once_on_stdout(capsys):
         TestClient(app).get("/health/live")
         printed = capsys.readouterr().out.splitlines()
         assert len(printed) == 1 and json.loads(printed[0])["route"] == "/health/live"
+    finally:
+        logger.handlers[:] = saved[0]
+        logger.setLevel(saved[1])
+        logger.propagate = saved[2]
+
+
+def test_the_served_app_prints_its_own_info_lines_once_on_stderr(capsys):
+    logger = logging.getLogger("copilot")
+    saved = (list(logger.handlers), logger.level, logger.propagate)
+    try:
+        send_app_logs_to_stderr()
+        send_app_logs_to_stderr()
+        logging.getLogger("copilot.search.api").info("search ready on %s", "r1")
+        assert capsys.readouterr().err.splitlines() == [
+            "INFO copilot.search.api: search ready on r1"
+        ]
     finally:
         logger.handlers[:] = saved[0]
         logger.setLevel(saved[1])

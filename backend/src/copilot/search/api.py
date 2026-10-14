@@ -59,6 +59,7 @@ from .service import (
     StageRunner,
     ThreadedStageRunner,
     load_search_config,
+    load_warmup_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -451,6 +452,13 @@ class SearchApi:
             return
         if release is not None:
             logger.info("search warmed on %s: %s", release.id, service.warm(release))
+            # Until searches meet their deadlines (R3: a cold Qdrant fails the first ones),
+            # startup does not finish, so the server accepts no request it would fail.
+            report = service.warm_until_ready(release, load_warmup_config(self._search_path))
+            if report["ready"]:
+                logger.info("search ready on %s: %s", release.id, report)
+            else:
+                logger.warning("search still cold after warm-up on %s: %s", release.id, report)
 
     def close(self) -> None:
         with self._lock:

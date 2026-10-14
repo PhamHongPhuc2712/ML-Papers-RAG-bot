@@ -54,3 +54,37 @@ deadlines_seconds:
 # A model error — not a timeout — is retried at most this often, and only while
 # the total deadline still has room for it.
 rerank_retries: 1
+
+warmup:
+  # R3 (2026-10-14): after a Qdrant restart the chunk collection's on-disk parts are cold
+  # and the first searches miss their deadlines for about a minute. Startup runs these
+  # through the full ranking until `consecutive` in a row meet the candidate deadlines,
+  # or `max_seconds` pass; Qdrant down stops it at once. Not part of a run's identity.
+  consecutive: 3
+  max_seconds: 180
+  pause_seconds: 1
+  queries:
+    - contrastive learning for sentence embeddings
+    - graph neural networks for molecular property prediction
+    - diffusion models for image generation
+    - parameter efficient fine-tuning of large language models
+    - retrieval augmented generation for question answering
+    - reinforcement learning from human feedback
+    - vision transformers for image classification
+    - mixture of experts routing and load balancing
+    - speculative decoding for faster inference
+    - knowledge distillation into smaller models
+    - adversarial robustness of neural networks
+    - federated learning with heterogeneous clients
+    - neural architecture search
+    - offline reinforcement learning
+    - long context language modeling
+    - quantization of neural network weights
+    - causal inference with observational data
+    - uncertainty estimation and calibration
+    - continual learning without catastrophic forgetting
+    - machine translation for low resource languages
+    - self-supervised learning for speech recognition
+    - in-context learning in transformers
+    - hallucination in large language models
+    - optimization and generalization of deep networks

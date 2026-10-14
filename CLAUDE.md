@@ -28,8 +28,9 @@ paper-level guard, so by the registered rule `rerank.text` stays `abstract`
 R2 is done (2026-10-14): `DELETE /v1/me` and `/account`, `users delete`, `backup create|restore` of the four
 user tables under `${DATA_DIR}/backups/` (restore refuses another revision or non-empty tables without
 `--replace`, and `--database-url` is required). R3's drills are done (2026-10-14, `reports/m5-drills.md`): 7 of 8
-pass, drill 6 was not possible, and drill 2's hidden database outage on `/chat` is fixed. The cold start is still open
-(1 of 12 fresh searches failed after a restart). **Next: R4** (`2026-10-11-search-upgrade-and-release.md`).
+pass, drill 6 was not possible, and drill 2's hidden database outage on `/chat` is fixed. Cold start: startup now waits
+for `warmup` in `configs/search.yaml` (3 warm-up searches in a row within deadlines, at most 180 s) and the
+served app prints `copilot.*` INFO on stderr; a Qdrant restart under a running API is still cold. **Next: R4** (`2026-10-11-search-upgrade-and-release.md`).
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
@@ -66,9 +67,9 @@ now `candidates.source: chunks` in `configs/search.yaml` (spec §7). LitSearch's
 has no chunk collection and stays at paper level. GPU policy: evaluate and demo only on an
 idle GPU. **The locked test split was run once on 2026-10-06** with the user's go-ahead
 (`reports/m2-locked-test.md`): G2 is met and the M2 release is `hybrid_rerank` over
-chunk-level candidates. The test split is spent for this release. Open item: right after a
-cold start the chunk-level dense branch exceeds its 1 s deadline for about a dozen queries
-until Qdrant's page cache warms.
+chunk-level candidates. The test split is spent for this release. The cold start (first
+queries after a Qdrant restart missing their deadlines) is handled since R3 by the startup warm-up
+(`reports/m5-drills.md`).
 
 **Open RAG Bench, O1–O3 done (2026-10-07; plan `docs/superpowers/plans/2026-10-06-orb-text-benchmark.md`,
 evidence `reports/orb-text.md`).** The benchmark is pinned, its 1,914 text queries frozen,
@@ -430,8 +431,8 @@ never runs in the ASGI event loop.
   one standalone query, one search for 10 papers, evidence chunks inside them, structured
   claims whose evidence ids are validated before the answer is stored and sent whole over
   SSE. History in PostgreSQL; every model call under the spend ledger (purpose `chat`).
-  Condensing is configured off since C7; turn timings show retrieval dominating (2.6–8.8 s), and a
-  cold Qdrant page cache can fail a first turn with `candidates_unavailable` (`reports/m3-chat.md`).
+  Condensing is configured off since C7; turn timings show retrieval dominating (2.6–8.8 s), and before R3's
+  startup warm-up a cold Qdrant failed first turns with `candidates_unavailable` (`reports/m5-drills.md`).
   No recommendations (§8 removed), no uploads, no general mode, no agent.
 - **Corpus pipeline** (§4): versioned per-venue-year manifests; identity resolution with
   contradictory strong-ID collisions held as conflicts; parse into heading-aware sections

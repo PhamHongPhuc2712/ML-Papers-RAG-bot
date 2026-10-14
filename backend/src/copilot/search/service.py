@@ -102,6 +102,35 @@ class SearchConfig:
             raise ValueError("rerank_pair_max_tokens must be at least 1")
 
 
+@dataclass(frozen=True)
+class WarmupConfig:
+    """Startup's warm-up (R3): not part of any ranking's identity.
+
+    After a Qdrant restart the chunk collection's on-disk parts (the BM25 index, payloads,
+    full vectors) are cold, and the first searches miss their deadlines for about a minute.
+    Startup runs these queries through the full ranking until ``consecutive`` in a row meet
+    the candidate deadlines, or ``max_seconds`` pass.
+    """
+
+    queries: tuple[str, ...] = ()
+    consecutive: int = 3
+    max_seconds: float = 180.0
+    pause_seconds: float = 1.0
+
+
+def load_warmup_config(path: str | Path) -> WarmupConfig:
+    raw = (yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}).get("warmup") or {}
+    config = WarmupConfig(
+        queries=tuple(str(query) for query in raw.get("queries") or ()),
+        consecutive=int(raw.get("consecutive", 3)),
+        max_seconds=float(raw.get("max_seconds", 180.0)),
+        pause_seconds=float(raw.get("pause_seconds", 1.0)),
+    )
+    if config.consecutive < 1 or config.max_seconds <= 0 or config.pause_seconds < 0:
+        raise ValueError("warmup needs consecutive >= 1, max_seconds > 0, pause_seconds >= 0")
+    return config
+
+
 CANDIDATE_SOURCES = ("papers", "chunks", "both")
 # `abstract`: the title and abstract, spec §7's canonical paper text. `chunk`: the
 # evidence chunk the first stage found the paper by (the better-ranked branch's when
@@ -563,6 +592,69 @@ class SearchService:
             except Exception as error:  # noqa: BLE001 - reported, and handled per request
                 report["rerank"] = str(getattr(error, "code", type(error).__name__))
         return report
+
+    def warm_until_ready(
+        self,
+        release: ReleaseRecord,
+        warmup: WarmupConfig,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> dict[str, Any]:
+        """Run warm-up searches until ``consecutive`` in a row meet the candidate deadlines.
+
+        A search counts as warm when no candidate branch failed or timed out; a reranker
+        timeout is GPU contention, not a cold index, and does not hold startup. A failure
+        that is not a timeout (Qdrant down) stops at once: waiting would not help, and
+        readiness reports it. Never raises.
+        """
+
+        if not warmup.queries:
+            return {"ready": True, "skipped": True}
+        started = self._clock()
+        streak = queries = 0
+        failures: dict[str, int] = {}
+        stopped: str | None = None
+        index = 0
+        while streak < warmup.consecutive:
+            if self._clock() - started >= warmup.max_seconds:
+                stopped = "max_seconds"
+                break
+            query = warmup.queries[index % len(warmup.queries)]
+            index += 1
+            queries += 1
+            request = SearchRequest(
+                query=query, mode="hybrid_rerank", filters=PaperFilters(), limit=10
+            )
+            try:
+                warnings = self.rank(request, release=release).ordering.warnings
+            except SearchUnavailable as error:
+                failures[error.code] = failures.get(error.code, 0) + 1
+                streak = 0
+                if TIMEOUT not in error.detail:
+                    stopped = error.code
+                    break
+                sleep(warmup.pause_seconds)
+                continue
+            except Exception as error:  # noqa: BLE001 - startup reports, the request path types
+                code = str(getattr(error, "code", type(error).__name__))
+                failures[code] = failures.get(code, 0) + 1
+                stopped = code
+                break
+            cold = [w for w in warnings if w.split("_", 1)[0] in _MODE_BRANCHES["hybrid"]]
+            if cold:
+                for warning in cold:
+                    failures[warning] = failures.get(warning, 0) + 1
+                streak = 0
+                sleep(warmup.pause_seconds)
+                continue
+            streak += 1
+        return {
+            "ready": streak >= warmup.consecutive,
+            "queries": queries,
+            "seconds": round(self._clock() - started, 1),
+            "failures": failures,
+            "stopped": stopped,
+        }
 
     def close(self) -> None:
         for part in (self._runner, self._listwise):

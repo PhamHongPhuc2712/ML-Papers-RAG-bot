@@ -76,3 +76,21 @@ def send_request_log_to_stdout() -> None:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
+
+
+def send_app_logs_to_stderr() -> None:
+    """Print the application's own INFO lines (``copilot.*``) on stderr in the served app.
+
+    Uvicorn configures only its own loggers, so lines such as startup's warm-up report or
+    the stale-turn sweep were dropped (R3). Request lines keep their own stdout handler.
+    """
+
+    app_logger = logging.getLogger("copilot")
+    if any(getattr(h, "_copilot_app", False) for h in app_logger.handlers):
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    handler._copilot_app = True  # type: ignore[attr-defined]
+    app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+    app_logger.propagate = False

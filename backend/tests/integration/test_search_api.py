@@ -551,6 +551,7 @@ def test_startup_warms_every_stage_on_the_active_release(search_corpus, test_set
     )
     assert seen == []
     with TestClient(app):
-        assert sorted(seen) == sorted(
+        # The one-off warm call, then the warm-up searches (R3) on the same release.
+        assert set(seen) == {
             (name, search_corpus.release) for name in ("lexical", "dense", "rerank")
-        )
+        }

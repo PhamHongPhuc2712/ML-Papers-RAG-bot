@@ -27,7 +27,11 @@ from .identity.api import Identity
 from .identity.api import router as identity_router
 from .identity.tokens import TokenIssuer
 from .identity.users import UserStore
-from .observability import install_request_log, send_request_log_to_stdout
+from .observability import (
+    install_request_log,
+    send_app_logs_to_stderr,
+    send_request_log_to_stdout,
+)
 from .search.api import SearchApi, install_error_handlers
 from .search.api import router as search_router
 from .search.client import qdrant_client
@@ -221,4 +225,5 @@ def create_default_app() -> FastAPI:
     # Required fields such as DATA_DIR arrive from the environment at runtime; mypy
     # cannot see pydantic-settings sources, so the bare call is unsatisfiable statically.
     send_request_log_to_stdout()
+    send_app_logs_to_stderr()
     return create_app(Settings())  # type: ignore[call-arg]

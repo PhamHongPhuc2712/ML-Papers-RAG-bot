@@ -99,3 +99,45 @@ segments from disk, not only the search stages. Calls abandoned at their deadlin
 on the lanes, and a retry adds to them. The retry helps once the backlog drains: the 4th probe
 was served. The likely remedy is the third one: readiness that waits for the chunk collection
 to be warm before it reports `ok`, rather than more retries.
+
+## Cold start: the startup warm-up (2026-10-14)
+
+The developer chose to try remedy 3. Startup (`SearchApi.start`) now finishes only after
+`SearchService.warm_until_ready` has run `warmup.queries` from `configs/search.yaml` through the
+full `hybrid_rerank` ranking with production deadlines, until `consecutive: 3` in a row are
+served with no candidate branch failing or timing out (cap `max_seconds: 180`). Rules:
+- **What does not count as cold:** a reranker timeout is GPU contention, not a cold index, and
+  does not hold startup.
+- **Qdrant down:** a failure that is not a timeout stops the warm-up at once, and readiness
+  reports it.
+- **No requests while warming:** startup has not finished, so uvicorn accepts no request, and
+  the web app shows its existing "not reachable, try again" message.
+
+The 24 queries are generic ML topics written for this, not corpus text. The
+served app now also prints its own `copilot.*` INFO lines on stderr
+(`send_app_logs_to_stderr`). This also fixes the earlier observation that the stale-turn sweep's
+line was dropped. Tests:
+- four in `test_search_service.py`: cold then warm, Qdrant down, gives up at the cap, and a
+  rerank timeout accepted with an empty list skipped;
+- `test_the_shipped_warm_up_is_configured`;
+- `test_the_served_app_prints_its_own_info_lines_once_on_stderr`.
+
+The full suite passed (769), and `eval smoke` is unchanged.
+
+Measured on the real stack, GPU median 0%:
+
+| Start | Startup until ready | Warm-up report | Then |
+|---|---|---|---|
+| Qdrant just restarted | **138 s** | 3 queries, 4.1 s, no failures | 2 chat turns **complete** (retrieve 20.3 s, then 2.5 s); 6 fresh searches 200, none degraded |
+| Qdrant warm (API-only restart) | 38 s | 3 queries, 2.5 s | — |
+| Qdrant stopped | 38 s | stopped after 1 query in 0.1 s (`candidates_unavailable`) | `/health/ready` 503 `vector_unavailable`, as in drill 1 |
+
+The extra 100 s on a cold start went into the existing one-off `warm()` call. It has no
+deadline, and it waited until Qdrant had loaded the collection back into memory. The cold
+start came down to that: the API took requests before Qdrant had finished loading.
+Before the warm-up, the same sequence failed both chat turns. That is one run each way, so it
+shows the mechanism, not a rate.
+
+Remaining limit: the warm-up runs only when the API starts. If Qdrant restarts while the API
+keeps running, the first searches meet a cold Qdrant again; the candidate retry and
+readiness's typed 503s are what is left for that case. A host restart starts both.

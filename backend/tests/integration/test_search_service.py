@@ -22,6 +22,8 @@ from copilot.search.service import (
     SearchService,
     SearchUnavailable,
     ThreadedStageRunner,
+    WarmupConfig,
+    load_warmup_config,
 )
 from copilot.search.sparse import SparseRetriever
 
@@ -775,3 +777,84 @@ def test_the_candidate_retry_happens_once_and_only_for_timeouts(corpus):
     partial = ScriptedRunner({"dense"})
     response = _service(corpus, runner=partial).search(_request("hybrid"))
     assert response.warnings == ["dense_timeout"] and partial.stages == ["lexical", "dense"]
+
+
+class SlowFor(ScriptedRunner):
+    """The candidate branches time out for the first ``runs`` runs, then answer."""
+
+    def __init__(self, runs: int) -> None:
+        super().__init__({"lexical", "dense"})
+        self.left = runs
+
+    def run(self, stages):
+        outcomes = super().run(stages)
+        self.left -= 1
+        if self.left <= 0:
+            self.timeouts -= {"lexical", "dense"}
+        return outcomes
+
+
+class FakeTime:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+WARMUP = WarmupConfig(queries=("graph neural networks", "contrastive learning"), consecutive=3)
+
+
+def test_warm_up_runs_until_searches_meet_their_deadlines(corpus):
+    """R3: a cold Qdrant failed the first searches; startup waits for consecutive clean ones."""
+
+    time = FakeTime()
+    # Two rank() calls fail: each is a first run plus its one retry.
+    service = _service(corpus, runner=SlowFor(4), clock=time.clock)
+    report = service.warm_until_ready(capture_release(corpus.engine), WARMUP, sleep=time.sleep)
+    assert report["ready"] is True and report["queries"] == 5
+    assert report["failures"] == {"candidates_unavailable": 2}
+    assert time.sleeps == [WARMUP.pause_seconds] * 2
+
+
+def test_warm_up_stops_at_once_when_search_is_down_not_slow(corpus):
+    time = FakeTime()
+    service = _service(corpus, lexical=Failing(), dense=Failing(), clock=time.clock)
+    report = service.warm_until_ready(capture_release(corpus.engine), WARMUP, sleep=time.sleep)
+    assert report["ready"] is False and report["queries"] == 1
+    assert report["stopped"] == "candidates_unavailable" and time.sleeps == []
+
+
+def test_warm_up_gives_up_after_its_budget_and_counts_a_slow_branch_as_cold(corpus):
+    time = FakeTime()
+    # The dense branch never meets its deadline: served, but degraded, so never warm.
+    service = _service(corpus, runner=ScriptedRunner({"dense"}), clock=time.clock)
+    config = WarmupConfig(queries=WARMUP.queries, consecutive=3, max_seconds=10, pause_seconds=1)
+    report = service.warm_until_ready(capture_release(corpus.engine), config, sleep=time.sleep)
+    assert report["ready"] is False and report["stopped"] == "max_seconds"
+    assert report["failures"] == {"dense_timeout": report["queries"]} and report["queries"] == 10
+
+
+def test_warm_up_accepts_a_slow_reranker_and_skips_without_queries(corpus):
+    """Rerank timeouts are GPU contention, not a cold index: they do not hold startup."""
+
+    time = FakeTime()
+    service = _service(corpus, runner=ScriptedRunner({"rerank"}), clock=time.clock)
+    report = service.warm_until_ready(capture_release(corpus.engine), WARMUP, sleep=time.sleep)
+    assert report["ready"] is True and report["queries"] == 3
+    runner = ScriptedRunner()
+    skipped = _service(corpus, runner=runner).warm_until_ready(
+        capture_release(corpus.engine), WarmupConfig()
+    )
+    assert skipped == {"ready": True, "skipped": True} and runner.stages == []
+
+
+def test_the_shipped_warm_up_is_configured():
+    config = load_warmup_config("configs/search.yaml")
+    assert len(config.queries) >= 20 and len(set(config.queries)) == len(config.queries)
+    assert config.consecutive >= 1 and 0 < config.max_seconds <= 300
