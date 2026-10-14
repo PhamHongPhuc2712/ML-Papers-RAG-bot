@@ -1326,6 +1326,20 @@ def run_llm_spend(*, database_url: str, day: str | None, run_id: str | None) -> 
         engine.dispose()
 
 
+def run_chat_stats(*, database_url: str, day: str | None) -> dict[str, Any]:
+    """One UTC day of chat turns: statuses, error codes, stage p50/p95 and cost; no text."""
+
+    from datetime import UTC, date, datetime
+
+    from .chat.store import chat_stats
+
+    engine = make_engine(database_url)
+    try:
+        return chat_stats(engine, day=date.fromisoformat(day) if day else datetime.now(UTC).date())
+    finally:
+        engine.dispose()
+
+
 def run_users_create(*, database_url: str, email: str, password: str) -> dict[str, Any]:
     """Create an account. Signup is closed (spec §10): the operator makes accounts here."""
 
@@ -1580,6 +1594,14 @@ def _parser() -> argparse.ArgumentParser:
     spend_scope.add_argument("--day", default=None, help="UTC day, YYYY-MM-DD; default today")
     spend_scope.add_argument("--run", default=None, help="an evaluation run id")
     spend.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+
+    chat = subparsers.add_parser("chat")
+    chat_commands = chat.add_subparsers(dest="chat_command", required=True)
+    stats = chat_commands.add_parser(
+        "stats", help="a day's chat turns by status and error, stage timings and cost; no text"
+    )
+    stats.add_argument("--day", default=None, help="UTC day, YYYY-MM-DD; default today")
+    stats.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
 
     users = subparsers.add_parser("users")
     user_commands = users.add_subparsers(dest="users_command", required=True)
@@ -2192,6 +2214,8 @@ def main(argv: list[str] | None = None) -> int:
         result = run_llm_spend(
             database_url=_database_url(args.database_url), day=args.day, run_id=args.run
         )
+    elif args.command == "chat" and args.chat_command == "stats":
+        result = run_chat_stats(database_url=_database_url(args.database_url), day=args.day)
     elif args.command == "worker" and args.worker_command == "run":
         result = run_worker(
             database_url=_database_url(args.database_url),

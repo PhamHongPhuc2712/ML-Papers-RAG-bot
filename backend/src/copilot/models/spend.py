@@ -482,7 +482,7 @@ class SpendLedger:
 def spend_report(
     engine: Engine, *, day: date | None = None, run_id: str | None = None
 ) -> dict[str, Any]:
-    """Calls, tokens and cost by model for one UTC day or one evaluation run.
+    """Calls, tokens and cost by model, and calls and cost by purpose, for one UTC day or run.
 
     Unsettled reservations count at their estimate, as the cap counts them.
     """
@@ -522,7 +522,19 @@ def spend_report(
             }
             for row in rows
         }
+        purposes = {
+            str(row["purpose"]): {"calls": int(row["calls"]), "cost_usd": float(row["cost_usd"])}
+            for row in connection.execute(
+                text(
+                    "select purpose, count(*) as calls,"
+                    " coalesce(sum(coalesce(cost_usd, estimated_usd)), 0) as cost_usd"
+                    f" from llm_calls where {where} group by purpose order by purpose"
+                ),
+                params,
+            ).mappings()
+        }
     return scope | {
         "models": models,
+        "purposes": purposes,
         "total_usd": round(sum(entry["cost_usd"] for entry in models.values()), 6),
     }

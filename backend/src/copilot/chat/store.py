@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -335,6 +335,65 @@ class ChatStore:
                     "now": self._clock(),
                 },
             )
+
+
+def chat_stats(engine: Engine, *, day: date) -> dict[str, Any]:
+    """One UTC day of assistant turns: counts by status and error, stage timings, cost.
+
+    Reads only status, error code, trace and cost: never a message's text or its user.
+    """
+
+    start = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    params = {"start": start, "end": start + timedelta(days=1)}
+    window = "role = 'assistant' and created_at >= :start and created_at < :end"
+    with engine.connect() as connection:
+        statuses = {
+            str(row.status): int(row.turns)
+            for row in connection.execute(
+                text(
+                    f"select status, count(*) as turns from chat_messages where {window}"
+                    " group by status order by status"
+                ),
+                params,
+            )
+        }
+        error_codes = {
+            str(row.error_code): int(row.turns)
+            for row in connection.execute(
+                text(
+                    f"select error_code, count(*) as turns from chat_messages where {window}"
+                    " and error_code is not null group by error_code order by error_code"
+                ),
+                params,
+            )
+        }
+        stages = {
+            str(row.stage): {"turns": int(row.turns), "p50": float(row.p50), "p95": float(row.p95)}
+            for row in connection.execute(
+                text(
+                    "select stage.key as stage, count(*) as turns,"
+                    " percentile_cont(0.5) within group (order by (stage.value #>> '{}')::float)"
+                    " as p50,"
+                    " percentile_cont(0.95) within group (order by (stage.value #>> '{}')::float)"
+                    " as p95"
+                    " from chat_messages, jsonb_each(coalesce(trace, '{}'::jsonb)) as stage"
+                    f" where {window} and jsonb_typeof(stage.value) = 'number'"
+                    " group by stage.key order by stage.key"
+                ),
+                params,
+            )
+        }
+        cost = connection.execute(
+            text(f"select coalesce(sum(cost_usd), 0) from chat_messages where {window}"), params
+        ).scalar_one()
+    return {
+        "day": day.isoformat(),
+        "turns": sum(statuses.values()),
+        "statuses": statuses,
+        "error_codes": error_codes,
+        "stages": stages,
+        "cost_usd": round(float(cost), 6),
+    }
 
 
 def _touch(connection: Connection, chat_id: UUID, now: datetime) -> None:

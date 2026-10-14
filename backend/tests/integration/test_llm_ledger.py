@@ -9,7 +9,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from copilot.models.spend import SpendLedger, Usage, load_llm_config
+from copilot.models.spend import SpendLedger, Usage, load_llm_config, spend_report
 
 pytestmark = pytest.mark.integration
 NOON = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
@@ -78,3 +78,16 @@ def test_a_new_utc_day_starts_with_the_full_cap(migrated_database, ledger):
                            clock=lambda: NOON.replace(day=3))
     assert tomorrow.reserve(model=MODEL, estimated_usd=1.00, purpose="search",
                             request_id=None, run_id=None)
+
+
+def test_the_spend_report_groups_cost_by_purpose(ledger, migrated_database):
+    # Purposes every revision admits: a leftover "chat" row would block the downgrade test.
+    for purpose, usd in (("search", 0.10), ("search", 0.05), ("evaluation", 0.20)):
+        ledger.reserve(model=MODEL, estimated_usd=usd, purpose=purpose,
+                       request_id=None, run_id=None)
+    report = spend_report(migrated_database, day=NOON.date())
+    assert report["purposes"] == {
+        "search": {"calls": 2, "cost_usd": pytest.approx(0.15)},
+        "evaluation": {"calls": 1, "cost_usd": pytest.approx(0.20)},
+    }
+    assert report["total_usd"] == pytest.approx(0.35)

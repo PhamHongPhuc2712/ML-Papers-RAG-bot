@@ -23,8 +23,9 @@ CI job's first green run. S1 (571 model-written passage questions from our corpu
 `data/fixtures/retrieval-sections/`, text under `${DATA_DIR}/benchmarks/sections-v1/`) and S2 are
 done (2026-10-12): the title+chunk reranker gains +0.35 nDCG@10 on passage questions but fails the
 paper-level guard, so by the registered rule `rerank.text` stays `abstract`
-(`reports/m5-rerank-text.md`); S1's test split is unread. **Next: R1–R4**
-(`2026-10-11-search-upgrade-and-release.md`).
+(`reports/m5-rerank-text.md`); S1's test split is unread. R1 is done (2026-10-14): one JSON line per request on
+`copilot.requests` (route template, never a path or body), `llm spend` by purpose and `chat stats --day`.
+**Next: R2–R4** (`2026-10-11-search-upgrade-and-release.md`).
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
@@ -381,6 +382,8 @@ chunks | both`); unset, it follows `configs/search.yaml`, except over a snapshot
 uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head
 uv run --env-file .env --project backend uvicorn --factory copilot.app:create_default_app --port 8000
 uv run --project backend python -m copilot.cli api export-schema --out frontend/openapi.json
+uv run --env-file .env --project backend python -m copilot.cli chat stats --day 2026-10-11   # turns, errors, stage p50/p95, cost; no text
+uv run --env-file .env --project backend python -m copilot.cli llm spend --day 2026-10-12    # by model and by purpose
 ```
 
 `.env`'s `DATABASE_URL` names `copilot_v2`, the live corpus. Building never activates;
