@@ -643,6 +643,20 @@ class SearchService:
             )
             stages[name] = (search, budget)
         outcomes = self._runner.run(stages)
+        # Every branch failed and some only ran out of time: a cold page cache after a
+        # restart does this to the first queries (R3). Those branches run once more
+        # within what is left of the total; errors other than a timeout are not retried.
+        retried: dict[str, list[str]] = {}
+        timed_out = [name for name in branches if outcomes[name].error == TIMEOUT]
+        if timed_out and all(outcomes[name].error is not None for name in branches):
+            retry_budget = max(0.0, min(config.branch_seconds, remaining()))
+            if retry_budget > 0:
+                again = self._runner.run(
+                    {name: (stages[name][0], retry_budget) for name in timed_out}
+                )
+                for name in timed_out:
+                    retried[name] = [TIMEOUT]
+                    outcomes[name] = again[name]
 
         lists: dict[str, list[tuple[str, float]]] = {}
         # Per paper, the chunk it was found by in the branch that ranked it best.
@@ -655,6 +669,8 @@ class SearchService:
                 hits = _first_occurrence(raw_hits)
                 lists[name] = hits
                 trace.stages[name] = {"seconds": round(outcome.seconds, 4), "candidates": hits}
+                if name in retried:
+                    trace.stages[name]["retried"] = retried[name]
                 for rank, (paper_id, _) in enumerate(hits):
                     chunk_id = chunks.get(paper_id)
                     if chunk_id and rank < evidence_rank.get(paper_id, len(hits) + 1):
@@ -662,6 +678,8 @@ class SearchService:
                         evidence_rank[paper_id] = rank
             else:
                 trace.stages[name] = {"seconds": round(outcome.seconds, 4), "error": outcome.error}
+                if name in retried:
+                    trace.stages[name]["retried"] = retried[name]
                 trace.warnings.append(_warning(name, outcome.error))
         if not lists:
             trace.seconds = self._clock() - started

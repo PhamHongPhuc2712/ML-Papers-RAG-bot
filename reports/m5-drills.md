@@ -71,3 +71,31 @@ W4 recorded the same gap: two of four real-stack walkthrough attempts failed on 
 - **Pending turns after a crash.** With the shipped `turn: 120`, a turn orphaned by a crash stays
   `pending` for up to 240 s. Until then, a new message in that chat is refused with
   `chat_busy`.
+
+## Cold start: the candidate retry (2026-10-14, after the drills)
+
+The developer chose remedy 1. `SearchService.rank` now runs the timed-out branches once more when
+**every** branch failed and at least one only timed out. The retry gets what is left of the
+total, at most `deadlines_seconds.branch`. Errors other than a timeout, such as Qdrant down, are
+not retried. One branch answering is still served degraded, without a retry. A successful retry
+is not marked degraded, and the trace records it (`stages.<branch>.retried`). Tests:
+`test_candidates_that_all_time_out_are_retried_once` and
+`test_the_candidate_retry_happens_once_and_only_for_timeouts`
+(`backend/tests/integration/test_search_service.py`). Full suite 763 passed; `eval smoke`
+reproduces its frozen rankings unchanged.
+
+Measured on the real stack, GPU median 0%:
+
+| After | Probe | Result |
+|---|---|---|
+| Qdrant and API restarted | 12 fresh searches | 0 failed (1 of 12 before the retry; too few to call it a gain) |
+| Qdrant and API restarted | 2 chat turns, first thing | **Both failed** `candidates_unavailable`, 13.5 s and 14.4 s |
+| Qdrant restarted, the chat's search service timed in-process | 4 `rank()` calls | First 3 failed (`lexical:timeout,dense:timeout` after the retry). The 4th was served, with lexical rescued by the retry and dense still timing out (`dense_timeout`, `rerank_timeout`) |
+
+**The retry does not fix a cold Qdrant.** In the in-process probe, capturing the release, a plain
+Postgres read on the request thread outside every search deadline, took 3.6–20 s, and `rank()`
+overran its 3 s total by seconds. The whole process is congested while Qdrant reads its
+segments from disk, not only the search stages. Calls abandoned at their deadline keep running
+on the lanes, and a retry adds to them. The retry helps once the backlog drains: the 4th probe
+was served. The likely remedy is the third one: readiness that waits for the chunk collection
+to be warm before it reports `ok`, rather than more retries.

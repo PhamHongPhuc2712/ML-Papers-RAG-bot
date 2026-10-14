@@ -82,6 +82,15 @@ class ScriptedRunner:
         return outcomes
 
 
+class ColdRunner(ScriptedRunner):
+    """The named stages time out on their first run only, as on a cold page cache."""
+
+    def run(self, stages):
+        outcomes = super().run(stages)
+        self.timeouts -= set(stages)
+        return outcomes
+
+
 class Reversing:
     identity = "fixture/reversing"
 
@@ -731,3 +740,38 @@ def test_hydrate_time_includes_the_chunk_texts_the_reranker_reads(corpus, body_c
     _, trace = service.search_with_trace(_request("hybrid_rerank"))
     assert trace.stages["hydrate"]["seconds"] >= 0.0
     assert trace.stages["hydrate"]["chunks"] == len(trace.stages["rerank"]["chunks"])
+
+
+def test_candidates_that_all_time_out_are_retried_once(corpus):
+    """A cold page cache misses the first branch deadline; one retry serves, undegraded."""
+
+    runner = ColdRunner({"lexical", "dense"})
+    response, trace = _service(corpus, runner=runner).search_with_trace(_request("hybrid"))
+    warm = _service(corpus).search(_request("hybrid"))
+    assert _ids(response) == _ids(warm)
+    assert not response.degraded and response.warnings == []
+    assert runner.stages == ["lexical", "dense", "lexical", "dense"]
+    assert trace.stages["lexical"]["retried"] == ["timeout"]
+    assert trace.stages["dense"]["retried"] == ["timeout"]
+
+    single = ColdRunner({"lexical"})
+    assert _service(corpus, runner=single).search(_request("bm25")).items
+    assert single.stages == ["lexical", "lexical"]
+
+
+def test_the_candidate_retry_happens_once_and_only_for_timeouts(corpus):
+    stuck = ScriptedRunner({"lexical", "dense"})
+    with pytest.raises(SearchUnavailable, match="candidates_unavailable"):
+        _service(corpus, runner=stuck).search(_request("hybrid"))
+    assert stuck.stages == ["lexical", "dense", "lexical", "dense"]
+
+    # Failures that are not timeouts (Qdrant down) are not retried.
+    down = ScriptedRunner()
+    with pytest.raises(SearchUnavailable, match="candidates_unavailable"):
+        _service(corpus, lexical=Failing(), dense=Failing(), runner=down).search(_request("hybrid"))
+    assert down.stages == ["lexical", "dense"]
+
+    # One branch answering is served degraded as before; the timed-out one is not retried.
+    partial = ScriptedRunner({"dense"})
+    response = _service(corpus, runner=partial).search(_request("hybrid"))
+    assert response.warnings == ["dense_timeout"] and partial.stages == ["lexical", "dense"]
