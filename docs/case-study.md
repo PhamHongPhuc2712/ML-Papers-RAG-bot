@@ -23,18 +23,12 @@ uploads or agent: those were removed on 2026-10-11 to finish search and grounded
 
 ### Find candidates through chunks, not abstracts (P2.6)
 
-At first both search branches searched title-and-abstract vectors. E3 and P2.5 found that
-many misses described something only a paper's body says. Candidates found through the chunk
-collection, with each paper scored by its best evidence chunk, were registered and promoted on
-validation:
-- Recall@50 **+0.135** [+0.058, +0.231];
-- nDCG@10 **+0.060** [+0.025, +0.097];
-- p95 0.60 s.
-
-Source: `reports/m2-retrieval-gaps.md`. The locked test on our corpus points the same way:
-+0.024 nDCG@10, 11 wins to 3, on 48 queries that cannot confirm it (`reports/m2-locked-test.md`).
-Open RAG Bench reproduced it on a second corpus: chunk-level candidates beat
-title-and-abstract ones by +0.22 to +0.25 nDCG@10 (`reports/orb-text.md`).
+At first both search branches searched title-and-abstract vectors. Many misses described
+something only a paper's body says. Candidates found through the chunk collection, with each
+paper scored by its best evidence chunk, were registered and promoted on validation on
+2026-10-06. That evidence was LitSearch-based and was removed with LitSearch on 2026-10-14
+(git history keeps it). The decision stands on Open RAG Bench, which reproduced it: chunk-level
+candidates beat title-and-abstract ones by +0.22 to +0.25 nDCG@10 (`reports/orb-text.md`).
 
 ### What the cross-encoder reads: the chunk for chat, the abstract for the search page
 
@@ -46,11 +40,11 @@ plus the chunk that found the paper gained **+0.183** [+0.163, +0.204] over the 
 - **The chat** answers passage-level questions, so it reads title + chunk at a 2.5 s rerank
   deadline. That is the first stage of the frozen answering result.
 - **The search page** was decided separately, on our corpus (S2). The candidate gained
-  **+0.348** [+0.292, +0.408] nDCG@10 on S1's 190 model-written passage questions. On
-  LitSearch's 52 paper-level queries its interval reached −0.167, against a guard of −0.03,
-  and it degraded one query. By the registered rule the search page keeps reading
-  **abstracts** (`reports/m5-rerank-text.md`). The guard set is underpowered, and the report
-  says so rather than reinterpreting the rule.
+  **+0.348** [+0.292, +0.408] nDCG@10 on S1's 190 model-written passage questions, but failed
+  the registered rule's paper-level guard, which was measured on LitSearch's 52 in-domain
+  queries and removed with them. So the search page keeps reading **abstracts**
+  (`reports/m5-rerank-text.md`). With LitSearch gone, the guard can no longer be re-measured; a
+  new decision needs a new registration.
 
 ### The answer judge's rubric
 
@@ -104,8 +98,6 @@ level without one.
   99 of 100, but starved the generator. On the 84 questions the shipped run already had the
   paper for, `flat` fell from 75 to 66 correct, and answers shortened from a median of 39 to
   29.5 words. The live corpus stays at about 800 tokens (`paragraph-pack-v1`).
-- **A larger candidate pool and a deeper rerank.** P2.6 ruled out a larger pool. A depth-100
-  rerank was registered and not promoted (`reports/m2-retrieval-gaps.md`).
 - **A retry alone did not fix the cold start.** After a Qdrant restart, the first chat turns
   failed even with one retry of the candidate stage. The cause was that the API took requests
   before Qdrant had loaded its collection. A startup warm-up fixed it: after a Qdrant restart,

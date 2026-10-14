@@ -114,7 +114,7 @@ floor is the host's idle baseline; the rest is the two models and their activati
 utilization median 96% — the reranker's own work. No other workload held the device.
 Per-query traces went to `${DATA_DIR}/runs/m2-ranking-pilot-dev.jsonl`, outside the
 repository, because they carry LitSearch query text, which has no declared license
-(see [labels](m2-labels.md)). This report quotes none of it.
+(its record, `m2-labels.md`, was deleted with LitSearch on 2026-10-14). This report quotes none of it.
 
 **No quality claim is made here.** The reranker's effect on recall and nDCG is P2.5's
 ablation on the frozen test split with bootstrap intervals; this pilot measures only

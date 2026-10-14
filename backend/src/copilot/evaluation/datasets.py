@@ -6,58 +6,34 @@ Three files make up a retrieval dataset, one record per line:
     the query, its provenance, the workflow it exercises, and whether our
     corpus holds every gold paper for it.
 ``qrels.jsonl``
-    one row per gold paper, carrying both the benchmark's corpus id and — where
-    matching found one — our paper id, so the same judgements serve a run
-    against LitSearch's corpus and a run against ours.
+    one row per gold paper, carrying the benchmark's own document id
+    (``corpusid``) and our paper id.
 ``splits.jsonl``
     query to family to split.
 
 Two rules are enforced rather than documented. A family never spans two splits,
 because a paraphrase in development and its twin in test leaks the answer. And
 a query counts as in-domain only when **every** gold paper is present: recall
-computed against two of three golds understates the system silently, which is
-the failure mode this whole module exists to prevent.
+computed against two of three golds understates the system silently.
 
-Splits are stratified by ``query_set`` and nothing else. LitSearch's
-``specificity`` and ``quality`` annotations have no documented scale in the
-published artifacts, so they travel as metadata for slicing results rather than
-as something to balance on (see ``reports/e1-litsearch-coverage.md``).
+Builders live with their benchmark: ``orb.py`` (Open RAG Bench) and
+``section_queries.py`` (S1's passage questions over our corpus).
 """
 
 from __future__ import annotations
 
 import json
-import random
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .litsearch import LITSEARCH_REVISION, LitSearchQuery
-
 SPLITS = ("development", "validation", "test")
 # A benchmark read as a whole rather than tuned on: every query in one split that
 # never produces a decision (Open RAG Bench's text slice). Its answering sample is a
 # separate assignment beside the dataset, not a split of it.
 RETRIEVAL_SPLIT = "retrieval"
-SPLIT_SHARES = {"development": 0.6, "validation": 0.2, "test": 0.2}
-DEFAULT_SEED = 42
-
-# LitSearch builds its query sets two ways, and the two exercise different
-# behaviour. An author describing their own paper is a known-item search; a
-# question generated from a citation sentence is a related-work search. Neither
-# is the "keeping up" workflow spec §11 also names — that gap is what the
-# hand-authored in-domain queries in E4 exist to fill.
-WORKFLOWS = {
-    "manual_acl": "known_item",
-    "manual_iclr": "known_item",
-    "inline_acl": "related_work",
-    "inline_nonacl": "related_work",
-}
-
-LITSEARCH_AUTHOR = "Ajith et al. 2024 (LitSearch)"
-
 
 class DatasetError(RuntimeError):
     """A dataset cannot be built, read or trusted."""
@@ -102,108 +78,6 @@ class Dataset:
     splits: tuple[SplitRecord, ...]
 
 
-def workflow_for(query_set: str) -> str:
-    """The workflow a query set exercises, from how it was constructed."""
-
-    try:
-        return WORKFLOWS[query_set]
-    except KeyError as error:
-        raise DatasetError("unknown_query_set", query_set) from error
-
-
-def assign_splits(
-    queries: Sequence[LitSearchQuery], *, seed: int = DEFAULT_SEED
-) -> dict[str, str]:
-    """Stratify by query set, then cut 60/20/20 inside each stratum.
-
-    Sorted before shuffling so the assignment depends on the seed and the query
-    ids, never on the order rows happened to arrive in. Stratifying inside each
-    set matters because the sets are wildly different sizes and one of them
-    (``inline_acl``) has no corpus coverage at all.
-    """
-
-    strata: defaultdict[str, list[str]] = defaultdict(list)
-    for query in queries:
-        workflow_for(query.query_set)  # reject an unknown set early
-        strata[query.query_set].append(query.query_id)
-
-    assignment: dict[str, str] = {}
-    for query_set in sorted(strata):
-        ids = sorted(strata[query_set])
-        random.Random(f"{seed}:{query_set}").shuffle(ids)
-        total = len(ids)
-        development = round(total * SPLIT_SHARES["development"])
-        validation = round(total * SPLIT_SHARES["validation"])
-        for index, query_id in enumerate(ids):
-            if index < development:
-                assignment[query_id] = "development"
-            elif index < development + validation:
-                assignment[query_id] = "validation"
-            else:
-                assignment[query_id] = "test"
-    return assignment
-
-
-def build_dataset(
-    queries: Sequence[LitSearchQuery],
-    *,
-    matched: Mapping[str, str],
-    seed: int = DEFAULT_SEED,
-    revision: str = LITSEARCH_REVISION,
-) -> Dataset:
-    """Assemble the three record sets from the benchmark and the match report.
-
-    ``matched`` maps a LitSearch corpus id to our paper id. A query is
-    in-domain only when every one of its gold papers appears there.
-    """
-
-    splits = assign_splits(queries, seed=seed)
-    query_records: list[QueryRecord] = []
-    qrel_records: list[QrelRecord] = []
-    split_records: list[SplitRecord] = []
-    for query in queries:
-        golds = query.corpusids
-        in_domain = bool(golds) and all(gold in matched for gold in golds)
-        query_records.append(
-            QueryRecord(
-                query_id=query.query_id,
-                query=query.query,
-                query_set=query.query_set,
-                workflow=workflow_for(query.query_set),
-                specificity=query.specificity,
-                quality=query.quality,
-                in_domain=in_domain,
-                source=f"litsearch@{revision}",
-                author=LITSEARCH_AUTHOR,
-            )
-        )
-        for gold in golds:
-            qrel_records.append(
-                QrelRecord(
-                    query_id=query.query_id,
-                    corpusid=gold,
-                    # LitSearch labels are binary: the cited paper is relevant
-                    # and nothing else is labelled at all.
-                    grade=1,
-                    paper_id=matched.get(gold),
-                )
-            )
-        split_records.append(
-            SplitRecord(
-                query_id=query.query_id,
-                # LitSearch has no rewrite families. Inventing them would fake
-                # a grouping the data does not have, so a query is its own.
-                family_id=query.query_id,
-                split=splits[query.query_id],
-            )
-        )
-    return Dataset(
-        queries=tuple(query_records),
-        qrels=tuple(qrel_records),
-        splits=tuple(split_records),
-    )
-
-
 def _write(path: Path, rows: Sequence[Any], *, drop: frozenset[str] = frozenset()) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
@@ -229,10 +103,10 @@ def write_dataset(dataset: Dataset, directory: Path, *, include_query_text: bool
     """Write the three files.
 
     ``include_query_text=False`` omits the query strings. The repository copy is
-    written that way on purpose: LitSearch declares no license, so its text
-    stays under ``DATA_DIR`` while the split assignment — the thing that must be
-    frozen, reviewable and diffable — lives in git. ``hydrate`` puts the text
-    back at run time from the pinned parquet.
+    written that way on purpose: ORB's text is CC-BY-NC and S1's is derived from
+    corpus papers, so it stays under ``DATA_DIR`` while the split assignment — the
+    thing that must be frozen, reviewable and diffable — lives in git. ``hydrate``
+    puts the text back at run time.
     """
 
     directory.mkdir(parents=True, exist_ok=True)

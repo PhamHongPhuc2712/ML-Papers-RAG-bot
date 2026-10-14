@@ -1,7 +1,6 @@
 {
-  "comparable_to_published": false,
   "depth": 50,
-  "focus": "hybrid_rerank_title_chunk_2500",
+  "focus": "hybrid_rerank",
   "run": "reports/retrieval/orb-rerank-text",
   "splits": {
     "retrieval": {
@@ -34,7 +33,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1740,
               "11-20": 15,
               "2-5": 109,
@@ -72,7 +71,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1268,
               "11-20": 96,
               "2-5": 257,
@@ -110,7 +109,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1802,
               "11-20": 6,
               "2-5": 59,
@@ -148,7 +147,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1802,
               "11-20": 6,
               "2-5": 59,
@@ -186,7 +185,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1802,
               "11-20": 8,
               "2-5": 61,
@@ -224,7 +223,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1807,
               "11-20": 6,
               "2-5": 59,
@@ -235,17 +234,9 @@
           }
         }
       },
-      "litsearch_cutoffs": {
-        "hybrid": {},
-        "hybrid_rerank": {},
-        "hybrid_rerank_chunk": {},
-        "hybrid_rerank_chunk_2500": {},
-        "hybrid_rerank_title_chunk": {},
-        "hybrid_rerank_title_chunk_2500": {}
-      },
       "misses": {
-        "hybrid_rerank_title_chunk_2500": {
-          "orb_abstractive / specific": {
+        "hybrid_rerank": {
+          "orb_abstractive / 1": {
             "beyond_depth": [
               "d9653b7c-5ace-4aa4-ad81-39c3e739a67c",
               "f6ed58d1-f346-4e32-b520-17dacd41dc42"
@@ -258,7 +249,7 @@
             ],
             "queries": 893
           },
-          "orb_extractive / specific": {
+          "orb_extractive / 1": {
             "beyond_depth": [
               "01416eb6-2408-491e-a971-5647f51d7af8",
               "57974a20-83f8-4a30-b935-ca111cc76f08",
@@ -306,7 +297,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006792058516196447,
               "queries": 1914,
@@ -336,7 +327,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,
@@ -366,7 +357,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,
@@ -396,7 +387,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,
@@ -426,7 +417,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,
@@ -456,7 +447,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,

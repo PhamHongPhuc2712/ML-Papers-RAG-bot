@@ -22,7 +22,7 @@ def test_ndcg_obeys_grades_and_deduplicates():
 
 
 def test_ndcg_on_binary_grades_matches_hand_calculation():
-    """LitSearch labels one gold paper, so every gain is 0 or 1."""
+    """A benchmark with one gold paper per query: every gain is 0 or 1."""
 
     grades = {"gold": 1}
     assert ndcg_at_k(["gold", "x"], grades, 10) == pytest.approx(1.0)

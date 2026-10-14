@@ -11,11 +11,8 @@ import pytest
 
 from copilot.evaluation.datasets import Dataset, QrelRecord, QueryRecord, SplitRecord, write_dataset
 from copilot.evaluation.gaps import (
-    LITSEARCH_CELLS,
-    PUBLISHED,
     GapError,
     gold_rank_buckets,
-    litsearch_recall,
     load_outcomes,
     misses,
     render_gaps,
@@ -25,10 +22,10 @@ from copilot.evaluation.retrieval import dataset_digest
 
 # (query id, query set, specificity, gold ids)
 QUERIES = (
-    ("q1", "manual_acl", 1, ("a",)),
-    ("q2", "manual_iclr", 0, ("b",)),
-    ("q3", "inline_acl", 1, ("c", "d")),
-    ("q4", "inline_nonacl", 0, ("e",)),
+    ("q1", "set_a", 1, ("a",)),
+    ("q2", "set_b", 0, ("b",)),
+    ("q3", "set_c", 1, ("c", "d")),
+    ("q4", "set_d", 0, ("e",)),
 )
 BOOTSTRAP = {"resamples": 200, "seed": 42, "confidence": 0.95}
 
@@ -87,13 +84,13 @@ def _dataset(directory: Path) -> None:
             specificity=spec,
             quality=2,
             in_domain=False,
-            source="litsearch@fixture",
+            source="fixture",
             author="fixture",
         )
         for qid, qset, spec, _ in QUERIES
     )
     qrels = tuple(
-        QrelRecord(query_id=qid, corpusid=gold, grade=1, paper_id=None)
+        QrelRecord(query_id=qid, corpusid=gold, grade=1, paper_id=gold)
         for qid, _, _, golds in QUERIES
         for gold in golds
     )
@@ -103,7 +100,7 @@ def _dataset(directory: Path) -> None:
     write_dataset(Dataset(queries, qrels, splits), directory, include_query_text=False)
 
 
-def _run(tmp_path: Path, rows=ROWS, *, papers: str = "snapshot") -> Path:
+def _run(tmp_path: Path, rows=ROWS) -> Path:
     dataset = tmp_path / "dataset"
     _dataset(dataset)
     run = tmp_path / "run"
@@ -111,13 +108,13 @@ def _run(tmp_path: Path, rows=ROWS, *, papers: str = "snapshot") -> Path:
     split.mkdir(parents=True)
     manifest = {
         "experiment": {"name": "fixture"},
-        "corpus": {"release_id": "fixture-release", "papers": papers},
+        "corpus": {"release_id": "fixture-release", "papers": "database"},
         "dataset": {
             "path": str(dataset),
             "digest": dataset_digest(dataset),
             "split": "validation",
             "slice": "all",
-            "labels": "corpusid",
+            "labels": "paper_id",
         },
         "search": {"values": {"candidates_per_branch": 100, "rerank_depth": 50}},
         "bootstrap": BOOTSTRAP,
@@ -147,24 +144,12 @@ def test_a_dataset_changed_since_the_run_is_refused(tmp_path):
         load_outcomes(run, "validation")
 
 
-def test_recall_at_the_published_cutoffs_groups_like_the_paper(tmp_path):
-    _, outcomes = load_outcomes(_run(tmp_path), "validation")
-    cells = litsearch_recall(outcomes, BOOTSTRAP)["hybrid_rerank"]
-    # Author-written = manual_*, inline-citation = inline_*; 1 is specific, 0 broad.
-    assert cells["author specific R@5"]["mean"] == 1.0
-    assert cells["author broad R@20"]["mean"] == 0.0  # gold at rank 30
-    # Two golds, one found: recall is the share of golds, as LitSearch computes it.
-    assert cells["inline specific R@5"]["mean"] == 0.5
-    assert cells["inline broad R@20"]["queries"] == 1
-    assert set(cells) == {f"{group} {breadth} R@{k}" for group, breadth, k in LITSEARCH_CELLS}
-
-
 def test_a_failed_query_scores_zero_and_stays_in_the_denominator(tmp_path):
     _, outcomes = load_outcomes(_run(tmp_path), "validation")
-    cells = litsearch_recall(outcomes, BOOTSTRAP)["bm25"]
-    assert cells["author specific R@5"] == pytest.approx(
-        {"queries": 1, "mean": 0.0, "low": 0.0, "high": 0.0}
-    )
+    losses = stage_losses(outcomes, depth=50)["bm25"]
+    # q1 failed: its gold is neither returned nor pooled, and it still counts.
+    assert losses["all"]["queries"] == 4
+    assert losses["query_set"]["set_a"]["not_in_pool"] == pytest.approx(1.0)
     ranks = gold_rank_buckets(outcomes)["bm25"]["all"]
     assert ranks["absent"] == 1
 
@@ -193,27 +178,20 @@ def test_gold_ranks_count_each_gold_once(tmp_path):
     ranks = gold_rank_buckets(outcomes)["hybrid_rerank"]
     # The repeated "c" ranks once, so "d" is third, not fourth.
     assert ranks["all"] == {"1": 2, "2-5": 1, "6-10": 0, "11-20": 0, "21-50": 1, "absent": 1}
-    assert sum(ranks["specificity"]["broad"].values()) == 2
+    assert sum(ranks["specificity"]["0"].values()) == 2
 
 
 def test_misses_name_query_ids_by_slice_and_never_text(tmp_path):
     _, outcomes = load_outcomes(_run(tmp_path), "validation")
     found = misses(outcomes, "hybrid_rerank", depth=50)
-    assert found["inline_nonacl / broad"]["not_in_pool"] == ["q4"]
-    assert found["inline_acl / specific"]["beyond_depth"] == ["q3"]
-    assert found["manual_acl / specific"] == {"queries": 1, "not_in_pool": [], "beyond_depth": []}
+    assert found["set_d / 0"]["not_in_pool"] == ["q4"]
+    assert found["set_c / 1"]["beyond_depth"] == ["q3"]
+    assert found["set_a / 1"] == {"queries": 1, "not_in_pool": [], "beyond_depth": []}
 
 
-def test_the_published_rows_fill_every_cell():
-    assert all(len(values) == len(LITSEARCH_CELLS) for values in PUBLISHED.values())
-    assert PUBLISHED["BM25"] == (37.4, 38.5, 55.8, 48.6, 62.6, 73.5)
-
-
-def test_the_report_sets_litsearch_runs_beside_the_paper_and_others_apart(tmp_path):
+def test_the_report_names_the_losses_and_query_ids_only(tmp_path):
     report = render_gaps(_run(tmp_path), focus="hybrid_rerank")
     text = report.read_text()
-    assert "GritLM-7B" in text and "q4" in text
-    assert json.loads((report.parent / "gaps.json").read_text())["comparable_to_published"]
-
-    other = render_gaps(_run(tmp_path / "ours", papers="database"), focus="hybrid_rerank")
-    assert "GritLM-7B" not in other.read_text()
+    assert "Where the gold paper is lost" in text and "q4" in text
+    data = json.loads((report.parent / "gaps.json").read_text())
+    assert set(data["splits"]["validation"]) == {"queries", "stage_losses", "gold_ranks", "misses"}

@@ -22,7 +22,9 @@ DEFAULT_SEARCH_PATH = Path("configs/search.yaml")
 DEFAULT_EXPERIMENT_PATH = Path("configs/experiments/retrieval.yaml")
 DEFAULT_EVALUATION_PATH = Path("configs/evaluation.yaml")
 DEFAULT_SMOKE_PATH = Path("data/fixtures/retrieval-smoke")
-DEFAULT_DATASET_PATH = Path("data/fixtures/retrieval")
+DEFAULT_DATASET_PATH = Path("data/fixtures/retrieval-sections")
+# S1's question text: derived from corpus papers, so it lives under DATA_DIR, never in git.
+DEFAULT_QUERY_TEXT = Path("benchmarks/sections-v1/queries.jsonl")
 
 
 def default_data_dir() -> Path | None:
@@ -980,16 +982,16 @@ def run_compare_reranker_precision(
     }
 
 
-def _litsearch_queries(data_dir: Path, split: str, dataset: Path) -> list[str]:
-    """In-domain LitSearch query text for one split, read from DATA_DIR only.
+def _dataset_queries(data_dir: Path, split: str, dataset: Path) -> list[str]:
+    """One split's query text for a frozen dataset (S1's by default), read from DATA_DIR.
 
-    The repository copy carries ids and splits but no query text: LitSearch
-    declares no license, so the text stays local and never lands in a report.
+    The repository copy carries ids and splits but no query text: the text is derived
+    from corpus papers, so it stays local and never lands in a report.
     """
 
     from .evaluation.datasets import hydrate, read_dataset
 
-    source = data_dir / "benchmarks" / "litsearch-dataset" / "queries.jsonl"
+    source = data_dir / DEFAULT_QUERY_TEXT
     texts = {
         str(row["query_id"]): str(row["query"])
         for row in (json.loads(line) for line in source.read_text(encoding="utf-8").splitlines())
@@ -997,11 +999,7 @@ def _litsearch_queries(data_dir: Path, split: str, dataset: Path) -> list[str]:
     }
     frozen = hydrate(read_dataset(dataset), texts)
     in_split = {record.query_id for record in frozen.splits if record.split == split}
-    return [
-        record.query
-        for record in frozen.queries
-        if record.query_id in in_split and record.in_domain
-    ]
+    return [record.query for record in frozen.queries if record.query_id in in_split]
 
 
 def run_search_pilot(
@@ -1021,7 +1019,7 @@ def run_search_pilot(
     """Run the real service over a query set and report every stage's timing.
 
     Handwritten ``--query`` strings come back with their top results, to be
-    quoted as trace examples. LitSearch queries report aggregates only, and
+    quoted as trace examples. Dataset queries report aggregates only, and
     their traces, if kept, are written under DATA_DIR, never the repository.
     """
 
@@ -1043,7 +1041,7 @@ def run_search_pilot(
     from .search.sparse import SparseRetriever
 
     handwritten = bool(queries)
-    texts = queries or _litsearch_queries(data_dir, split, dataset)
+    texts = queries or _dataset_queries(data_dir, split, dataset)
     if limit_queries is not None:
         texts = texts[:limit_queries]
     embedding = load_embedding_spec(models)
@@ -1141,7 +1139,7 @@ def run_search_pilot(
                 handle.write(json.dumps(row, default=str) + "\n")
     return {
         "mode": mode,
-        "source": "handwritten" if handwritten else f"litsearch:{split}:in_domain",
+        "source": "handwritten" if handwritten else f"{dataset}:{split}",
         "queries": len(texts),
         "models": {
             "embedding": model.identity,
@@ -1156,29 +1154,6 @@ def run_search_pilot(
         "failures": dict(failures),
         "traces": str(traces_path) if traces_path else None,
         "examples": examples,
-    }
-
-
-def run_litsearch_snapshot(*, out: Path, source: Path | None, data_dir: Path) -> dict[str, Any]:
-    """Write LitSearch's corpus as a snapshot under the exports directory, offline."""
-
-    import yaml
-
-    from .evaluation.litsearch import local_paths, write_litsearch_snapshot
-
-    evaluation = yaml.safe_load(DEFAULT_EVALUATION_PATH.read_text(encoding="utf-8"))
-    pinned = evaluation["benchmarks"]["litsearch"]
-    root = source or data_dir / "benchmarks" / "litsearch"
-    destination = _snapshot_path(out, data_dir, DEFAULT_ARTIFACTS_PATH)
-    manifest = write_litsearch_snapshot(
-        local_paths(root, pinned["checksums"]),
-        destination,
-        run_id=destination.name,
-        revision=pinned["revision"],
-    )
-    return {
-        "out": str(destination / "manifest.json"),
-        **{key: manifest[key] for key in ("counts", "digests", "golds")},
     }
 
 
@@ -1812,17 +1787,6 @@ def _parser() -> argparse.ArgumentParser:
     chat_eval.add_argument("--out", type=Path, default=Path("reports/chat"))
     chat_eval.add_argument("--max-spend-usd", type=float, required=True)
     chat_eval.add_argument("--limit", type=int, default=None)
-    litsearch_snapshot = evaluation_commands.add_parser(
-        "litsearch-snapshot",
-        help="LitSearch's corpus_clean as a corpus snapshot, for its own release (E3)",
-    )
-    litsearch_snapshot.add_argument(
-        "--out", type=Path, default=Path("litsearch-v1"), help="relative to the exports directory"
-    )
-    litsearch_snapshot.add_argument(
-        "--source", type=Path, default=None, help="defaults to DATA_DIR/benchmarks/litsearch"
-    )
-    litsearch_snapshot.add_argument("--data-dir", type=Path, default=None)
     orb_fetch = evaluation_commands.add_parser(
         "orb-fetch", help="download Open RAG Bench at its pinned revision, offline"
     )
@@ -2054,10 +2018,6 @@ def main(argv: list[str] | None = None) -> int:
         if result["regressed"]:
             print(json.dumps(result, sort_keys=True, default=str))
             return 1
-    elif args.command == "eval" and args.eval_command == "litsearch-snapshot":
-        result = run_litsearch_snapshot(
-            out=args.out, source=args.source, data_dir=_data_dir(args.data_dir, parser)
-        )
     elif args.command == "eval" and args.eval_command == "report":
         from .evaluation.report import render_report
 

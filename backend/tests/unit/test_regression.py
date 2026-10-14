@@ -344,16 +344,16 @@ def test_a_config_naming_an_unknown_baseline_is_refused(tmp_path):
         load_experiment(path)
 
 
-def test_the_in_domain_slice_is_the_frozen_150_52_48():
-    dataset = read_dataset(ROOT / "data" / "fixtures" / "retrieval")
+def test_the_default_experiment_reads_s1s_frozen_190_190_191():
+    experiment = load_experiment(EXPERIMENT)
+    dataset = read_dataset(experiment.dataset)
     counts = {
-        split: len(select_queries(dataset, split, "in_domain"))
+        split: len(select_queries(dataset, split, experiment.slice))
         for split in ("development", "validation", "test")
     }
-    assert counts == {"development": 150, "validation": 52, "test": 48}
-    everything = select_queries(dataset, "validation", "all")
-    # Queries with no gold paper in our corpus have nothing to recall and are left out.
-    assert all(query.relevant for query in everything)
+    assert counts == {"development": 190, "validation": 190, "test": 191}
+    # One gold paper per question, in our corpus.
+    assert all(len(query.relevant) == 1 for query in select_queries(dataset, "validation", "all"))
 
 
 def test_the_small_model_pin_puts_its_query_instruction_in_its_identity():
@@ -561,10 +561,7 @@ def test_a_variant_may_find_its_candidates_through_chunks(tmp_path):
     assert by_name["hybrid"].candidates is None
     assert by_name["hybrid_chunks"].candidates == "chunks"
     assert by_name["hybrid_both"].candidates == "both"
-    # Unset follows the shared file over our corpus, and stays at paper level over a
-    # packaged snapshot corpus, which was never chunked.
-    from dataclasses import replace
-
+    # Unset follows the shared file.
     from copilot.evaluation.retrieval import candidate_source
     from copilot.search.service import SearchConfig, load_search_config
 
@@ -572,9 +569,7 @@ def test_a_variant_may_find_its_candidates_through_chunks(tmp_path):
     assert shipped.candidates_source == "chunks"
     assert candidate_source(experiment, by_name["hybrid"], shipped) == "chunks"
     assert candidate_source(experiment, by_name["hybrid"], SearchConfig()) == "papers"
-    snapshot = replace(experiment, papers="snapshot")
-    assert candidate_source(snapshot, by_name["hybrid"], shipped) == "papers"
-    assert candidate_source(snapshot, by_name["hybrid_chunks"], shipped) == "chunks"
+    assert candidate_source(experiment, by_name["hybrid_chunks"], SearchConfig()) == "chunks"
 
 
 def test_a_candidate_source_outside_the_three_is_refused(tmp_path):
@@ -669,21 +664,6 @@ def test_a_guard_must_name_a_measured_metric_and_a_positive_drop(tmp_path, guard
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     with pytest.raises(ExperimentError, match="decision.guards"):
         load_experiment(path)
-
-
-def test_the_first_stage_config_pre_registers_a_guarded_recall_rule():
-    experiment = load_experiment(ROOT / "configs" / "experiments" / "m2-first-stage.yaml")
-    assert experiment.decision["primary"] == "recall@50"
-    assert experiment.decision["order"] == [
-        "hybrid_rerank",
-        "hybrid_rerank_chunks",
-        "hybrid_rerank_both",
-    ]
-    assert experiment.decision["guards"] == [{"metric": "ndcg@10", "max_drop": 0.03}]
-    assert experiment.decision["require_undegraded"] is True
-    by_name = {variant.name: variant for variant in experiment.variants}
-    assert by_name["hybrid_rerank_both"].candidates == "both"
-    assert by_name["hybrid_rerank_both"].baseline is None
 
 
 def test_the_search_file_names_its_candidate_source_and_refuses_an_unknown_one(tmp_path):

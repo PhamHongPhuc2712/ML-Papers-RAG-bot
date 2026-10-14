@@ -2,9 +2,9 @@
 
 One rule shapes this module. A result the dataset never labelled is
 *unjudged*, not irrelevant — scoring it as a miss understates a system against
-a sparsely labelled benchmark, and quietly so. LitSearch labels one gold paper
-per query out of 64,183; our own corpus holds many more papers that would
-answer the same question. So ``evaluate`` returns coverage alongside every
+a sparsely labelled benchmark, and quietly so. Open RAG Bench and S1 label one
+gold paper per query; our corpus holds many more papers that would answer the
+same question. So ``evaluate`` returns coverage alongside every
 score and the caller cannot obtain one without the other (spec §11).
 
 Gains are graded 0–3 where the dataset supports it and binary where it does

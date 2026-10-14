@@ -44,9 +44,17 @@ recall gaps) are done, and release `m2-20260924T095724Z` is **active** in Qdrant
 paper and 3,426,221 chunk points.
 `copilot_v2` is migrated to `0009_llm_call_purpose_chat` (accounts, chats, the `chat` ledger
 purpose, 2026-10-11), after the hosted-LLM spend ledger (`0005`) and a wider ordering mode for
-`hybrid_rerank_llm` (`0006`). E3 (LitSearch's own corpus, the primary G2 evidence) selects
-`hybrid_rerank` under the pre-registered rule, superseding P2.5's underpowered "retain
-BM25" (`reports/e3-litsearch-baselines.md`).
+`hybrid_rerank_llm` (`0006`).
+
+**LitSearch was retired on 2026-10-14 (the developer's decision): evaluation sticks to Open RAG
+Bench and S1.** Its code (`evaluation/litsearch.py`, `eval litsearch-snapshot`, the harness's
+`papers: snapshot` / `labels: corpusid` mode), its 597-query dataset over our corpus
+(`data/fixtures/retrieval/`), its experiment configs, its reports (E1, E3, P2.6's
+`m2-retrieval-gaps.md`, G2's `m2-locked-test.md`, `m2-labels.md`) and its data under `DATA_DIR` and
+in Qdrant were deleted; git history keeps the reports. G2 and the P2.6 and S2 decisions were made
+on that evidence and stand as recorded. The default dataset for `eval retrieval` and `search
+pilot` is now S1's (`data/fixtures/retrieval-sections/`); the harness's `labels` and `papers` keys
+accept only `paper_id` and `database`.
 
 **LLM reranking** (`docs/superpowers/plans/2026-10-01-llm-reranking.md`, L1–L5) adds an
 opt-in `hybrid_rerank_llm` mode on `gpt-6-luna`, served when `LLM_RERANK_MODEL` names a
@@ -57,18 +65,13 @@ network. `llm spend [--day | --run]` reports calls, tokens and cost. An evaluati
 LLM variant needs `eval retrieval ... --max-spend-usd N`. It is refused when its worst case
 exceeds N and stopped once its ledger spend does.
 
-**P2.6 is done (2026-10-06).** E3 and P2.5 had measured three gaps in `hybrid_rerank`:
-first-stage misses for 10–21% of queries, a depth-50 cut dropping 7.6–9.1 more points,
-and 17–51% rerank timeouts on a shared GPU. Outcome (`reports/m2-retrieval-gaps.md`): a
-larger pool and a deeper rerank are not levers; most misses describe what only a paper's
-body says; on our corpus, **candidates found through the chunk collection** (each paper
-scored by its best evidence chunk) were pre-registered and promoted on validation
-(Recall@50 +0.135 [+0.058, +0.231], nDCG@10 +0.060 [+0.025, +0.097], p95 597 ms) and are
-now `candidates.source: chunks` in `configs/search.yaml` (spec §7). LitSearch's release
-has no chunk collection and stays at paper level. GPU policy: evaluate and demo only on an
-idle GPU. **The locked test split was run once on 2026-10-06** with the user's go-ahead
-(`reports/m2-locked-test.md`): G2 is met and the M2 release is `hybrid_rerank` over
-chunk-level candidates. The test split is spent for this release. The cold start (first
+**P2.6 is done (2026-10-06).** **Candidates found through the chunk collection** (each paper
+scored by its best evidence chunk) were pre-registered and promoted on validation and are
+`candidates.source: chunks` in `configs/search.yaml` (spec §7); Open RAG Bench reproduced the
+gain on a second corpus (+0.22 to +0.25 nDCG@10, `reports/orb-text.md`). GPU policy: evaluate and
+demo only on an idle GPU. G2 was met on 2026-10-06 by a locked test run once with the user's
+go-ahead; the M2 release is `hybrid_rerank` over chunk-level candidates. (The evidence for both
+was LitSearch-based and was deleted with it on 2026-10-14.) The cold start (first
 queries after a Qdrant restart missing their deadlines) is handled since R3 by the startup warm-up
 (`reports/m5-drills.md`).
 
@@ -199,7 +202,7 @@ forward without a demonstrated need.
   Public corpus data and private uploads never share a Qdrant collection or storage
   namespace. **Hugging Face is an offline artifact destination** and is never queried
   during a user request. Three offline callers contact it — `corpus mirror` for the
-  corpus, `evaluation/litsearch.py` for the benchmark and `search fetch-model` for the
+  corpus, `eval orb-fetch` for Open RAG Bench and `search fetch-model` for the
   embedding and reranker weights — and all fetch at a pinned revision. Nothing in the
   serving path may join them.
 - Never report tests, benchmarks, corpus coverage or user observations that did not
@@ -289,29 +292,17 @@ both models and warms every stage once. `frontend/openapi.json` is the published
 — re-export it after any API change, or `test_search_api.py` fails.
 
 Retrieval experiments (P2.5): `configs/experiments/retrieval.yaml` lists the variants and
-the decision rule, fixed before results are seen. Development tunes, validation chooses,
+the decision rule, fixed before results are seen, over S1's passage questions (190 / 190 / 191;
+S1's test split is unread). Development tunes, validation chooses,
 and test runs only with `--locked-test` — once, for a release decision.
 `reports/retrieval/README.md` explains the outputs. BGE-small lives in its own release,
 `m2-20260924T095724Z-bge-small`, paper collection only and never activated.
 
 ```bash
-uv run --env-file .env --project backend python -m copilot.cli eval retrieval --split validation --out reports/retrieval/pilot
-uv run --project backend python -m copilot.cli eval report --out reports/retrieval/pilot
+uv run --env-file .env --project backend python -m copilot.cli eval retrieval --split validation --out reports/retrieval/sections
+uv run --project backend python -m copilot.cli eval report --out reports/retrieval/sections
 uv run --project backend python -m copilot.cli eval compare --baseline A/validation/metrics.json --candidate B/validation/metrics.json
 uv run --project backend python -m copilot.cli eval smoke        # offline, frozen outputs; --update to re-freeze
-```
-
-E3 runs the same harness over LitSearch's own corpus: `eval litsearch-snapshot` writes its
-64,183 documents as a snapshot under `${DATA_DIR}/exports/litsearch-v1/` — never in git;
-LitSearch has no license — keyed by `uuid5` of each corpusid. `litsearch-v1` is a separate
-release, paper collection only, never activated. `configs/experiments/e3-litsearch.yaml`
-scores by corpusid (`labels: corpusid`) and reads paper text from that snapshot
-(`papers: snapshot`), since LitSearch's papers are not in PostgreSQL.
-
-```bash
-uv run --env-file .env --project backend python -m copilot.cli eval litsearch-snapshot
-uv run --env-file .env --project backend python -m copilot.cli search build-index --manifest litsearch-v1/manifest.json --release litsearch-v1 --collections papers
-uv run --env-file .env --project backend python -m copilot.cli eval retrieval --config configs/experiments/e3-litsearch.yaml --split validation --out reports/retrieval/e3-litsearch
 ```
 
 Open RAG Bench (ORB plan, O1–O3): Vectara's 1,000 arXiv papers and 1,914 text-only

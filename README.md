@@ -93,12 +93,10 @@ bootstrap over query families for retrieval, Wilson for accuracy.
 
 | What | Result | Evidence |
 |---|---|---|
-| Paper retrieval, G2 locked test on LitSearch's own corpus (118 queries) | `hybrid_rerank` nDCG@10 **0.550** [0.473, 0.621] | [m2-locked-test](reports/m2-locked-test.md) |
-| Paper retrieval on our corpus, LitSearch's in-domain test slice (48 queries) | `hybrid_rerank` nDCG@10 **0.582** [0.467, 0.704] | [m2-locked-test](reports/m2-locked-test.md) |
 | Retrieval on Open RAG Bench, all 1,914 text questions | `hybrid` nDCG@10 **0.948** [0.936, 0.959] | [orb-text](reports/orb-text.md) |
 | Answering on Open RAG Bench, frozen 400, haiku.rag's rubric | **0.880** [0.844, 0.908]. With the chat's `StructuredGenerator` (C4): **0.884** [0.849, 0.912], McNemar p = 0.824, adopted | [orb-text](reports/orb-text.md) |
 | Follow-up answering, 43 frozen ORB conversations (C7) | condensed **0.791** [0.648, 0.886], raw 0.674 [0.525, 0.795], standalone ceiling 0.930; McNemar p = 0.227, so by the rule condensing is **off** (underpowered) | [chat-followups](reports/chat-followups.md) |
-| What the search page's reranker reads (S2, 190 passage questions + 52 paper-level) | title + chunk gains **+0.348** [+0.292, +0.408] nDCG@10 on passage questions but fails the paper-level guard (−0.065 [−0.167, +0.044]), so it keeps reading **abstracts** | [m5-rerank-text](reports/m5-rerank-text.md) |
+| Search on our corpus, S1's 190 passage questions (validation) | `hybrid_rerank` reading abstracts nDCG@10 **0.350**; reading title + chunk **0.698**, a gain of **+0.348** [+0.292, +0.408]. By S2's registered rule, whose paper-level guard it failed, the search page keeps reading abstracts | [m5-rerank-text](reports/m5-rerank-text.md) |
 | Failure drills on the local stack (R3) | 7 of 8 pass, 1 not possible; one failure found and fixed | [m5-drills](reports/m5-drills.md) |
 
 ## Limitations

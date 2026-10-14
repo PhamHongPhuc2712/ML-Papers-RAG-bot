@@ -5,12 +5,16 @@
 and abstract (`rerank.text: abstract`, shipped)?
 
 **Answer: no, by the registered rule. `abstract` stays.** On S1's section-level questions,
-reading the chunk roughly doubles nDCG@10 (0.350 → 0.698). On LitSearch's in-domain paper-level
-queries, the guard, the candidate's interval cannot rule out a loss larger than 0.03
-(−0.065 [−0.167, +0.044]). It also degraded one of those queries. The rule needs both guards,
-so nothing is promoted and the locked test split is not run. The other chunk-reading variant
-would have failed the same guard (−0.079 lower bound), so the outcome does not depend on
-which variant was the candidate.
+reading the chunk roughly doubles nDCG@10 (0.350 → 0.698). On the paper-level guard set
+(LitSearch's in-domain queries), the candidate's interval could not rule out a loss larger than
+0.03, and it degraded one of those queries. The rule needs both guards, so nothing is promoted
+and the locked test split is not run. The other chunk-reading variant would also have failed
+the guard.
+
+*LitSearch was retired on 2026-10-14 (the developer's decision). The paper-level guard's
+results, its config (`m5-rerank-text-papers.yaml`) and its run folder were deleted with it, and
+git history keeps them. The decision above was made on them and stands as recorded; it can no
+longer be re-measured.*
 
 ## The rule (registered before any number, commit `f7d2f2e`)
 
@@ -52,26 +56,16 @@ Paired nDCG@10 against `hybrid_rerank`:
 - `title_chunk_1024`: +0.348 [+0.292, +0.408].
 - `title_chunk_512`: +0.314 [+0.253, +0.376], 101 wins / 17 losses.
 
-**Paper level** (LitSearch in-domain, 52 queries, `m5-rerank-text-papers-validation-20261012T102408Z`):
-
-| Variant | nDCG@10 | MRR@10 | Recall@10 | Recall@50 | p95 ms | Degraded |
-|---|---|---|---|---|---|---|
-| `hybrid_rerank` | 0.576 [0.450, 0.686] | 0.535 | 0.712 | 0.904 | 764 | 0 |
-| `title_chunk_1024` | 0.511 [0.386, 0.634] | 0.477 | 0.615 | 0.904 | 1,223 | **1** |
-| `title_chunk_512` | 0.582 [0.476, 0.695] | 0.518 | 0.788 | 0.904 | 714 | 0 |
-
-Paired nDCG@10 against `hybrid_rerank`:
-- `title_chunk_1024`: −0.065 [−0.167, +0.044].
-- `title_chunk_512`: +0.006 [−0.079, +0.099], 12 wins / 13 losses.
+**Paper level:** removed with LitSearch on 2026-10-14 (see the note at the top).
 
 **The rule, applied to the candidate `title_chunk_1024`** (0.698 > 0.664):
 
 | Condition | Value | Holds |
 |---|---|---|
 | (1) section-level gain wholly above zero | +0.348 [+0.292, +0.408] | yes |
-| (2) paper-level loss ruled out beyond 0.03 | lower bound −0.167 | **no** |
-| (3) p95 ≤ 3.0 s on both sets | 1.28 s / 1.22 s | yes |
-| (3) no degraded query on both sets | 0 / **1** | **no** |
+| (2) paper-level loss ruled out beyond 0.03 | (removed with LitSearch) | **no** |
+| (3) p95 ≤ 3.0 s on both sets | 1.28 s / (removed) | yes |
+| (3) no degraded query on both sets | 0 / **1** (paper level, removed) | **no** |
 
 **Not promoted.** `configs/search.yaml`, `configs/chat.yaml` and spec §7 are unchanged. The
 chat keeps its own `search.overrides` (title + chunk at a 2.5 s rerank deadline, from O5),
@@ -90,22 +84,21 @@ which this decision does not touch.
 No chunk-reading variant degraded a query, so the plan's early stop did not apply.
 `hybrid_rerank` ran first against a cold Qdrant page cache: its lexical p95 was 267 ms against
 64–70 ms for the variants after it. That is the cold-start gap already recorded in
-`reports/m2-locked-test.md` and `reports/m3-chat.md`.
+`reports/m3-chat.md` (and G2's locked-test record, deleted with LitSearch).
 
 ## What this says
 
 - **On passage questions the chunk is what matters,** reproducing ORB on our own corpus. The
   gain is in the head (MRR@10 0.30 → 0.67); Recall@50 is identical because the candidates are
   the same.
-- **On paper-level queries the evidence is too thin to clear the guard.** The guard set has 52
-  queries, and its intervals are about ±0.1 wide. The 512-token variant is level with
-  `abstract` (+0.006), while the 1,024-token variant points down. Ruling out a 0.03 loss on 52
-  queries would need a nearly loss-free candidate. The guard is underpowered, the way C7's
-  rule was. The registered rule still decides, and this report does not reinterpret it.
+- **On paper-level queries the evidence was too thin to clear the guard.** The guard set was
+  small, so ruling out a 0.03 loss needed a nearly loss-free candidate. It was underpowered, the
+  way C7's rule was. The registered rule still decides, and this report does not reinterpret it.
 - **Latency.** At 512 tokens under the shipped 1.5 s deadline, the chunk reader costs the same
   as today's reranker (p95 0.71 s vs 0.73 s). At 1,024 tokens it needs the longer deadline and
   still degraded a query.
-- **Revisiting the decision.** That needs a new registration and a larger paper-level set.
+- **Revisiting the decision.** That needs a new registration and a new paper-level set, since
+  LitSearch's was retired.
   This validation split has now been read. S1's test split stays unread, so it is still
   available for a later registered decision.
 
@@ -114,7 +107,6 @@ No chunk-reading variant degraded a query, so the plan's early stop did not appl
 ```text
 eval retrieval --config configs/experiments/m5-rerank-text.yaml --split development --out reports/retrieval/m5-rerank-text
 eval retrieval --config configs/experiments/m5-rerank-text.yaml --split validation --out reports/retrieval/m5-rerank-text
-eval retrieval --config configs/experiments/m5-rerank-text-papers.yaml --split validation --out reports/retrieval/m5-rerank-text-papers
 ```
 
 - **GPU.** Every run started behind the idle gate: 30 one-second samples with a median of 0%

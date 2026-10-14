@@ -1,5 +1,4 @@
 {
-  "comparable_to_published": false,
   "depth": 50,
   "focus": "hybrid_rerank",
   "run": "reports/retrieval/orb-text",
@@ -34,7 +33,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1730,
               "11-20": 13,
               "2-5": 113,
@@ -72,7 +71,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1110,
               "11-20": 63,
               "2-5": 226,
@@ -110,7 +109,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1641,
               "11-20": 22,
               "2-5": 159,
@@ -148,7 +147,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1061,
               "11-20": 90,
               "2-5": 248,
@@ -186,7 +185,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1741,
               "11-20": 15,
               "2-5": 109,
@@ -224,7 +223,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1171,
               "11-20": 57,
               "2-5": 250,
@@ -262,7 +261,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1268,
               "11-20": 96,
               "2-5": 257,
@@ -300,7 +299,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "1": 1245,
               "11-20": 53,
               "2-5": 237,
@@ -311,19 +310,9 @@
           }
         }
       },
-      "litsearch_cutoffs": {
-        "bm25": {},
-        "bm25_papers": {},
-        "dense": {},
-        "dense_papers": {},
-        "hybrid": {},
-        "hybrid_papers": {},
-        "hybrid_rerank": {},
-        "hybrid_rerank_papers": {}
-      },
       "misses": {
         "hybrid_rerank": {
-          "orb_abstractive / specific": {
+          "orb_abstractive / 1": {
             "beyond_depth": [
               "d9653b7c-5ace-4aa4-ad81-39c3e739a67c",
               "f6ed58d1-f346-4e32-b520-17dacd41dc42"
@@ -336,7 +325,7 @@
             ],
             "queries": 893
           },
-          "orb_extractive / specific": {
+          "orb_extractive / 1": {
             "beyond_depth": [
               "01416eb6-2408-491e-a971-5647f51d7af8",
               "57974a20-83f8-4a30-b935-ca111cc76f08",
@@ -384,7 +373,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.001567398119122257,
               "not_in_pool": 0.011494252873563218,
               "queries": 1914,
@@ -414,7 +403,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.03239289446185998,
               "not_in_pool": 0.13636363636363635,
               "queries": 1914,
@@ -444,7 +433,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.007836990595611285,
               "not_in_pool": 0.012539184952978056,
               "queries": 1914,
@@ -474,7 +463,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.03918495297805643,
               "not_in_pool": 0.12800417972831765,
               "queries": 1914,
@@ -504,7 +493,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,
@@ -534,7 +523,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.056948798328108674,
               "not_in_pool": 0.0768025078369906,
               "queries": 1914,
@@ -564,7 +553,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.004702194357366771,
               "not_in_pool": 0.006269592476489028,
               "queries": 1914,
@@ -594,7 +583,7 @@
             }
           },
           "specificity": {
-            "specific": {
+            "1": {
               "beyond_depth": 0.056948798328108674,
               "not_in_pool": 0.0768025078369906,
               "queries": 1914,

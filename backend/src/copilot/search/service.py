@@ -1001,8 +1001,8 @@ class SearchService:
 
         Scores become ordinal (head size minus position, higher is better): the
         LLM gives an order, not a calibrated score. When the cross-encoder failed,
-        the head is the RRF order and the LLM still reorders it, as LitSearch's
-        listwise reranker reorders a BM25 list. The cross-encoder's own warning
+        the head is the RRF order and the LLM still reorders it, as a listwise
+        reranker reorders a BM25 list. The cross-encoder's own warning
         stays, so the ordering is still marked degraded.
         """
 

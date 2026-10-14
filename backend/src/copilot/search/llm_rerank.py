@@ -1,4 +1,4 @@
-"""Listwise reranking by a hosted LLM, as LitSearch's best published system does.
+"""Listwise reranking by a hosted LLM (RankGPT-style).
 
 One prompt shows the whole reranked head — each candidate's title and abstract,
 cut to a word budget, under a bracketed identifier — and asks for the order
@@ -75,7 +75,7 @@ def build_messages(
 def parse_permutation(answer: str, count: int) -> tuple[list[int], int]:
     """Indices into the candidates, best first, and how many the model itself placed.
 
-    Unranked candidates follow in their incoming order, as LitSearch's reranker does, so the
+    Unranked candidates follow in their incoming order, as RankGPT-style rerankers do, so the
     result is always a permutation of exactly the candidates given.
     """
 

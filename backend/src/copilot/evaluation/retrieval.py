@@ -70,14 +70,11 @@ SLICES = ("in_domain", "all")
 # Where a variant's first stage finds candidates (P2.6 step 4): the paper collection,
 # the chunk collection collapsed to each paper's best evidence chunk, or each branch's
 # RRF of both (``CANDIDATE_SOURCES``). Unset, a variant follows the shared search
-# file, except over a packaged snapshot corpus, which has no chunks and stays at paper
-# level. "papers" records nothing extra, so every run recorded before it reads as it was.
-# Which id a label names: our corpus's paper id (matched by E1), or a LitSearch
-# corpusid scored against a ``litsearch-v1`` release built from LitSearch's corpus.
-LABELS = ("paper_id", "corpusid")
-# Where paper metadata and reranker text come from: PostgreSQL for our corpus, the
-# release's own snapshot for a corpus that was never ingested (LitSearch's).
-PAPER_SOURCES = ("database", "snapshot")
+# file. "papers" records nothing extra, so every run recorded before it reads as it was.
+# Which id a label names, and where paper metadata comes from. One value each since
+# LitSearch was retired (2026-10-14); the keys stay so recorded configs still load.
+LABELS = ("paper_id",)
+PAPER_SOURCES = ("database",)
 TIMING_METHODOLOGY = (
     "Queries run one at a time through SearchService.rank with the production deadlines "
     "of configs/search.yaml; seconds are wall-clock around rank(), which includes both "
@@ -214,15 +211,11 @@ def _search_overrides(name: str, mode: str, raw: object) -> tuple[tuple[str, Any
 def candidate_source(experiment: Experiment, variant: Variant, config: SearchConfig) -> str:
     """What this variant's branches search: its own choice, else the shared file's.
 
-    A corpus whose papers come from a snapshot was never parsed, so it has no chunk
-    collection and is searched at paper level whatever the shared file says; the
-    resolved value is what the manifest records.
+    The resolved value is what the manifest records.
     """
 
     if variant.candidates is not None:
         return variant.candidates
-    if experiment.papers == "snapshot":
-        return "papers"
     return config.candidates_source
 
 
@@ -502,13 +495,9 @@ def select_queries(
     if split not in (*SPLITS, RETRIEVAL_SPLIT):
         raise ExperimentError("unknown_split", split)
     assigned = {record.query_id: record for record in dataset.splits}
-    from .litsearch import litsearch_paper_id
-
     grades: dict[str, dict[str, int]] = {}
     for qrel in dataset.qrels:
-        if labels == "corpusid":
-            grades.setdefault(qrel.query_id, {})[litsearch_paper_id(qrel.corpusid)] = qrel.grade
-        elif qrel.paper_id is not None:
+        if qrel.paper_id is not None:
             grades.setdefault(qrel.query_id, {})[qrel.paper_id] = qrel.grade
     chosen = []
     for query in sorted(dataset.queries, key=lambda record: record.query_id):
@@ -536,7 +525,7 @@ def select_queries(
 
 
 def load_queries(experiment: Experiment, split: str, data_dir: Path) -> list[EvalQuery]:
-    """Frozen labels from the repository, query text from DATA_DIR (it has no license)."""
+    """Frozen labels from the repository, query text from DATA_DIR (never in git)."""
 
     source = data_dir / experiment.query_text
     texts = {
@@ -1261,35 +1250,6 @@ class PinnedModels:
         return LlmListwiseReranker(client, load_prompt(LISTWISE_PROMPT))
 
 
-def snapshot_papers(release: ReleaseRecord) -> MemoryPapers:
-    """Paper metadata and reranker text from the snapshot a release was built from.
-
-    For a corpus that was never ingested into PostgreSQL — LitSearch's — this is
-    the only copy of its titles and abstracts, and the same text the index encoded.
-    """
-
-    import pyarrow.parquet as pq
-
-    from ..corpus.export import shard_paths, validate_manifest
-
-    manifest_path = Path(str(release.counts.get("manifest", "")))
-    manifest = validate_manifest(manifest_path)
-    rows: dict[str, PaperRow] = {}
-    for shard in shard_paths(manifest, "papers"):
-        for row in pq.read_table(manifest_path.parent / shard).to_pylist():
-            rows[str(row["paper_id"])] = PaperRow(
-                paper_id=str(row["paper_id"]),
-                title=str(row["title"] or ""),
-                abstract=row.get("abstract"),
-                authors=(),
-                venue=str(row.get("venue") or ""),
-                year=int(row.get("year") or 0),
-                pdf_url=row.get("pdf_url"),
-                fulltext=row.get("parse_status") == "parsed",
-            )
-    return MemoryPapers(rows)
-
-
 def _release_facts(record: ReleaseRecord, client: Any) -> dict[str, Any]:
     build = record.counts.get("papers") if isinstance(record.counts, Mapping) else None
     vocabulary = build.get("vocabulary", {}) if isinstance(build, Mapping) else {}
@@ -1412,12 +1372,6 @@ def run_retrieval(
                 f"{variant.name}: release {experiment.release_for(variant)} has no chunk "
                 "collection to find candidates in",
             )
-    papers = (
-        {name: snapshot_papers(record) for name, record in releases.items()}
-        if experiment.papers == "snapshot"
-        else {}
-    )
-
     factory = models or PinnedModels(data_dir)
     embedders = {
         path: factory.embedder(path)
@@ -1484,7 +1438,6 @@ def run_retrieval(
                 dense=dense,
                 reranker=reranker,
                 config=configs[variant.name],
-                papers=papers.get(release.id),
                 listwise=listwise,
             )
             # Warm-up never spends: an LLM variant warms as the mode it builds on.
@@ -1609,9 +1562,6 @@ def build_manifest(
     parsing = yaml.safe_load(Path(experiment.parsing).read_text(encoding="utf-8")) or {}
     parser = (parsing.get("parser") or {}).get("parser_version")
     chunker = (parsing.get("chunker") or {}).get("chunker_version")
-    if experiment.papers == "snapshot":
-        # A benchmark corpus is packaged text: nothing was parsed or chunked.
-        parser = chunker = "none: packaged title and abstract"
     created = created or datetime.now(UTC)
     metered = {
         name: float(entry["llm"]["cost_usd"])

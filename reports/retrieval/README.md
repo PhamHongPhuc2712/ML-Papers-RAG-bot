@@ -15,22 +15,20 @@ reports/retrieval/<experiment>/
 ```
 
 `eval gaps` reads only the recorded `per_query.parquet` files, so it reruns nothing and needs
-no service, model or GPU. Per variant it reports recall at LitSearch's published cutoffs
-(R@20 broad, R@5 and R@20 specific, set beside the paper's Table 3 when the run is over
-LitSearch's own corpus); the share of gold papers returned within the depth, pooled but
-cut, or never pooled; the gold rank distribution; and, for one focus variant, the query ids
+no service, model or GPU. Per variant it reports the share of gold papers returned within
+the depth, pooled but cut, or never pooled; the gold rank distribution; and, for one focus variant, the query ids
 that lost their gold, per slice. It refuses the test split.
 
 ## Producing a run
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli eval retrieval \
-  --config configs/experiments/retrieval.yaml --split validation --out reports/retrieval/pilot
-uv run --project backend python -m copilot.cli eval report --out reports/retrieval/pilot
+  --config configs/experiments/retrieval.yaml --split validation --out reports/retrieval/sections
+uv run --project backend python -m copilot.cli eval report --out reports/retrieval/sections
 uv run --project backend python -m copilot.cli eval compare \
   --baseline OLD/validation/metrics.json --candidate NEW/validation/metrics.json
 uv run --project backend python -m copilot.cli eval smoke
-uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/e3-litsearch
+uv run --project backend python -m copilot.cli eval gaps --run reports/retrieval/orb-text
 ```
 
 A variant may override four search knobs, and only these: `candidates.per_branch` for any
@@ -96,12 +94,14 @@ compares against frozen outputs. That makes it the check CI can run.
 - **Tune on development, choose on validation, lock test.** Only a validation run
   produces a decision. The test split runs only with `--locked-test`, for a release
   decision, and no decision is ever computed from it.
-- **Unlabelled is unjudged.** Every score travels with judged coverage. LitSearch labels
-  the one paper each query was written from, so recall here is recall against that paper,
+- **Unlabelled is unjudged.** Every score travels with judged coverage. ORB and S1 label
+  the one paper each question was written from, so recall here is recall against that paper,
   not against every paper that would answer the query.
 
 ## What is not in git
 
-LitSearch's query text: it declares no license, so it stays under
-`${DATA_DIR}/benchmarks/litsearch-dataset/` and is re-attached at run time. The per-query
+Question text: ORB's is CC-BY-NC-4.0 (`${DATA_DIR}/benchmarks/orb/`) and S1's is derived from
+corpus papers (`${DATA_DIR}/benchmarks/sections-v1/`), so both stay under `DATA_DIR` and are
+re-attached at run time. LitSearch, the first benchmark, was retired on 2026-10-14; its
+experiment folders were deleted, and git history keeps them. The per-query
 files carry query ids, never query text.

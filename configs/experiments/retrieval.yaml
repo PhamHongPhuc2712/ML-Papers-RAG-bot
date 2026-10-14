@@ -3,7 +3,7 @@
 # identity; the manifest records this file's sha256.
 #
 #   eval retrieval --config configs/experiments/retrieval.yaml --split validation \
-#     --out reports/retrieval/pilot
+#     --out reports/retrieval/sections
 #
 # Tune on development, choose on validation. The test split runs only for a
 # release decision, with --locked-test, and never feeds a choice.
@@ -11,11 +11,13 @@ schema_version: 1
 name: m2-retrieval-pilot
 
 dataset:
-  # E2's frozen splits: ids, labels and splits in git, query text under DATA_DIR.
-  path: data/fixtures/retrieval
-  query_text: benchmarks/litsearch-dataset/queries.jsonl
-  # Only queries whose every gold paper is in our corpus (E1, E2): 150 / 52 / 48.
-  slice: in_domain
+  # S1's passage questions over our corpus (since LitSearch was retired, 2026-10-14): ids,
+  # labels and splits in git, question text under DATA_DIR. 190 / 190 / 191; S1's test split
+  # is unread and stays reserved for a registered release decision.
+  path: data/fixtures/retrieval-sections
+  query_text: benchmarks/sections-v1/queries.jsonl
+  labels: paper_id
+  slice: all
 
 corpus:
   # The frozen snapshot every variant reads, unless a variant names its own
