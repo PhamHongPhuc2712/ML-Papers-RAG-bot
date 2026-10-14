@@ -9,12 +9,18 @@ export function ChatSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [chats, setChats] = useState<ChatList["items"]>([]);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(() => {
     api.chats().then(
-      (list) => setChats(list.items),
+      (list) => {
+        setChats(list.items);
+        setFailed(false);
+      },
       (error: unknown) => {
         if (error instanceof ApiError && error.status === 401) router.replace(loginRedirect(window.location.pathname, true));
+        // Anything else (a database outage is a 503) is said, never shown as an empty history.
+        else setFailed(true);
       },
     );
   }, [router]);
@@ -35,6 +41,11 @@ export function ChatSidebar() {
   return (
     <nav aria-label="Chats" style={{ borderRight: "1px solid var(--border)", paddingRight: 12 }}>
       <p><Link href="/chat">New chat</Link></p>
+      {failed ? (
+        <p className="banner error" role="alert">
+          Your chats could not be loaded. <button type="button" onClick={load}>Retry</button>
+        </p>
+      ) : null}
       <ul style={{ listStyle: "none", padding: 0 }}>
         {chats.map((chat) => (
           <li key={chat.id} style={{ display: "flex", gap: 4, alignItems: "center" }}>

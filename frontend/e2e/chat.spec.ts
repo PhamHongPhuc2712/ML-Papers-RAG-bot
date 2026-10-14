@@ -99,3 +99,20 @@ test("an expired session sends you to sign in and back", async ({ page, request 
   expect(new URL(page.url()).searchParams.get("next")).toBe(here);
   await expect(page.getByRole("status")).toContainText("Your session expired");
 });
+
+test("a database outage is said, with a retry, never shown as an empty history", async ({ page, request }) => {
+  await page.getByLabel("Ask about ML papers").fill("How are sentence pairs formed?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
+  const chatUrl = page.url();
+  await request.post(`${MOCK}/__control/database?down=1`);
+  await page.goto(chatUrl);
+  await expect(page.getByRole("alert").filter({ hasText: "Your chats could not be loaded." })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "This chat could not be loaded." })).toBeVisible();
+  await request.post(`${MOCK}/__control/database?down=0`);
+  await page.getByRole("alert").filter({ hasText: "Your chats could not be loaded." }).getByRole("button", { name: "Retry" }).click();
+  await page.getByRole("alert").filter({ hasText: "This chat could not be loaded." }).getByRole("button", { name: "Retry" }).click();
+  await expect(chats(page)).toHaveCount(1);
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
+  await expect(page.getByText("could not be loaded")).toHaveCount(0);
+});

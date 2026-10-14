@@ -27,7 +27,9 @@ paper-level guard, so by the registered rule `rerank.text` stays `abstract`
 `copilot.requests` (route template, never a path or body), `llm spend` by purpose and `chat stats --day`.
 R2 is done (2026-10-14): `DELETE /v1/me` and `/account`, `users delete`, `backup create|restore` of the four
 user tables under `${DATA_DIR}/backups/` (restore refuses another revision or non-empty tables without
-`--replace`, and `--database-url` is required). **Next: R3–R4** (`2026-10-11-search-upgrade-and-release.md`).
+`--replace`, and `--database-url` is required). R3's drills are done (2026-10-14, `reports/m5-drills.md`): 7 of 8
+pass, drill 6 was not possible, and drill 2's hidden database outage on `/chat` is fixed. The cold start is still open
+(1 of 12 fresh searches failed after a restart). **Next: R4** (`2026-10-11-search-upgrade-and-release.md`).
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and

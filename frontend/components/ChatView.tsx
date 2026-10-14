@@ -19,6 +19,7 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
   const [draft, setDraft] = useState(about ? "In this paper, " : "");
   const [stage, setStage] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [focus, setFocus] = useState<{ message: string; evidence: string } | null>(null);
   const abort = useRef<AbortController | null>(null);
 
@@ -26,15 +27,23 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
     router.replace(loginRedirect(pathname, true));
   }
 
-  useEffect(() => {
-    if (!chatId) return;
-    api.chat(chatId).then(
-      (detail) => setMessages(detail.messages),
+  function loadChat(id: string) {
+    api.chat(id).then(
+      (detail) => {
+        setMessages(detail.messages);
+        setLoadFailed(false);
+      },
       (error: unknown) => {
         if (error instanceof ApiError && error.status === 401) expired();
         else if (error instanceof ApiError && error.status === 404) router.replace("/chat");
+        else setLoadFailed(true);
       },
     );
+  }
+
+  useEffect(() => {
+    if (!chatId) return;
+    loadChat(chatId);
     return () => abort.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
@@ -116,6 +125,11 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
         )}
       </ol>
       <div role="status" aria-live="polite">{stage ? <p className="muted">{STAGES[stage] ?? "Working…"}</p> : null}</div>
+      {loadFailed && chatId ? (
+        <p role="alert" className="banner error">
+          This chat could not be loaded. <button type="button" onClick={() => loadChat(chatId)}>Retry</button>
+        </p>
+      ) : null}
       {failure ? (
         <div role="alert" className="banner error">
           {failure.message}{" "}

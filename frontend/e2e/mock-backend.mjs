@@ -6,7 +6,7 @@ import { PAPERS, PASSWORD, USER } from "./fixtures.mjs";
 const PORT = Number(process.env.MOCK_BACKEND_PORT ?? 8799);
 let state;
 function reset() {
-  state = { expired: false, deleted: false, chats: new Map() };
+  state = { expired: false, deleted: false, databaseDown: false, chats: new Map() };
 }
 reset();
 
@@ -94,6 +94,7 @@ createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const path = url.pathname;
   if (path === "/__control/reset") { reset(); return json(res, 200, { ok: true }); }
+  if (path === "/__control/database") { state.databaseDown = url.searchParams.get("down") === "1"; return json(res, 200, { ok: true }); }
   if (path === "/__control/expire") { state.expired = true; return json(res, 200, { ok: true }); }
   if (path === "/v1/auth/token" && req.method === "POST") {
     const payload = await body(req);
@@ -126,6 +127,9 @@ createServer(async (req, res) => {
   if (path.startsWith("/v1/me") || path.startsWith("/v1/chats")) {
     if (!req.headers.authorization) return error(res, 401, "authentication_required", "sign in to continue");
     if (!authed(req)) return error(res, 401, state.expired ? "token_expired" : "token_invalid", "your session is not valid; sign in again");
+  }
+  if (state.databaseDown && path.startsWith("/v1/chats") && req.method === "GET") {
+    return error(res, 503, "database_unavailable", "database is unavailable", true);
   }
   if (path === "/v1/me" && req.method === "DELETE") {
     const payload = await body(req);
