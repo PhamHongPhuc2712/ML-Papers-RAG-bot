@@ -25,7 +25,9 @@ done (2026-10-12): the title+chunk reranker gains +0.35 nDCG@10 on passage quest
 paper-level guard, so by the registered rule `rerank.text` stays `abstract`
 (`reports/m5-rerank-text.md`); S1's test split is unread. R1 is done (2026-10-14): one JSON line per request on
 `copilot.requests` (route template, never a path or body), `llm spend` by purpose and `chat stats --day`.
-**Next: R2–R4** (`2026-10-11-search-upgrade-and-release.md`).
+R2 is done (2026-10-14): `DELETE /v1/me` and `/account`, `users delete`, `backup create|restore` of the four
+user tables under `${DATA_DIR}/backups/` (restore refuses another revision or non-empty tables without
+`--replace`, and `--database-url` is required). **Next: R3–R4** (`2026-10-11-search-upgrade-and-release.md`).
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and
@@ -384,6 +386,8 @@ uv run --env-file .env --project backend uvicorn --factory copilot.app:create_de
 uv run --project backend python -m copilot.cli api export-schema --out frontend/openapi.json
 uv run --env-file .env --project backend python -m copilot.cli chat stats --day 2026-10-11   # turns, errors, stage p50/p95, cost; no text
 uv run --env-file .env --project backend python -m copilot.cli llm spend --day 2026-10-12    # by model and by purpose
+uv run --env-file .env --project backend python -m copilot.cli backup create                 # user data to ${DATA_DIR}/backups/<UTC stamp>
+uv run --env-file .env --project backend python -m copilot.cli backup restore --from DIR --database-url URL [--replace]
 ```
 
 `.env`'s `DATABASE_URL` names `copilot_v2`, the live corpus. Building never activates;

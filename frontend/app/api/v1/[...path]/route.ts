@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, backendUrl } from "@/lib/server";
+import { endsSession } from "@/lib/session-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,12 @@ async function forward(request: Request, { params }: Context): Promise<Response>
     const value = upstream.headers.get(name);
     if (value) out.set(name, value);
   }
-  if (upstream.status === 401 && token) jar.delete(SESSION_COOKIE);
+  if (upstream.status === 401) {
+    // An error body is small: read it to tell an ended session from a wrong password.
+    const text = await upstream.text();
+    if (token && endsSession(upstream.status, text)) jar.delete(SESSION_COOKIE);
+    return new Response(text, { status: upstream.status, headers: out });
+  }
   // The body streams through unchanged: chat events arrive as the backend sends them.
   return new Response(upstream.body, { status: upstream.status, headers: out });
 }

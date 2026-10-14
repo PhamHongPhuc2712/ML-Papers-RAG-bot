@@ -6,7 +6,7 @@ import { PAPERS, PASSWORD, USER } from "./fixtures.mjs";
 const PORT = Number(process.env.MOCK_BACKEND_PORT ?? 8799);
 let state;
 function reset() {
-  state = { expired: false, chats: new Map() };
+  state = { expired: false, deleted: false, chats: new Map() };
 }
 reset();
 
@@ -22,7 +22,7 @@ const body = (req) =>
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => resolve(raw ? JSON.parse(raw) : {}));
   });
-const authed = (req) => req.headers.authorization === "Bearer token-alice" && !state.expired;
+const authed = (req) => req.headers.authorization === "Bearer token-alice" && !state.expired && !state.deleted;
 const summary = (p) => ({
   title: p.title, authors: p.authors, venue: p.venue, year: p.year,
   abstract: p.abstract, pdf_url: p.pdf_url, fulltext_indexed: p.fulltext_indexed,
@@ -97,7 +97,7 @@ createServer(async (req, res) => {
   if (path === "/__control/expire") { state.expired = true; return json(res, 200, { ok: true }); }
   if (path === "/v1/auth/token" && req.method === "POST") {
     const payload = await body(req);
-    if (payload.email?.toLowerCase() === USER.email && payload.password === PASSWORD) {
+    if (!state.deleted && payload.email?.toLowerCase() === USER.email && payload.password === PASSWORD) {
       state.expired = false;
       return json(res, 200, { access_token: "token-alice", token_type: "bearer", expires_in: 3600, request_id: randomUUID() });
     }
@@ -126,6 +126,14 @@ createServer(async (req, res) => {
   if (path.startsWith("/v1/me") || path.startsWith("/v1/chats")) {
     if (!req.headers.authorization) return error(res, 401, "authentication_required", "sign in to continue");
     if (!authed(req)) return error(res, 401, state.expired ? "token_expired" : "token_invalid", "your session is not valid; sign in again");
+  }
+  if (path === "/v1/me" && req.method === "DELETE") {
+    const payload = await body(req);
+    if (payload.password !== PASSWORD) return error(res, 401, "invalid_credentials", "the password is incorrect");
+    state.deleted = true;
+    state.chats.clear();
+    res.writeHead(204);
+    return res.end();
   }
   if (path === "/v1/me") return json(res, 200, { ...USER, request_id: randomUUID() });
   if (path === "/v1/chats" && req.method === "GET") {

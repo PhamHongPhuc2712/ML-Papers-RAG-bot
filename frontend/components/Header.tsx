@@ -11,7 +11,14 @@ export async function Header() {
         <Link href="/">Search</Link>
         <Link href="/chat">Chat</Link>
       </nav>
-      {signedIn ? <SignOutButton /> : <Link href="/login">Sign in</Link>}
+      {signedIn ? (
+        <span className="account">
+          <Link href="/account">Account</Link>
+          <SignOutButton />
+        </span>
+      ) : (
+        <Link href="/login">Sign in</Link>
+      )}
     </header>
   );
 }

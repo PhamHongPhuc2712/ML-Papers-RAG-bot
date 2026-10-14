@@ -1363,6 +1363,45 @@ def run_users_disable(*, database_url: str, email: str) -> dict[str, Any]:
         engine.dispose()
 
 
+def run_users_delete(*, database_url: str, email: str) -> dict[str, Any]:
+    from .identity.users import UserStore
+
+    engine = make_engine(database_url)
+    try:
+        store = UserStore(engine)
+        user_id = store.id_for(email)
+        deleted = user_id is not None and store.delete(user_id)
+        return {"email": email.strip().lower(), "deleted": deleted}
+    finally:
+        engine.dispose()
+
+
+def run_backup_create(*, database_url: str, data_dir: Path, out: Path | None) -> dict[str, Any]:
+    """Copy user data out under DATA_DIR/backups; never into git or a report."""
+
+    from datetime import UTC, datetime
+
+    from .backup import backup_dir, create_backup
+
+    target = backup_dir(data_dir, out, datetime.now(UTC))
+    engine = make_engine(database_url)
+    try:
+        manifest = create_backup(engine, target)
+    finally:
+        engine.dispose()
+    return {"out": str(target), "revision": manifest["revision"], "tables": manifest["tables"]}
+
+
+def run_backup_restore(*, database_url: str, source: Path, replace: bool) -> dict[str, Any]:
+    from .backup import restore_backup
+
+    engine = make_engine(database_url)
+    try:
+        return {"from": str(source)} | restore_backup(engine, source, replace=replace)
+    finally:
+        engine.dispose()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="copilot")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1615,6 +1654,32 @@ def _parser() -> argparse.ArgumentParser:
     )
     disable_user.add_argument("--email", required=True)
     disable_user.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+
+    delete_user = user_commands.add_parser(
+        "delete", help="delete an account and all of its chats; the spend ledger keeps its rows"
+    )
+    delete_user.add_argument("--email", required=True)
+    delete_user.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+
+    backup = subparsers.add_parser("backup")
+    backup_commands = backup.add_subparsers(dest="backup_command", required=True)
+    backup_create = backup_commands.add_parser(
+        "create", help="copy accounts, chats, messages and evidence to CSV under DATA_DIR"
+    )
+    backup_create.add_argument(
+        "--out", type=Path, default=None, help="default DATA_DIR/backups/<UTC stamp>"
+    )
+    backup_create.add_argument("--data-dir", type=Path, default=None)
+    backup_create.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
+    backup_restore = backup_commands.add_parser(
+        "restore", help="load a backup; refuses another schema revision or non-empty tables"
+    )
+    backup_restore.add_argument("--from", dest="source", type=Path, required=True)
+    backup_restore.add_argument(
+        "--replace", action="store_true", help="truncate the user tables first"
+    )
+    # Required, never DATABASE_URL: a restore that truncates names its target explicitly.
+    backup_restore.add_argument("--database-url", required=True)
 
     evaluation = subparsers.add_parser("eval")
     evaluation_commands = evaluation.add_subparsers(dest="eval_command", required=True)
@@ -2240,6 +2305,18 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.command == "users" and args.users_command == "disable":
         result = run_users_disable(database_url=_database_url(args.database_url), email=args.email)
+    elif args.command == "users" and args.users_command == "delete":
+        result = run_users_delete(database_url=_database_url(args.database_url), email=args.email)
+    elif args.command == "backup" and args.backup_command == "create":
+        result = run_backup_create(
+            database_url=_database_url(args.database_url),
+            data_dir=_data_dir(args.data_dir, parser),
+            out=args.out,
+        )
+    elif args.command == "backup" and args.backup_command == "restore":
+        result = run_backup_restore(
+            database_url=args.database_url, source=args.source, replace=args.replace
+        )
     else:
         raise ValueError("unsupported_command")
     print(json.dumps(result, sort_keys=True, default=str))

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import Field
 
@@ -41,6 +41,10 @@ class MeResponse(ContractModel):
     user_id: UUID
     email: str
     request_id: UUID
+
+
+class DeleteAccountRequest(ContractModel):
+    password: str = Field(min_length=1, max_length=1024)
 
 
 def _identity(request: Request) -> Identity:
@@ -89,5 +93,15 @@ def router() -> APIRouter:
         if email is None:
             raise ApiError(401, "token_invalid", _SIGN_IN_AGAIN)
         return MeResponse(user_id=principal.user_id, email=email, request_id=request_id(request))
+
+    @api.delete("/v1/me", status_code=204, response_class=Response)
+    def delete_me(
+        body: DeleteAccountRequest, principal: CurrentPrincipal, request: Request
+    ) -> Response:
+        users = _identity(request).users
+        if not users.check_password(principal.user_id, body.password):
+            raise ApiError(401, "invalid_credentials", "the password is incorrect")
+        users.delete(principal.user_id)
+        return Response(status_code=204)
 
     return api
