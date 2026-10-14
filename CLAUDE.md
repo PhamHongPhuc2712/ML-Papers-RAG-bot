@@ -18,8 +18,8 @@ corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7
 (`configs/chat.yaml`; 43 frozen conversations, underpowered: `reports/chat-followups.md`).
 `copilot_v2` is migrated to `0009_llm_call_purpose_chat`. W1 (the Next.js workspace, cookie
 session and API proxy) W2 (search and paper pages), W3 (the chat pages) and
-W4 (frontend CI job, real-stack walkthrough: `reports/m4-web.md`) are done; G4 waits only on the
-CI job's first green run. S1 (571 model-written passage questions from our corpus,
+W4 (frontend CI job, real-stack walkthrough: `reports/m4-web.md`) are done; G4 is met (CI
+`frontend` first green on `01e0280`, 2026-10-14). S1 (571 model-written passage questions from our corpus,
 `data/fixtures/retrieval-sections/`, text under `${DATA_DIR}/benchmarks/sections-v1/`) and S2 are
 done (2026-10-12): the title+chunk reranker gains +0.35 nDCG@10 on passage questions but fails the
 paper-level guard, so by the registered rule `rerank.text` stays `abstract`
@@ -30,7 +30,8 @@ user tables under `${DATA_DIR}/backups/` (restore refuses another revision or no
 `--replace`, and `--database-url` is required). R3's drills are done (2026-10-14, `reports/m5-drills.md`): 7 of 8
 pass, drill 6 was not possible, and drill 2's hidden database outage on `/chat` is fixed. Cold start: startup now waits
 for `warmup` in `configs/search.yaml` (3 warm-up searches in a row within deadlines, at most 180 s) and the
-served app prints `copilot.*` INFO on stderr; a Qdrant restart under a running API is still cold. **Next: R4** (`2026-10-11-search-upgrade-and-release.md`).
+served app prints `copilot.*` INFO on stderr; a Qdrant restart under a running API is still cold. R4 is done: `README.md`, `docs/case-study.md`.
+**G4 and G5 are met (2026-10-14): the revised roadmap (C1–C7, W1–W4, S1–S2, R1–R4) is complete.**
 
 **M1 is complete and G1 passes.** P1.1–P1.5 are implemented under `backend/`: API and
 isolated persistence harness, canonical paper identity with provenance, parser and

@@ -9,8 +9,8 @@ or `python -m copilot.cli corpus coverage`.
 
 Accepted **main-conference** papers from AI venues published 2023–2026, stored
 as canonical metadata plus section-aware full-text chunks in PostgreSQL. It
-exists to serve retrieval, recommendation and evidence-grounded answering; it is
-not a redistribution of the papers themselves.
+exists to serve paper search and evidence-grounded answering; it is not a
+redistribution of the papers themselves.
 
 ## Where it comes from
 
@@ -100,6 +100,22 @@ Across the other 40 venue-years, 39 papers of 75,092 lack text (0.05%).
 Published totals are recorded only where checked against the venue — so far ICLR 2024
 (2,260), which matches. Every other denominator is unknown, and **an unknown denominator
 reports a null coverage percentage** rather than an implied 100%.
+
+## What the product does with the corpus
+
+Revised 2026-10-11 (scope: search and grounded chat only):
+- **Search.** The search page and paper pages (`POST /v1/search`, `GET /v1/papers/{id}`) show
+  bibliographic metadata, the abstract and a link to the source PDF. They work without an
+  account.
+- **Grounded answers.** A signed-in user's chat answer shows the passages it cites, each with
+  its paper, section and page span, together with the other passages it read (at most 12
+  pieces, 3 per paper: `configs/evidence.yaml`). Those passages are stored with the user's chat
+  as an evidence snapshot and are deleted with it, or with the account.
+- **No redistribution.** No full text is offered for download or export beyond the passages
+  shown to a signed-in user. There are no recommendations, uploads or private collections.
+
+The hosted LLM receives the question and the evidence passages for one answer, under the spend
+ledger, which stores no text.
 
 ## Rights, and what that means for exports
 
