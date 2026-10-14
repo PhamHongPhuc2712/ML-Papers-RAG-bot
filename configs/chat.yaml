@@ -31,10 +31,13 @@ history:
   turns: 3
   max_chars: 6000
 
-# Set by C7's pre-registered rule (2026-10-11): off. On 43 frozen ORB follow-ups condensing read
-# 0.791 against 0.674 searched as typed, McNemar p = 0.227 (8 / 3), short of p < 0.05; gold paper
-# in the top 10 1.00 against 0.81. Underpowered: reports/chat-followups.md.
-condense: false
+# On since 2026-10-14, the developer's recorded decision. C7's pre-registered rule (2026-10-11)
+# had turned it off: on 43 frozen ORB follow-ups condensing read 0.791 against 0.674 searched as
+# typed, McNemar p = 0.227 (8 / 3), short of p < 0.05, while every secondary measure favoured it
+# (gold paper in the top 10 1.00 against 0.81, cited MAP 1.00 against 0.73, abstained 0% against
+# 12%). The rule was underpowered, and a follow-up such as "how large was its batch size?" is
+# searched without its subject when it is off (reports/chat-followups.md).
+condense: true
 
 timeouts_seconds:
   condense: 15

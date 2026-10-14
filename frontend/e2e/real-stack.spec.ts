@@ -22,8 +22,8 @@ test("search, a paper, and a two-turn chat on the real stack", async ({ page }) 
   await box.fill("How large was its batch size?");
   await box.press("Enter");
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(2, { timeout: 90_000 });
-  // Open the first answer's first citation. With condensing off (C7's rule, configs/chat.yaml)
-  // the follow-up is searched as typed and may come back insufficient, with nothing to cite.
+  // Open the first answer's first citation: the follow-up may still come back insufficient
+  // (condensing rewrites it into a standalone query since 2026-10-14, configs/chat.yaml).
   await page.getByRole("article", { name: "Answer" }).first().getByRole("button").first().click();
   await page.screenshot({ path: "test-results/real-chat.png", fullPage: true });
 });

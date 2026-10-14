@@ -14,8 +14,9 @@ retriever, SSE, follow-up evaluation), `2026-10-11-web-app.md` (M4: W1–W4, Nex
 corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7 are done and **G3 passes**
 (2026-10-11): accounts, chat history, `ChatOpenAI` structured output behind the ledger
 (`StructuredGenerator`, adopted on ORB's frozen 400: 0.884 vs 0.880), the LangGraph turn, `POST
-/v1/chats/stream` (SSE) and the follow-up evaluation, whose rule turned condensing **off**
-(`configs/chat.yaml`; 43 frozen conversations, underpowered: `reports/chat-followups.md`).
+/v1/chats/stream` (SSE) and the follow-up evaluation, whose rule turned condensing off on 43
+underpowered conversations (`reports/chat-followups.md`); **condensing is on again since 2026-10-14**,
+the developer's recorded decision (`configs/chat.yaml`).
 `copilot_v2` is migrated to `0009_llm_call_purpose_chat`. W1 (the Next.js workspace, cookie
 session and API proxy) W2 (search and paper pages), W3 (the chat pages) and
 W4 (frontend CI job, real-stack walkthrough: `reports/m4-web.md`) are done; G4 is met (CI
@@ -423,7 +424,7 @@ never runs in the ASGI event loop.
   one standalone query, one search for 10 papers, evidence chunks inside them, structured
   claims whose evidence ids are validated before the answer is stored and sent whole over
   SSE. History in PostgreSQL; every model call under the spend ledger (purpose `chat`).
-  Condensing is configured off since C7; turn timings show retrieval dominating (2.6–8.8 s), and before R3's
+  Condensing is on (C7's rule turned it off; the developer turned it back on 2026-10-14); turn timings show retrieval dominating (2.6–8.8 s), and before R3's
   startup warm-up a cold Qdrant failed first turns with `candidates_unavailable` (`reports/m5-drills.md`).
   No recommendations (§8 removed), no uploads, no general mode, no agent.
 - **Corpus pipeline** (§4): versioned per-venue-year manifests; identity resolution with

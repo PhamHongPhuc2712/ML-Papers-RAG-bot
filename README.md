@@ -53,7 +53,7 @@ cd frontend && npm run lint && npm run typecheck && npm test && npm run e2e
   each paper is scored by its best chunk. The two lists are fused by reciprocal rank, and
   `bge-reranker-v2-m3` reranks the top 50. Every stage has a deadline; when one is missed, the
   results are marked degraded or the search fails with a typed, retryable error.
-- **Chat.** Each turn is a LangGraph graph: optionally condense the question (off since C7),
+- **Chat.** Each turn is a LangGraph graph: condense a follow-up into a standalone question,
   search for 10 papers, retrieve evidence passages inside them, and generate structured
   claims. Each claim's evidence ids are validated before the answer is stored and sent whole
   over SSE.
@@ -95,7 +95,7 @@ bootstrap over query families for retrieval, Wilson for accuracy.
 |---|---|---|
 | Retrieval on Open RAG Bench, all 1,914 text questions | `hybrid` nDCG@10 **0.948** [0.936, 0.959] | [orb-text](reports/orb-text.md) |
 | Answering on Open RAG Bench, frozen 400, haiku.rag's rubric | **0.880** [0.844, 0.908]. With the chat's `StructuredGenerator` (C4): **0.884** [0.849, 0.912], McNemar p = 0.824, adopted | [orb-text](reports/orb-text.md) |
-| Follow-up answering, 43 frozen ORB conversations (C7) | condensed **0.791** [0.648, 0.886], raw 0.674 [0.525, 0.795], standalone ceiling 0.930; McNemar p = 0.227, so by the rule condensing is **off** (underpowered) | [chat-followups](reports/chat-followups.md) |
+| Follow-up answering, 43 frozen ORB conversations (C7) | condensed **0.791** [0.648, 0.886], raw 0.674 [0.525, 0.795], standalone ceiling 0.930; McNemar p = 0.227, so C7's rule turned condensing off; the developer turned it **on** again (2026-10-14) on this underpowered but one-directional evidence | [chat-followups](reports/chat-followups.md) |
 | Search on our corpus, S1's 190 passage questions (validation) | `hybrid_rerank` reading abstracts nDCG@10 **0.350**; reading title + chunk **0.698**, a gain of **+0.348** [+0.292, +0.408]. By S2's registered rule, whose paper-level guard it failed, the search page keeps reading abstracts | [m5-rerank-text](reports/m5-rerank-text.md) |
 | Failure drills on the local stack (R3) | 7 of 8 pass, 1 not possible; one failure found and fixed | [m5-drills](reports/m5-drills.md) |
 

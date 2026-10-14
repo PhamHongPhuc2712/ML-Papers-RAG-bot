@@ -154,3 +154,13 @@ def test_clean_query_takes_one_line_and_refuses_garbage():
 def test_documents_round_trip_to_evidence():
     item = _evidence("E3")
     assert from_document(to_document(item)) == item
+
+
+def test_the_shipped_chat_condenses_follow_ups():
+    """The developer's decision (2026-10-14), over C7's underpowered rule: follow-ups are
+    rewritten into a standalone query before the search."""
+
+    from copilot.chat.config import load_chat_config
+
+    config = load_chat_config("configs/chat.yaml")
+    assert config.condense is True and config.condense_prompt.is_file()

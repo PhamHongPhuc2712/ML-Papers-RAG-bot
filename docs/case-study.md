@@ -74,15 +74,19 @@ as typed at p < 0.05. On 43 frozen conversations:
 - condensed **0.791** [0.648, 0.886]; raw 0.674 [0.525, 0.795]; standalone ceiling 0.930;
 - 8 cases only condensed got right, 3 only raw, p = 0.227.
 
-So condensing is **off**: a rule outcome on an underpowered set, not evidence that condensing
-does not help. Every secondary measure favoured it (`reports/chat-followups.md`).
+So the rule turned condensing off: a rule outcome on an underpowered set, not evidence that
+condensing does not help. Every secondary measure favoured it (`reports/chat-followups.md`). On
+2026-10-14 the developer turned it back on as a recorded decision. With it off, a follow-up like
+"How large was its batch size?" was searched without its subject and came back "not enough
+evidence"; with it on, the same follow-up was searched as "How large was SimCSE's batch size?"
+and answered with a citation.
 
 ### LangGraph for the turn
 
 The developer asked for LangChain where it fits. The turn is a LangGraph graph over a
 LangChain retriever: condense → retrieve → generate. Each node's timing is stored with the
 message, which showed retrieval dominating turns at 2.6–8.8 s (`reports/m3-chat.md`). Turning
-condensing off was a configuration change, not a code change. Generation stays a single
+condensing off, and on again, was a configuration change, not a code change. Generation stays a single
 structured call. There is no agent loop: one search per turn was the developer's answer, and
 `reports/orb-text.md` found that given the right paper, our pipeline answers at haiku.rag's
 level without one.

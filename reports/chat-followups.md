@@ -13,6 +13,12 @@ conversations `condensed` read 0.791 against `raw`'s 0.674 (8 cases only condens
 measure favours condensing. This is a rule outcome, not evidence that condensing does not
 help. A later recorded decision, or a larger conversation set, can revisit it.
 
+**Revisited 2026-10-14: condensing is on (`condense: true`), the developer's recorded decision**
+over the rule's outcome, since every measure here points the same way. On the live corpus the
+follow-up from the W4 walkthrough, "How large was its batch size?", was then searched as "How
+large was SimCSE's batch size?" and answered with a cited claim, where with condensing off it had
+come back insufficient. The numbers below are unchanged.
+
 ## Design
 
 - **Conversation.** Two `retrieval_only` questions about the same ORB paper, A then B: no
