@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pyarrow.parquet as pq
 import pytest
 
+from copilot.contracts import Evidence
 from copilot.evaluation.qa import (
     QA_SMOKE,
     QaError,
@@ -165,3 +167,39 @@ def test_an_experiment_names_its_generator_client(tmp_path):
     wrong.write_text(source + "\ngenerator_client: other\n")
     with pytest.raises(QaError, match="generator_client"):
         load_qa_experiment(wrong)
+
+
+def test_the_overview_experiment_differs_from_the_chat_s_generator_only_in_its_prompt():
+    """U2's rule compares two arms that search alike and answer alike but for the prompt."""
+
+    from dataclasses import fields
+
+    from copilot.evaluation.qa import qa_search_config
+    from copilot.models.generation import FakeGenerator, load_generation_prompt
+
+    base = load_qa_experiment(ROOT / "configs/experiments/orb-text-qa-v3-structured.yaml")
+    overview = load_qa_experiment(ROOT / "configs/experiments/orb-text-qa-u2-overview.yaml")
+    assert qa_search_config(overview) == qa_search_config(base)
+    differing = {
+        f.name
+        for f in fields(base)
+        if getattr(base, f.name) != getattr(overview, f.name)
+        and f.name not in {"path", "sha256", "name", "search_overrides", "budget_usd"}
+    }
+    assert differing == {"generate_prompt"}
+    prompt = load_generation_prompt(overview.generate_prompt)
+    assert prompt.name == "grounded-overview-v1"
+    # The same validation path: an invented id is repaired, and the answer cites real ids.
+    evidence = [
+        Evidence(
+            id="E1",
+            source_kind="paper",
+            source_id=uuid4(),
+            version_id="v",
+            chunk_id=uuid4(),
+            text="t",
+            section="s",
+        )
+    ]
+    outcome = FakeGenerator(prompt).generate("FABRICATE papers on graphs", evidence)
+    assert outcome.repair_attempted and outcome.answer.claims[0].evidence_ids == ["E1"]
