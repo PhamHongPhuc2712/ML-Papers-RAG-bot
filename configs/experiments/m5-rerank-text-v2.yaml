@@ -1,0 +1,48 @@
+# Release plan S3, step 3: S1's section-level test split, scored once with --locked-test, only
+# if the paper-level guard in configs/experiments/m5-rerank-text-v2-topics.yaml held. The rule
+# is written there; this file differs only in its name and dataset.
+schema_version: 1
+name: m5-rerank-text-v2
+
+dataset:
+  path: data/fixtures/retrieval-sections
+  query_text: benchmarks/sections-v1/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: m2-20260924T095724Z
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+    candidates: chunks
+  - name: title_chunk_512
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: the reranker reads title + the chunk that found the paper, 512-token pairs, shipped 1.5 s deadline
+    pair_max_tokens: 512
+    search:
+      rerank: {text: title_chunk}
+
+decision:
+  primary: ndcg@10
+  order: [hybrid_rerank, title_chunk_512]
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
+  require_undegraded: true
