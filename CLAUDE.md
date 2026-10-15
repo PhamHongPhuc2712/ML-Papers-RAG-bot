@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,
 including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
 References; one retrieval configuration (the chat's: reranker reads title + passage). Plan
-`docs/superpowers/plans/2026-10-15-rag-only.md` (M6 and G6 numbers reassigned; U1–U4), **not
-started**: the code still serves the search page (`/`, `SearchView`) and the chat separately, and
+`docs/superpowers/plans/2026-10-15-rag-only.md` (M6 and G6 numbers reassigned; U1–U4; settings
+decided: sign-in required, 10 papers, one search per turn, a structured overview subject to U2's rule),
+**not started**: the code still serves the search page (`/`, `SearchView`) and the chat separately, and
 `configs/chat.yaml` still overrides `configs/search.yaml`. S3 (`eval topic-queries`, 1,048
 model-written topic queries in `data/fixtures/retrieval-topics/`, text under
 `${DATA_DIR}/benchmarks/topics-v1/`) was built the same day; its registered search-page decision
