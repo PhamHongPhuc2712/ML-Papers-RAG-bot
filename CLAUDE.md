@@ -8,9 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
 References; one retrieval configuration (the chat's: reranker reads title + passage). Plan
 `docs/superpowers/plans/2026-10-15-rag-only.md` (M6 and G6 numbers reassigned; U1–U4; settings
-decided: sign-in required, 10 papers, one search per turn, a structured overview subject to U2's rule),
-**not started**: the code still serves the search page (`/`, `SearchView`) and the chat separately, and
-`configs/chat.yaml` still overrides `configs/search.yaml`. S3 (`eval topic-queries`, 1,048
+decided: sign-in required, 10 papers, one search per turn, a structured overview subject to U2's rule).
+**U1 is done (2026-10-15)**: `configs/search.yaml` is the one first stage (`rerank.text: title_chunk`, 2.5 s
+rerank deadline), `configs/chat.yaml` refuses overrides, and a turn sends a `references` SSE frame and
+stores `[{paper_id, rank, read}]` in `chat_messages.paper_references` (migration `0010`). U2–U4 are not
+started: the web app still serves the search page (`/`, `SearchView`) beside the chat. S3 (`eval topic-queries`, 1,048
 model-written topic queries in `data/fixtures/retrieval-topics/`, text under
 `${DATA_DIR}/benchmarks/topics-v1/`) was built the same day; its registered search-page decision
 (`configs/experiments/m5-rerank-text-v2*.yaml`) is withdrawn before any run, and the set is kept
@@ -287,9 +289,10 @@ best evidence chunk (`candidates.source` in `configs/search.yaml`) — RRF in ou
 cross-encoder rerank of at most 50, every stage under a deadline with explicit, typed
 fallbacks. Ranking parameters live in `configs/search.yaml`; the reranker is pinned in
 `configs/models.yaml` beside the embedder. `rerank.text` (2026-10-08) says what the
-cross-encoder reads: `abstract` (shipped) or the chunk that found the paper (`chunk`,
-`title_chunk`), the mechanism haiku.rag's reranker uses; it is an ablation knob until a
-pre-registered validation run on our corpus says otherwise.
+cross-encoder reads: `abstract` or the chunk that found the paper (`chunk`, `title_chunk`), the
+mechanism haiku.rag's reranker uses. Shipped since U1 (2026-10-15): `title_chunk` at a 2.5 s rerank
+deadline, the chat's measured first stage, now the only one. A harness variant over `papers` or
+`both` candidates names no chunk and reads abstracts unless it asks otherwise.
 
 ```bash
 uv run --env-file .env --project backend python -m copilot.cli search pilot --query "contrastive learning for sentence embeddings"

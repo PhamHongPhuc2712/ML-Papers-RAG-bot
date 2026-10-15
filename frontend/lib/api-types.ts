@@ -240,6 +240,8 @@ export interface components {
             id: string;
             /** Ordinal */
             ordinal: number;
+            /** References */
+            references?: components["schemas"]["Reference"][];
             /**
              * Role
              * @enum {string}
@@ -430,6 +432,30 @@ export interface components {
             scores: {
                 [key: string]: number;
             };
+        };
+        /**
+         * Reference
+         * @description A paper the turn's search ranked: the answer's References (RAG-only plan, U1).
+         *
+         *     ``read`` marks the papers the turn looked inside for evidence, the first of the ranking.
+         *     Stored as the id, rank and flag only; title, venue and year are the corpus's own.
+         */
+        Reference: {
+            /**
+             * Paper Id
+             * Format: uuid
+             */
+            paper_id: string;
+            /** Rank */
+            rank: number;
+            /** Read */
+            read: boolean;
+            /** Title */
+            title: string;
+            /** Venue */
+            venue?: string | null;
+            /** Year */
+            year?: number | null;
         };
         /** SearchRequest */
         SearchRequest: {

@@ -679,6 +679,11 @@ def test_the_search_file_names_its_candidate_source_and_refuses_an_unknown_one(t
         load_search_config(path)
     del raw["candidates"]["source"]
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    # The shipped reranker reads chunks, which only a chunk-level first stage can name.
+    with pytest.raises(ValueError, match="requires candidates_source chunks"):
+        load_search_config(path)
+    del raw["rerank"]["text"]
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     assert load_search_config(path).candidates_source == "papers"
 
 
@@ -777,8 +782,9 @@ def test_the_shipped_rerank_text_leaves_every_recorded_digest_unchanged():
 def test_the_search_file_names_its_rerank_text_and_refuses_an_unknown_one(tmp_path):
     from copilot.search.service import load_search_config
 
+    # One first stage since the RAG-only plan's U1 (2026-10-15): the chat's measured one.
     shipped = load_search_config("configs/search.yaml")
-    assert shipped.rerank_text == "abstract"
+    assert shipped.rerank_text == "title_chunk"
     path = tmp_path / "search.yaml"
     path.write_text("candidates:\n  source: chunks\nrerank:\n  text: section\n", encoding="utf-8")
     with pytest.raises(ValueError, match="rerank.text"):
@@ -799,9 +805,10 @@ def test_the_reranker_pair_budget_is_optional_and_validated(tmp_path):
     assert shipped.rerank_pair_max_tokens is None
     text = Path("configs/search.yaml").read_text(encoding="utf-8")
     path = tmp_path / "search.yaml"
-    path.write_text(text.replace("  text: abstract", "  text: abstract\n  pair_max_tokens: 512"))
+    shipped_text = "  text: title_chunk"
+    path.write_text(text.replace(shipped_text, f"{shipped_text}\n  pair_max_tokens: 512"))
     assert load_search_config(path).rerank_pair_max_tokens == 512
-    path.write_text(text.replace("  text: abstract", "  text: abstract\n  pair_max_tokens: 0"))
+    path.write_text(text.replace(shipped_text, f"{shipped_text}\n  pair_max_tokens: 0"))
     with pytest.raises(ValueError):
         load_search_config(path)
 def test_the_manifest_records_the_experiment_s_own_parsing_policy(tmp_path):
@@ -851,3 +858,26 @@ def test_the_manifest_records_the_experiment_s_own_parsing_policy(tmp_path):
     assert recorded["parser_version"] == "pypdf-text-v2"
     shipped = build_manifest(load_experiment(EXPERIMENT), **kwargs)["corpus"]
     assert shipped["chunker_version"] == "paragraph-pack-v1"
+
+
+def test_a_paper_level_variant_reads_abstracts_unless_it_asks_for_chunk_text():
+    """The shared file reads title and chunk since U1 (2026-10-15); a variant whose first
+    stage finds papers, not chunks, has no chunk to read and keeps reading abstracts, as the
+    registered experiments with such variants measured. Asking for chunk text is refused."""
+
+    from copilot.evaluation.retrieval import search_config_for
+    from copilot.search.service import load_search_config
+
+    shipped = load_search_config("configs/search.yaml")
+    papers = Variant(name="papers", mode="hybrid_rerank", candidates="papers")
+    assert search_config_for(papers, shipped, "papers").rerank_text == "abstract"
+    assert search_config_for(papers, shipped, "both").rerank_text == "abstract"
+    assert search_config_for(papers, shipped, "chunks").rerank_text == "title_chunk"
+    asked = Variant(
+        name="asked",
+        mode="hybrid_rerank",
+        candidates="papers",
+        search=(("rerank_text", "title_chunk"),),
+    )
+    with pytest.raises(ExperimentError, match="requires candidates_source chunks"):
+        search_config_for(asked, shipped, "papers")

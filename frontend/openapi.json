@@ -104,6 +104,13 @@
             "title": "Ordinal",
             "type": "integer"
           },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/Reference"
+            },
+            "title": "References",
+            "type": "array"
+          },
           "role": {
             "enum": [
               "user",
@@ -600,6 +607,60 @@
           "rank"
         ],
         "title": "RankedPaper",
+        "type": "object"
+      },
+      "Reference": {
+        "additionalProperties": false,
+        "description": "A paper the turn's search ranked: the answer's References (RAG-only plan, U1).\n\n``read`` marks the papers the turn looked inside for evidence, the first of the ranking.\nStored as the id, rank and flag only; title, venue and year are the corpus's own.",
+        "properties": {
+          "paper_id": {
+            "format": "uuid",
+            "title": "Paper Id",
+            "type": "string"
+          },
+          "rank": {
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Venue"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          }
+        },
+        "required": [
+          "paper_id",
+          "rank",
+          "read",
+          "title"
+        ],
+        "title": "Reference",
         "type": "object"
       },
       "SearchRequest": {

@@ -15,7 +15,7 @@ from copilot.chat.graph import ChatGraph, build_chat_graph
 from copilot.chat.retriever import CorpusRetriever, PaperHits
 from copilot.chat.service import ChatService
 from copilot.chat.store import ChatStore
-from copilot.contracts import ChatRequest, Evidence, Principal
+from copilot.contracts import ChatRequest, Evidence, Principal, Reference
 from copilot.models.generation import FakeGenerator
 from copilot.models.llm import LlmError
 
@@ -56,7 +56,15 @@ def _graph(paper_id: str, calls: Calls, fail: Exception | None = None) -> ChatGr
         )
     ]
     retriever = CorpusRetriever(
-        search=lambda query: PaperHits("search-a", [paper_id], []),
+        search=lambda query: PaperHits(
+            "search-a",
+            [paper_id],
+            [],
+            [
+                Reference(paper_id=paper_id, rank=1, read=True, title=TITLE),
+                Reference(paper_id=uuid4(), rank=2, read=False, title="Gone since"),
+            ],
+        ),
         evidence=lambda query, papers, release: list(evidence),
     )
     graph = build_chat_graph(
@@ -103,14 +111,33 @@ def test_a_turn_streams_then_is_in_the_history(chat_client, search_corpus, make_
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
         frames = _frames(response)
-        assert [name for name, _ in frames] == ["chat", "status", "evidence", "status", "final"]
+        assert [name for name, _ in frames] == [
+            "chat",
+            "status",
+            "references",
+            "evidence",
+            "status",
+            "final",
+        ]
         assert frames[1][1] == {"stage": "searching"}
+        sent = frames[2][1]
+        assert sent["query"] == "How are sentence pairs used?"
+        assert [(r["rank"], r["read"], r["title"]) for r in sent["items"]] == [
+            (1, True, TITLE),
+            (2, False, "Gone since"),
+        ]
         final = frames[-1][1]
+        assert [(r["rank"], r["title"]) for r in final["references"]] == [(1, TITLE)]
         assert final["status"] == "complete" and final["claims"][0]["evidence_ids"] == ["E1"]
         assert final["evidence"][0]["title"] == TITLE and final["evidence"][0]["cited"]
         chat_id = frames[0][1]["chat_id"]
         detail = client.get(f"/v1/chats/{chat_id}", headers=auth_headers(alice)).json()
         assert [m["status"] for m in detail["messages"]] == ["complete", "complete"]
+        # Stored as ids and ranks; read back with the corpus's metadata. A paper no longer
+        # in the corpus has no page to link to and is left out of the stored list.
+        stored = detail["messages"][-1]["references"]
+        assert stored == final["references"]
+        assert stored[0]["paper_id"] == search_corpus.ids[TITLE] and stored[0]["read"]
 
 
 def test_the_same_request_replays_without_running_again(

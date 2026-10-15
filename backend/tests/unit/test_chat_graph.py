@@ -10,7 +10,7 @@ from copilot.chat.condense import Condenser, clean_query, format_history, load_c
 from copilot.chat.graph import build_chat_graph
 from copilot.chat.retriever import CorpusRetriever, PaperHits, from_document, to_document
 from copilot.chat.turns import HistoryItem
-from copilot.contracts import Evidence
+from copilot.contracts import Evidence, Reference
 from copilot.models.generation import FakeGenerator
 from copilot.models.llm import ChatResult, LlmError
 from copilot.models.spend import Usage
@@ -164,3 +164,53 @@ def test_the_shipped_chat_condenses_follow_ups():
 
     config = load_chat_config("configs/chat.yaml")
     assert config.condense is True and config.condense_prompt.is_file()
+
+
+def test_search_and_chat_share_one_first_stage():
+    """RAG only (plan U1, 2026-10-15): the chat's measured first stage is the shipped search
+    file itself, the reranker reading title and chunk at a 2.5 s deadline; the chat has no
+    overrides of its own."""
+
+    from copilot.chat.config import chat_search_config, load_chat_config
+    from copilot.search.service import load_search_config
+
+    shipped = load_search_config("configs/search.yaml")
+    assert shipped.rerank_text == "title_chunk" and shipped.rerank_seconds == 2.5
+    chat = load_chat_config("configs/chat.yaml")
+    assert not hasattr(chat, "search_overrides")
+    assert chat_search_config(chat) == shipped
+    assert chat.papers == 10 and chat.references == 20
+
+
+def test_a_chat_config_with_search_overrides_is_refused(tmp_path):
+    from copilot.chat.config import load_chat_config
+
+    text = open("configs/chat.yaml", encoding="utf-8").read()
+    path = tmp_path / "chat.yaml"
+    overrides = "  papers: 10\n  overrides:\n    rerank: {text: abstract}\n"
+    path.write_text(text.replace("  papers: 10\n", overrides), encoding="utf-8")
+    with pytest.raises(ValueError, match="chat_config_invalid"):
+        load_chat_config(path)
+    path.write_text(text.replace("references: 20", "references: 5"), encoding="utf-8")
+    with pytest.raises(ValueError, match="chat_config_invalid:bounds"):
+        load_chat_config(path)
+
+
+def test_the_turn_carries_the_references_its_search_ranked():
+    evidence = [_evidence("E1")]
+    references = [
+        Reference(paper_id=evidence[0].source_id, rank=1, read=True, title="SimCSE"),
+        Reference(paper_id=uuid4(), rank=2, read=False, title="Another", venue="ACL", year=2023),
+    ]
+    retriever = CorpusRetriever(
+        search=lambda query: PaperHits("rel-1", [str(evidence[0].source_id)], [], references),
+        evidence=lambda query, papers, release: list(evidence),
+    )
+    graph = build_chat_graph(
+        condenser=Condenser(ScriptedModel([]), PROMPT, max_chars=6000),
+        retriever=retriever,
+        generator=FakeGenerator(),
+        condense_enabled=True,
+    )
+    state = _run(graph, "What does SimCSE train with?", [])
+    assert state["references"] == references

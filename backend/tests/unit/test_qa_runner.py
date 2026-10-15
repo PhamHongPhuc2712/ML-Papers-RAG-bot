@@ -135,7 +135,8 @@ def test_an_experiment_may_override_the_first_stage_by_the_harness_rule(tmp_path
 
     shipped = load_qa_experiment(EXPERIMENT)
     assert shipped.search_overrides == ()
-    assert qa_search_config(shipped).rerank_text == "abstract"
+    # No overrides: the shared file's value, `title_chunk` since U1 (2026-10-15).
+    assert qa_search_config(shipped).rerank_text == "title_chunk"
     c256 = load_qa_experiment(ROOT / "configs" / "experiments" / "orb-c256-qa.yaml")
     assert c256.release == "orb-c256"
     assert c256.search_overrides == (("rerank_text", "title_chunk"),)

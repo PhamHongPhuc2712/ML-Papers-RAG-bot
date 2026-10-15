@@ -641,6 +641,11 @@ class ChatMessageRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The answer's References (RAG-only plan, U1): [{paper_id, rank, read}], ids only.
+    # Not named `references`, a reserved word in SQL.
+    paper_references: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
 
 
 class MessageEvidence(Base):

@@ -14,15 +14,12 @@ prompts:
   condense: prompts/chat/condense-v1.yaml
 
 search:
+  # The first stage is configs/search.yaml, unchanged: since the RAG-only plan's U1
+  # (2026-10-15) the chat has no overrides, and a chat file that names any is refused.
   # Papers the evidence retriever looks inside: the answering harness's value.
   papers: 10
-  # The first stage the frozen ORB answering result was measured under (orb-text-qa-v2,
-  # flat 0.880 [0.844, 0.908]): the reranker reads the title and the chunk that found the
-  # paper, at a 2.5 s rerank deadline. The search page keeps configs/search.yaml's shipped
-  # values until the release plan's S2 decides for it.
-  overrides:
-    rerank: {text: title_chunk}
-    deadlines_seconds: {rerank: 2.5}
+  # The turn's ranked list shown with the answer as its References, the read papers first.
+  references: 20
 
 evidence: configs/evidence.yaml
 

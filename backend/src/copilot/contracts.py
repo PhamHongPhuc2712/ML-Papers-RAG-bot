@@ -161,6 +161,21 @@ class StoredEvidence(ContractModel):
     cited: bool
 
 
+class Reference(ContractModel):
+    """A paper the turn's search ranked: the answer's References (RAG-only plan, U1).
+
+    ``read`` marks the papers the turn looked inside for evidence, the first of the ranking.
+    Stored as the id, rank and flag only; title, venue and year are the corpus's own.
+    """
+
+    paper_id: UUID
+    rank: int = Field(ge=1)
+    read: bool
+    title: str
+    venue: str | None = None
+    year: int | None = None
+
+
 class ChatMessage(ContractModel):
     id: UUID
     ordinal: int
@@ -169,6 +184,7 @@ class ChatMessage(ContractModel):
     text: str
     claims: list[Claim] = Field(default_factory=list)
     evidence: list[StoredEvidence] = Field(default_factory=list)
+    references: list[Reference] = Field(default_factory=list)
     standalone_query: str | None = None
     warnings: list[str] = Field(default_factory=list)
     error_code: str | None = None

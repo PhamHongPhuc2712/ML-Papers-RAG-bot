@@ -1,9 +1,10 @@
 """One chat turn as server-sent events, persisted before its answer is sent.
 
 The turn is begun (and refused with an HTTP status) before streaming starts. Then frames
-follow the graph: ``chat``, ``status`` as each step starts, ``evidence`` once passages are
-found, and ``final`` with the stored, validated message — or ``error``. The answer is stored
-before the ``final`` frame is yielded, so a client that disconnects after the answer exists
+follow the graph: ``chat``, ``status`` as each step starts, ``references`` (the query searched
+and the papers it ranked) and ``evidence`` once passages are found, and ``final`` with the
+stored, validated message — or ``error``. The answer is stored before the ``final`` frame is
+yielded, so a client that disconnects after the answer exists
 still finds it in the history; one that disconnects earlier leaves the turn ``interrupted``.
 GPU and network work runs in Starlette's thread pool, never on the event loop.
 """
@@ -101,14 +102,28 @@ class ChatService:
                 "cost_usd": 0.0,
             }
             state: dict[str, Any] = {}
+            query = body.message
             for mode, chunk in self._graph.graph.stream(initial, stream_mode=["updates", "values"]):
                 if mode == "values":
                     state = chunk
                     continue
                 for node, update in chunk.items():
-                    if node == "condense" and first == "condensing":
-                        yield frame("status", {"stage": "searching", "query": update["standalone"]})
+                    if node == "condense":
+                        query = update["standalone"]
+                        if first == "condensing":
+                            yield frame("status", {"stage": "searching", "query": query})
                     elif node == "retrieve":
+                        # What was searched and the papers it ranked, before the answer exists.
+                        yield frame(
+                            "references",
+                            {
+                                "query": query,
+                                "items": [
+                                    item.model_dump(mode="json")
+                                    for item in update.get("references", [])
+                                ],
+                            },
+                        )
                         yield frame(
                             "evidence",
                             {
@@ -129,6 +144,7 @@ class ChatService:
                     identity=self._graph.identity,
                     trace=state.get("timings", {}),
                     cost_usd=float(state.get("cost_usd", 0.0)),
+                    references=state.get("references", []),
                 ),
             )
             settled = True

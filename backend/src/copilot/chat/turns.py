@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from ..contracts import Evidence, GroundedAnswer
+from ..contracts import Evidence, GroundedAnswer, Reference
 
 TITLE_CHARS = 80
 # What history shows the condenser for an answered turn that had no answer.
@@ -29,6 +29,7 @@ class TurnResult:
     identity: Mapping[str, Any]
     trace: Mapping[str, float]
     cost_usd: float
+    references: Sequence[Reference] = ()
 
 
 def chat_title(message: str) -> str:

@@ -19,7 +19,7 @@ from langchain_core.documents import Document
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from ..contracts import Evidence
+from ..contracts import Evidence, Reference
 from ..models.generation import GenerationOutcome
 from .condense import Condenser
 from .retriever import CorpusRetriever, from_document
@@ -39,6 +39,7 @@ class ChatState(TypedDict, total=False):
     documents: list[Document]
     evidence: list[Evidence]
     paper_ids: list[str]
+    references: list[Reference]
     release_id: str | None
     outcome: GenerationOutcome
     warnings: Annotated[list[str], operator.add]
@@ -88,6 +89,7 @@ def build_chat_graph(
             "documents": documents,
             "evidence": [from_document(document) for document in documents],
             "paper_ids": list(hits.paper_ids),
+            "references": list(hits.references),
             "release_id": hits.release_id,
             "warnings": list(hits.warnings),
             "timings": {"retrieve": clock() - started},
@@ -171,7 +173,9 @@ def build_default_chat_graph(
         max_tokens=models.max_tokens,
     )
     retriever = CorpusRetriever(
-        search=ServicePaperSearch(service, search.active_release, config.papers),
+        search=ServicePaperSearch(
+            service, search.active_release, config.papers, references=config.references
+        ),
         evidence=evidence.retrieve,
     )
     prompt = load_generation_prompt(config.generate_prompt)

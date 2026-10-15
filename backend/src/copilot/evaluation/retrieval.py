@@ -233,6 +233,11 @@ def search_config_for(
     overrides: dict[str, Any] = dict(variant.search)
     if candidates is not None:
         overrides["candidates_source"] = candidates
+        if candidates != "chunks" and "rerank_text" not in overrides:
+            # A paper-level first stage names no chunk: its candidates are read as their
+            # abstracts, as they were before the shared file read chunks (U1, 2026-10-15).
+            # A variant that asks for chunk text over it is still refused below.
+            overrides["rerank_text"] = ABSTRACT_TEXT
     try:
         config = replace(base, **overrides)
     except ValueError as error:

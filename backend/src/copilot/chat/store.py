@@ -10,7 +10,7 @@ finished answer, runs a failed or interrupted one again, and is refused while it
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
@@ -19,7 +19,15 @@ from uuid import UUID, uuid4
 from sqlalchemy import Connection, Engine, text
 from sqlalchemy.exc import IntegrityError
 
-from ..contracts import ChatMessage, ChatRequest, ChatSummary, Claim, Principal, StoredEvidence
+from ..contracts import (
+    ChatMessage,
+    ChatRequest,
+    ChatSummary,
+    Claim,
+    Principal,
+    Reference,
+    StoredEvidence,
+)
 from .turns import INSUFFICIENT_TEXT, HistoryItem, TurnResult, answer_text, chat_title
 
 ANSWERED = ("complete", "insufficient")
@@ -46,7 +54,7 @@ class Turn:
 
 _MESSAGE_COLUMNS = (
     "id, ordinal, role, status, text, claims, standalone_query, warnings, error_code,"
-    " corpus_release_id, created_at"
+    " corpus_release_id, created_at, paper_references"
 )
 
 
@@ -91,7 +99,8 @@ class ChatStore:
                 {"chat": chat_id},
             ).all()
             evidence = _evidence_for(connection, [r.id for r in rows])
-        messages = [_message(r, evidence.get(r.id, [])) for r in rows]
+            papers = _reference_facts(connection, rows)
+        messages = [_message(r, evidence.get(r.id, []), papers) for r in rows]
         return ChatSummary.model_validate(row._asdict()), messages
 
     def history(self, chat_id: UUID, *, before_ordinal: int, turns: int) -> list[HistoryItem]:
@@ -198,7 +207,8 @@ class ChatStore:
                 text(
                     "update chat_messages set status = 'pending', error_code = null, text = '',"
                     " claims = null, standalone_query = null, warnings = '[]'::jsonb,"
-                    " started_at = :now, completed_at = null where id = :id"
+                    " paper_references = '[]'::jsonb, started_at = :now, completed_at = null"
+                    " where id = :id"
                 ),
                 {"id": assistant_row.id, "now": now},
             )
@@ -267,7 +277,8 @@ class ChatStore:
                     " claims = cast(:claims as jsonb), standalone_query = :standalone,"
                     " warnings = cast(:warnings as jsonb), corpus_release_id = :release,"
                     " identity = cast(:identity as jsonb), trace = cast(:trace as jsonb),"
-                    " cost_usd = :cost, completed_at = :now where id = :id and status = 'pending'"
+                    " cost_usd = :cost, paper_references = cast(:references as jsonb),"
+                    " completed_at = :now where id = :id and status = 'pending'"
                 ),
                 {
                     "id": turn.assistant_message_id,
@@ -280,6 +291,13 @@ class ChatStore:
                     "identity": json.dumps(dict(result.identity), default=str),
                     "trace": json.dumps(dict(result.trace)),
                     "cost": round(result.cost_usd, 6),
+                    # Ids, ranks and the read flag only: the metadata is the corpus's own.
+                    "references": json.dumps(
+                        [
+                            {"paper_id": str(r.paper_id), "rank": r.rank, "read": r.read}
+                            for r in result.references
+                        ]
+                    ),
                     "now": now,
                 },
             ).rowcount
@@ -451,7 +469,36 @@ def _evidence_for(
     return grouped
 
 
-def _message(row: Any, evidence: list[StoredEvidence]) -> ChatMessage:
+def _reference_facts(connection: Connection, rows: Sequence[Any]) -> dict[str, dict[str, Any]]:
+    ids = {str(item["paper_id"]) for row in rows for item in (row.paper_references or [])}
+    return _paper_facts(connection, sorted(ids))
+
+
+def _references(row: Any, papers: Mapping[str, Mapping[str, Any]]) -> list[Reference]:
+    """The stored ranking with the corpus's metadata; a paper no longer in it has no page to
+    link to and is left out, its rank kept by the rest."""
+
+    references = []
+    for item in row.paper_references or []:
+        facts = papers.get(str(item["paper_id"]))
+        if facts is None:
+            continue
+        references.append(
+            Reference(
+                paper_id=item["paper_id"],
+                rank=item["rank"],
+                read=item["read"],
+                title=facts["title"],
+                venue=facts["venue"] or None,
+                year=facts["year"],
+            )
+        )
+    return references
+
+
+def _message(
+    row: Any, evidence: list[StoredEvidence], papers: Mapping[str, Mapping[str, Any]]
+) -> ChatMessage:
     return ChatMessage(
         id=row.id,
         ordinal=row.ordinal,
@@ -460,6 +507,7 @@ def _message(row: Any, evidence: list[StoredEvidence]) -> ChatMessage:
         text=row.text,
         claims=[Claim.model_validate(item) for item in (row.claims or [])],
         evidence=evidence,
+        references=_references(row, papers),
         standalone_query=row.standalone_query,
         warnings=list(row.warnings or []),
         error_code=row.error_code,
@@ -474,4 +522,5 @@ def _load_message(connection: Connection, message_id: UUID) -> ChatMessage | Non
     ).first()
     if row is None:
         return None
-    return _message(row, _evidence_for(connection, [message_id]).get(message_id, []))
+    evidence = _evidence_for(connection, [message_id]).get(message_id, [])
+    return _message(row, evidence, _reference_facts(connection, [row]))

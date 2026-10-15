@@ -26,13 +26,14 @@ rerank:
   # only from them: reranker logits are never compared with RRF scores.
   depth: 50
   # What the cross-encoder reads for each candidate. `abstract`: the title and
-  # abstract (spec §7's canonical paper text, the shipped setting). `chunk`: the
-  # evidence chunk the first stage found the paper by, so the reranker judges the
-  # text that matched rather than a summary of the paper; `title_chunk` puts the
-  # title in front of it. Both need `candidates.source: chunks`. An ablation
-  # (2026-10-08) after Open RAG Bench showed the abstract-text reranker losing
-  # 0.163 nDCG@10 on section-level questions; a change here is a release decision.
-  text: abstract
+  # abstract (spec §7's canonical paper text). `chunk`: the evidence chunk the first
+  # stage found the paper by, so the reranker judges the text that matched rather than
+  # a summary of the paper; `title_chunk` puts the title in front of it. Both need
+  # `candidates.source: chunks`. `title_chunk` since 2026-10-15 (RAG-only plan, U1, the
+  # developer's decision): the chat's measured first stage, under which ORB's frozen
+  # answering scored flat 0.880 [0.844, 0.908] (orb-text-qa-v2), became the one first
+  # stage. Until then the search page read `abstract` (S2's rule) and the chat overrode it.
+  text: title_chunk
 
 cache:
   # Spec §7: an ordering's top 200 (hybrid_rerank: its reranked head) is kept this
@@ -44,7 +45,10 @@ cache:
 deadlines_seconds:
   # Candidate branches run concurrently, each within its own budget.
   branch: 1.0
-  rerank: 1.5
+  # 2.5 s with `title_chunk` (U1, 2026-10-15), the chat's measured value: chunk text
+  # reranks slower than abstracts (ORB p95 1.3-1.5 s against 0.60 s). The stage gets what
+  # is left of the total, as it did when ORB's frozen answering was measured.
+  rerank: 2.5
   # The whole request, after which the service falls back or fails, typed.
   total: 3.0
   # Opt-in deep search (hybrid_rerank_llm) only. The stages above keep the 3 s total;

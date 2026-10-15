@@ -223,6 +223,8 @@ def test_the_api_builds_its_branches_from_the_configured_source(
     # decision never collide with the new ones.
     plain = tmp_path / "papers.yaml"
     shipped["candidates"]["source"] = "papers"
+    # A paper-level first stage names no chunk, so its reranker reads abstracts.
+    shipped["rerank"]["text"] = "abstract"
     plain.write_text(yaml.safe_dump(shipped), encoding="utf-8")
     service = default_search_service(settings, corpus.engine, corpus.client, search_path=plain)
     try:
