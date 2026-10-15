@@ -106,7 +106,8 @@ reports a null coverage percentage** rather than an implied 100%.
 Revised 2026-10-11 (scope: search and grounded chat only):
 - **Search.** The search page and paper pages (`POST /v1/search`, `GET /v1/papers/{id}`) show
   bibliographic metadata, the abstract and a link to the source PDF. They work without an
-  account.
+  account. *Decided 2026-10-15, not yet built: the search page goes (RAG only); paper pages stay
+  public as citation targets, and the papers an answer read are listed with it as References.*
 - **Grounded answers.** A signed-in user's chat answer shows the passages it cites, each with
   its paper, section and page span, together with the other passages it read (at most 12
   pieces, 3 per paper: `configs/evidence.yaml`). Those passages are stored with the user's chat

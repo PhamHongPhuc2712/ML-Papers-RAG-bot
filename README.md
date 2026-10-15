@@ -6,10 +6,17 @@ Interspeech, JMLR, NAACL, NeurIPS and WACV, 2023–2026). It runs entirely on on
 databases, the indexes, the embedding model and the reranker are self-hosted, and only answer
 generation calls a hosted LLM, under a daily spend cap.
 
+> **Direction (2026-10-15): RAG only, like Consensus.** The search page and the chat are becoming
+> one experience: every request, including "find me papers about X", gets a cited answer with
+> the papers it read listed as References. Not built yet; the plan is
+> [`2026-10-15-rag-only.md`](docs/superpowers/plans/2026-10-15-rag-only.md). What follows
+> describes the app as it runs today, with a search page and a chat.
+
 ![A chat answer with numbered citations and the passages behind them](reports/m4-web/real-chat.png)
 
 *The chat on the real stack (`reports/m4-web.md`). Each claim cites the passages it rests on.
-A follow-up the indexed papers cannot answer gets "not enough evidence", not a guess.*
+Here the follow-up got "not enough evidence": it was taken with condensing off. Since
+2026-10-14 follow-ups are rewritten into a standalone question first, and this one is answered.*
 
 ## Run it
 

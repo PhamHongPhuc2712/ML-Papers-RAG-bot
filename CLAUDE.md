@@ -4,6 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
+**Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,
+including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
+References; one retrieval configuration (the chat's: reranker reads title + passage). Plan
+`docs/superpowers/plans/2026-10-15-rag-only.md` (M6 and G6 numbers reassigned; U1–U4), **not
+started**: the code still serves the search page (`/`, `SearchView`) and the chat separately, and
+`configs/chat.yaml` still overrides `configs/search.yaml`. S3 (`eval topic-queries`, 1,048
+model-written topic queries in `data/fixtures/retrieval-topics/`, text under
+`${DATA_DIR}/benchmarks/topics-v1/`) was built the same day; its registered search-page decision
+(`configs/experiments/m5-rerank-text-v2*.yaml`) is withdrawn before any run, and the set is kept
+for U4.
+
 **Scope revised 2026-10-11: paper search and a grounded chatbot only** (like Consensus and
 haiku.rag). Recommendations, the library, uploads, the general chat mode, the agent and M6
 are removed; spec §1 records the developer's answers. The roadmap is three plans:

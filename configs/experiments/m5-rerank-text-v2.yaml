@@ -1,3 +1,5 @@
+# WITHDRAWN 2026-10-15, before any run: the product is RAG only (docs/superpowers/plans/2026-10-15-rag-only.md),
+# so there is no search page whose reranker this could decide. Kept as the record of the registration.
 # Release plan S3, step 3: S1's section-level test split, scored once with --locked-test, only
 # if the paper-level guard in configs/experiments/m5-rerank-text-v2-topics.yaml held. The rule
 # is written there; this file differs only in its name and dataset.

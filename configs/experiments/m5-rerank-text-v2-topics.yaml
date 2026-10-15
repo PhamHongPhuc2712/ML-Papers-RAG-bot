@@ -1,3 +1,5 @@
+# WITHDRAWN 2026-10-15, before any run: the product is RAG only (docs/superpowers/plans/2026-10-15-rag-only.md),
+# so there is no search page whose reranker this could decide. Kept as the record of the registration.
 # Release plan S3 (registered by the commit that adds this file, before any S3 number): should
 # the search page's cross-encoder read title + the chunk that found each paper, at 512-token
 # pairs under the shipped 1.5 s deadline (`title_chunk_512`), instead of title + abstract?

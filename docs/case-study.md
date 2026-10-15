@@ -121,6 +121,17 @@ That is $2.04 in total. The single largest item was the frozen 400: $0.2690 for 
 $0.2721 for v3 (`reports/orb-text.md`). Everything else is self-hosted and costs nothing to
 run: storage, search, embeddings and reranking.
 
+## What comes next: RAG only
+
+On 2026-10-15 the developer decided to drop the separate search mode and make every request a
+cited-answer turn, as Consensus does: it shows the searches it ran and the papers it read, then
+a cited report, with the paper list behind References. The trigger was a measured inconsistency.
+The search page and the chat ran one search service with different reranker settings, so a
+"find papers" request gave two different lists: only 4/9, 3/10 and 6/8 of the chat's papers were
+in the search page's top 10. The chat's first stage becomes the only configuration. A topic
+query set built that day from abstracts (1,048 model-written queries) stays to measure it. Plan:
+`docs/superpowers/plans/2026-10-15-rag-only.md`.
+
 ## What a deployment would add
 
 These are deferred, not deleted (spec §2):

@@ -26,7 +26,7 @@ chat backend and web app from the two 2026-10-11 plans. No new dependency.
 Depends on the [chat backend plan](2026-10-11-chat-backend.md) (C1–C7) and the
 [web app plan](2026-10-11-web-app.md) (W1–W4); S1–S2 depend only on M2 and may run earlier.
 
-**Status:** Draft for review, 2026-10-11. No task started.
+**Status:** Done 2026-10-14 (S1–S2, R1–R4). **Superseded in part 2026-10-15:** the product is RAG only, with no search page (plan `2026-10-15-rag-only.md`), so S2's question, what the search page's reranker reads, no longer has a page to apply to; the single first stage is the chat's.
 
 ## Global Constraints
 
