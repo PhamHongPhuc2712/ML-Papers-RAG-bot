@@ -8,6 +8,11 @@ the single gold. A question that names the paper (its distinctive title terms or
 consecutive title words) or copies eight or more consecutive words of the passage is
 rejected: the first would be a lookup by name, the second a lookup by string.
 
+S3 (2026-10-15) builds a second set the same way from abstracts: one topic-style question per
+paper, the kind typed into a paper search box, as the paper-level guard LitSearch used to be.
+Only papers search can return (with at least one chunk) are sampled, and S1's papers are left
+out so the two sets stay independent. ``QuerySetSpec`` holds what differs between the two.
+
 Questions are derived from corpus text, so they live under DATA_DIR; the repository keeps
 ids, labels and splits.
 """
@@ -117,6 +122,58 @@ order by venue, year, chunk_id
 """
 
 
+# One abstract per findable paper: a paper with no chunk cannot be returned by search.
+_ABSTRACT_SQL = """
+with candidates as (
+    select 't-' || p.id::text as chunk_id, p.id::text as paper_id, p.title, v.name as venue,
+           p.publication_year as year, 'Abstract' as section, p.abstract as text
+    from papers p
+    join venues v on v.id = p.venue_id
+    where p.merged_into is null and p.abstract is not null
+      and length(p.abstract) >= :min_chars
+      and not (p.id::text = any(cast(:exclude as text[])))
+      and exists (
+          select 1 from paper_versions pv join chunks c on c.paper_version_id = pv.id
+          where pv.paper_id = p.id and pv.parse_status = 'parsed'
+      )
+), ranked as (
+    select *, row_number() over (
+        partition by venue, year order by md5(paper_id || :seed)
+    ) as in_venue_year
+    from candidates
+)
+select chunk_id, paper_id, title, venue, year, section, text
+from ranked where in_venue_year <= :per_venue_year
+order by venue, year, chunk_id
+"""
+
+
+def sample_abstracts(
+    engine: Engine,
+    *,
+    per_venue_year: int,
+    seed: int,
+    exclude: Sequence[str] = (),
+    min_chars: int = 1,
+) -> list[ChunkSample]:
+    """One abstract per paper search can return, ``per_venue_year`` papers per venue-year."""
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(_ABSTRACT_SQL),
+            {
+                "seed": str(seed),
+                "per_venue_year": per_venue_year,
+                "exclude": list(exclude),
+                "min_chars": min_chars,
+            },
+        ).mappings()
+        return [
+            ChunkSample(**{key: row[key] for key in ChunkSample.__dataclass_fields__})
+            for row in rows
+        ]
+
+
 def sample_chunks(
     engine: Engine, *, per_venue_year: int, seed: int, min_tokens: int = 200
 ) -> list[ChunkSample]:
@@ -147,6 +204,48 @@ PER_VENUE_YEAR = 15
 MIN_TOKENS = 200
 LIMIT = 600
 SPLIT_SIZES = (200, 200, 200)
+
+
+@dataclass(frozen=True)
+class QuerySetSpec:
+    """What one generated query set is: its prompt, where it is stored, and its sizes."""
+
+    run_prefix: str
+    prompt_path: str
+    texts: str
+    fixture: str
+    query_set: str
+    workflow: str
+    specificity: int
+    per_venue_year: int
+    limit: int
+    split_sizes: tuple[int, int, int]
+
+
+SECTIONS = QuerySetSpec(
+    run_prefix="section-queries",
+    prompt_path=PROMPT_PATH,
+    texts=TEXTS,
+    fixture=FIXTURE,
+    query_set=QUERY_SET,
+    workflow="grounded_qa",
+    specificity=1,
+    per_venue_year=PER_VENUE_YEAR,
+    limit=LIMIT,
+    split_sizes=SPLIT_SIZES,
+)
+TOPICS = QuerySetSpec(
+    run_prefix="topic-queries",
+    prompt_path="prompts/eval/topic-question-v1.yaml",
+    texts="benchmarks/topics-v1/queries.jsonl",
+    fixture="data/fixtures/retrieval-topics",
+    query_set="topics_v1",
+    workflow="topic_search",
+    specificity=0,
+    per_venue_year=30,
+    limit=1200,
+    split_sizes=(400, 400, 400),
+)
 
 
 def load_question_prompt(path: str | Path) -> dict[str, str]:
@@ -237,11 +336,11 @@ def build_section_queries(
     return built
 
 
-def split_sizes(kept: int) -> tuple[int, int, int]:
-    """The planned 200 / 200 / 200, or the same thirds of fewer kept questions."""
+def split_sizes(kept: int, planned: tuple[int, int, int] = SPLIT_SIZES) -> tuple[int, int, int]:
+    """The planned sizes (S1: 200 / 200 / 200), or the same thirds of fewer kept questions."""
 
-    if kept >= sum(SPLIT_SIZES):
-        return SPLIT_SIZES
+    if kept >= sum(planned):
+        return planned
     third = kept // 3
     return third, third, kept - 2 * third
 
@@ -254,6 +353,7 @@ def write_section_queries(
     *,
     source: str,
     prompt_name: str = "section-question-v1",
+    spec: QuerySetSpec = SECTIONS,
 ) -> None:
     """ids, labels and splits to ``fixture`` (no text); ``{query_id, query}`` lines to ``texts``."""
 
@@ -266,9 +366,9 @@ def write_section_queries(
             QueryRecord(
                 query_id=sample.chunk_id,
                 query=question,
-                query_set=QUERY_SET,
-                workflow="grounded_qa",
-                specificity=1,
+                query_set=spec.query_set,
+                workflow=spec.workflow,
+                specificity=spec.specificity,
                 quality=2,
                 in_domain=True,
                 source=source,
@@ -317,7 +417,57 @@ def run_section_queries(
     out_fixture: Path = Path(FIXTURE),
     prompt_path: str | Path = PROMPT_PATH,
 ) -> dict[str, Any]:
-    """``eval section-queries``: sample the live corpus, write and check questions, store them.
+    """``eval section-queries`` (S1): one question per sampled body passage."""
+
+    from ..db.session import make_engine
+
+    corpus = make_engine(database_url)
+    samples = sample_chunks(
+        corpus, per_venue_year=per_venue_year, seed=SEED, min_tokens=MIN_TOKENS
+    )[: SECTIONS.limit]
+    if not samples:
+        raise SectionQueryError("no_samples", "the corpus has no body chunk to sample")
+    return _run_generated(
+        SECTIONS, corpus, samples, max_spend_usd, out_fixture, load_question_prompt(prompt_path)
+    )
+
+
+def run_topic_queries(
+    *,
+    database_url: str,
+    max_spend_usd: float,
+    per_venue_year: int = TOPICS.per_venue_year,
+    out_fixture: Path = Path(TOPICS.fixture),
+    prompt_path: str | Path = TOPICS.prompt_path,
+    exclude_fixture: Path = Path(SECTIONS.fixture),
+) -> dict[str, Any]:
+    """``eval topic-queries`` (S3): one topic question per sampled abstract, S1's papers out."""
+
+    from ..db.session import make_engine
+    from .datasets import read_dataset
+
+    excluded = sorted({str(q.paper_id) for q in read_dataset(exclude_fixture).qrels if q.paper_id})
+    corpus = make_engine(database_url)
+    samples = sample_abstracts(corpus, per_venue_year=per_venue_year, seed=SEED, exclude=excluded)[
+        : TOPICS.limit
+    ]
+    if not samples:
+        raise SectionQueryError("no_samples", "the corpus has no findable abstract to sample")
+    report = _run_generated(
+        TOPICS, corpus, samples, max_spend_usd, out_fixture, load_question_prompt(prompt_path)
+    )
+    return report | {"excluded_papers": len(excluded)}
+
+
+def _run_generated(
+    spec: QuerySetSpec,
+    corpus: Engine,
+    samples: Sequence[ChunkSample],
+    max_spend_usd: float,
+    out_fixture: Path,
+    prompt: Mapping[str, str],
+) -> dict[str, Any]:
+    """Write and check one question per sample, then store the set as ``spec`` says.
 
     Refused when its worst case — every sample asked twice at the full output budget —
     exceeds ``max_spend_usd``; stopped once the run's ledger spend does.
@@ -330,13 +480,6 @@ def run_section_queries(
     from ..models.llm import ResponseCache, build_client
     from ..models.spend import SpendLedger, estimate_usd, load_llm_config
 
-    prompt = load_question_prompt(prompt_path)
-    corpus = make_engine(database_url)
-    samples = sample_chunks(
-        corpus, per_venue_year=per_venue_year, seed=SEED, min_tokens=MIN_TOKENS
-    )[:LIMIT]
-    if not samples:
-        raise SectionQueryError("no_samples", "the corpus has no body chunk to sample")
     with corpus.connect() as connection:
         release = connection.execute(
             text("select corpus_release_id from active_release")
@@ -360,7 +503,7 @@ def run_section_queries(
     client = build_client(
         QUESTION_MODEL, settings, ledger, cache=ResponseCache(data_dir / "cache" / "llm")
     )
-    run_id = f"section-queries-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = f"{spec.run_prefix}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
 
     def complete(messages: list[dict[str, str]]) -> Any:
         return client.complete(
@@ -377,7 +520,7 @@ def run_section_queries(
         )
     finally:
         client.close()
-    development, validation, test = split_sizes(len(built.kept))
+    development, validation, test = split_sizes(len(built.kept), spec.split_sizes)
     splits = assign(
         [sample for sample, _ in built.kept],
         development=development,
@@ -385,7 +528,7 @@ def run_section_queries(
         test=test,
         seed=SEED,
     )
-    texts = data_dir / TEXTS
+    texts = data_dir / spec.texts
     write_section_queries(
         built.kept,
         splits,
@@ -393,6 +536,7 @@ def run_section_queries(
         texts,
         source=f"copilot_v2@{release}",
         prompt_name=prompt["name"],
+        spec=spec,
     )
     return {
         "run_id": run_id,

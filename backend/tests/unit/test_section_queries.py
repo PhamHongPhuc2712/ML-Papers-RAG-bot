@@ -158,3 +158,35 @@ def test_a_bare_one_line_question_is_taken_as_the_question():
     assert _question("First line.\nSecond line.") is None
     assert _question('{"question": broken') is None
     assert _question(json.dumps({"q": "x"})) is None
+
+
+def test_the_topic_set_is_its_own_query_set_and_splits_400_400_400(tmp_path):
+    """S3: paper-level questions from abstracts, written and split like S1's but apart."""
+
+    from copilot.evaluation.section_queries import (
+        SECTIONS,
+        TOPICS,
+        ChunkSample,
+        split_sizes,
+        write_section_queries,
+    )
+
+    assert split_sizes(1200, TOPICS.split_sizes) == (400, 400, 400)
+    assert split_sizes(900, TOPICS.split_sizes) == (300, 300, 300)
+    assert split_sizes(600) == SECTIONS.split_sizes
+    assert TOPICS.fixture != SECTIONS.fixture and TOPICS.texts != SECTIONS.texts
+    sample = ChunkSample("t-p1", "p1", "A title", "ICLR", 2024, "Abstract", "An abstract.")
+    fixture, texts = tmp_path / "fixture", tmp_path / "texts.jsonl"
+    write_section_queries(
+        [(sample, "papers on robust training")],
+        {"t-p1": "validation"},
+        fixture,
+        texts,
+        source="test",
+        spec=TOPICS,
+        prompt_name="topic-question-v1",
+    )
+    query = read_dataset(fixture).queries[0]
+    assert (query.query_set, query.workflow, query.specificity) == ("topics_v1", "topic_search", 0)
+    assert '"query"' not in (fixture / "queries.jsonl").read_text()
+    assert json.loads(texts.read_text())["query"] == "papers on robust training"

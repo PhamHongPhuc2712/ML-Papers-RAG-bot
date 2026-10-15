@@ -1776,6 +1776,15 @@ def _parser() -> argparse.ArgumentParser:
         "--out", type=Path, default=Path("data/fixtures/retrieval-sections")
     )
     section_queries.add_argument("--prompt", default="prompts/eval/section-question-v1.yaml")
+    topic_queries = evaluation_commands.add_parser(
+        "topic-queries",
+        help="a paper-level topic query set from abstracts (release plan S3); spends money",
+    )
+    topic_queries.add_argument("--database-url", required=True, help="the live corpus")
+    topic_queries.add_argument("--per-venue-year", type=int, default=30)
+    topic_queries.add_argument("--max-spend-usd", type=float, required=True)
+    topic_queries.add_argument("--out", type=Path, default=Path("data/fixtures/retrieval-topics"))
+    topic_queries.add_argument("--prompt", default="prompts/eval/topic-question-v1.yaml")
     chat_eval = evaluation_commands.add_parser(
         "chat",
         help="follow-up answering on ORB conversations under three conditions (C7); spends money",
@@ -1955,6 +1964,20 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             result = run_section_queries(
+                database_url=args.database_url,
+                max_spend_usd=args.max_spend_usd,
+                per_venue_year=args.per_venue_year,
+                out_fixture=args.out,
+                prompt_path=args.prompt,
+            )
+        except SectionQueryError as error:
+            print(json.dumps({"error": error.code, "detail": str(error)}))
+            return 1
+    elif args.command == "eval" and args.eval_command == "topic-queries":
+        from .evaluation.section_queries import SectionQueryError, run_topic_queries
+
+        try:
+            result = run_topic_queries(
                 database_url=args.database_url,
                 max_spend_usd=args.max_spend_usd,
                 per_venue_year=args.per_venue_year,
