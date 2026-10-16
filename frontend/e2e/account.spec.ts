@@ -28,7 +28,7 @@ test("deleting the account signs out and the session is gone", async ({ page }) 
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Delete my account" }).click();
   await page.waitForURL((url) => url.pathname === "/");
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
   await page.goto("/chat");
   await expect(page).toHaveURL(/\/login\?next=%2Fchat/);
 });

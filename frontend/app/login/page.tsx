@@ -5,7 +5,7 @@ type Props = { searchParams: Promise<{ next?: string; expired?: string }> };
 export default async function LoginPage({ searchParams }: Props) {
   const { next, expired } = await searchParams;
   // Only same-site paths: an absolute URL here would be an open redirect.
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/chat";
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
   return (
     <main>
       <h1>Sign in</h1>

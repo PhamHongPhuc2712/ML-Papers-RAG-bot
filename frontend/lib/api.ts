@@ -1,13 +1,13 @@
 import type { components } from "./api-types";
 
 type Schemas = components["schemas"];
-export type SearchRequest = Schemas["SearchRequest"];
 export type SearchResponse = Schemas["SearchResponse"];
 export type PaperDetail = Schemas["PaperDetail"];
 export type ChatList = Schemas["ChatList"];
 export type ChatDetail = Schemas["ChatDetail"];
 export type ChatMessage = Schemas["ChatMessage"];
 export type StoredEvidence = Schemas["StoredEvidence"];
+export type Reference = Schemas["Reference"];
 export type ApiErrorBody = { code: string; message: string; retryable: boolean };
 
 export class ApiError extends Error {
@@ -43,8 +43,6 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  search: (request: SearchRequest) =>
-    call<SearchResponse>("search", { method: "POST", body: JSON.stringify(request) }),
   chats: () => call<ChatList>("chats"),
   chat: (id: string) => call<ChatDetail>(`chats/${encodeURIComponent(id)}`),
   deleteChat: (id: string) => call<void>(`chats/${encodeURIComponent(id)}`, { method: "DELETE" }),

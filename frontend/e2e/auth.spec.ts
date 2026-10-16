@@ -42,5 +42,5 @@ test("an open redirect is refused", async ({ page }) => {
   await page.getByLabel("Email").fill("alice@example.org");
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL("**/chat");
+  await page.waitForURL((url) => url.hostname === "127.0.0.1" && url.pathname === "/");
 });

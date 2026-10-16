@@ -35,7 +35,7 @@ test("a follow-up shows what was searched, and history survives a reload", async
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
   await box.fill("And the negatives?");
   await box.press("Enter");
-  await expect(page.getByText("Searched for: And the negatives? (contrastive sentence embeddings)")).toBeVisible();
+  await expect(page.getByText("Searched for “And the negatives? (contrastive sentence embeddings)” · read 2 papers")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(2);
 });
@@ -85,7 +85,7 @@ test("a chat can be deleted from the sidebar", async ({ page }) => {
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: /Delete chat/ }).click();
   await expect(chats(page)).toHaveCount(0);
-  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test("an expired session sends you to sign in and back", async ({ page, request }) => {

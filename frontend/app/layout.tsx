@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ML Research Copilot",
-  description: "Search ML papers and ask questions answered from their text, with citations.",
+  description: "Ask about ML papers: answers written from their text, with citations and References.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

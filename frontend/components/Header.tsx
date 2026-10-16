@@ -8,8 +8,7 @@ export async function Header() {
   return (
     <header className="site">
       <nav aria-label="Main">
-        <Link href="/">Search</Link>
-        <Link href="/chat">Chat</Link>
+        <Link href="/">ML Research Copilot</Link>
       </nav>
       {signedIn ? (
         <span className="account">

@@ -27,7 +27,7 @@ const summary = (p) => ({
   title: p.title, authors: p.authors, venue: p.venue, year: p.year,
   abstract: p.abstract, pdf_url: p.pdf_url, fulltext_indexed: p.fulltext_indexed,
 });
-const searchResponse = (items, extra = {}) => ({
+const searchResponse = (items) => ({
   request_id: randomUUID(),
   corpus_release_id: "mock-release",
   items: items.map((p, i) => ({ paper_id: p.id, score: 1 - i / 10, scores: {}, rank: i + 1 })),
@@ -35,7 +35,6 @@ const searchResponse = (items, extra = {}) => ({
   next_cursor: null,
   degraded: false,
   warnings: [],
-  ...extra,
 });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -51,7 +50,7 @@ async function stream(req, res, payload) {
   const now = new Date().toISOString();
   chat.updated_at = now;
   const user = { id: randomUUID(), ordinal: chat.messages.length, role: "user", status: "complete", text: payload.message,
-    claims: [], evidence: [], standalone_query: null, warnings: [], error_code: null, corpus_release_id: null, created_at: now };
+    claims: [], evidence: [], references: [], standalone_query: null, warnings: [], error_code: null, corpus_release_id: null, created_at: now };
   chat.messages.push(user);
   const messageId = randomUUID();
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
@@ -67,6 +66,9 @@ async function stream(req, res, payload) {
   const query = follow ? `${payload.message} (contrastive sentence embeddings)` : payload.message;
   if (follow) send("status", { stage: "searching", query });
   await sleep(pause);
+  // The turn's ranked papers, the first two read (the real turn reads 10 of 20).
+  const references = PAPERS.map((p, i) => ({ paper_id: p.id, rank: i + 1, read: i < 2, title: p.title, venue: p.venue, year: p.year }));
+  send("references", { query, items: references });
   send("evidence", { items: [{ id: "E1", paper_id: PAPERS[0].id, section: "Method", page_start: 3, page_end: 3 }], warnings: [] });
   send("status", { stage: "writing" });
   await sleep(pause);
@@ -83,7 +85,7 @@ async function stream(req, res, payload) {
     status: insufficient ? "insufficient" : "complete",
     text: insufficient ? "" : "Sentence pairs are formed from a sentence and a noised copy of it.",
     claims: insufficient ? [] : [{ text: "Sentence pairs are formed from a sentence and a noised copy of it.", evidence_ids: ["E1"] }],
-    evidence, standalone_query: query, warnings: [], error_code: null, corpus_release_id: "mock-release", created_at: now,
+    evidence, references, standalone_query: query, warnings: [], error_code: null, corpus_release_id: "mock-release", created_at: now,
   };
   chat.messages.push(assistant);
   send("final", assistant);
@@ -106,15 +108,8 @@ createServer(async (req, res) => {
   }
   if (path === "/v1/corpus/coverage") {
     return json(res, 200, { request_id: randomUUID(), as_of: "2026-10-11T00:00:00Z", venue_years: [
-      { venue: "ACL", year: 2024, papers: 1 }, { venue: "ICLR", year: 2025, papers: 1 }],
-      totals: { papers: 2, with_abstract: 2, with_fulltext: 1, failed_parse: 0, venue_years: 2 } });
-  }
-  if (path === "/v1/search" && req.method === "POST") {
-    const payload = await body(req);
-    if (/nothing/i.test(payload.query)) return json(res, 200, searchResponse([]));
-    if (/degraded/i.test(payload.query)) return json(res, 200, searchResponse(PAPERS, { degraded: true, warnings: ["rerank_timeout"] }));
-    if (payload.cursor === "page-2") return json(res, 200, searchResponse([PAPERS[1]]));
-    return json(res, 200, searchResponse([PAPERS[0]], { next_cursor: "page-2" }));
+      { venue: "ACL", year: 2024, papers: 1 }, { venue: "ACL", year: 2025, papers: 1 }, { venue: "ICLR", year: 2025, papers: 1 }],
+      totals: { papers: 3, with_abstract: 3, with_fulltext: 2, failed_parse: 0, venue_years: 3 } });
   }
   const paper = path.match(/^\/v1\/papers\/([^/]+)(\/related)?$/);
   if (paper) {

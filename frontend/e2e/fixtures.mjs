@@ -21,4 +21,14 @@ export const PAPERS = [
     pdf_url: null,
     fulltext_indexed: false,
   },
+  {
+    id: "aaaaaaaa-0000-4000-8000-000000000003",
+    title: "Sentence embeddings from language model prompts",
+    authors: ["Karen Spärck Jones"],
+    venue: "ACL",
+    year: 2025,
+    abstract: "Prompting a language model for one word yields a sentence embedding.",
+    pdf_url: null,
+    fulltext_indexed: true,
+  },
 ];

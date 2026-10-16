@@ -2,11 +2,12 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ApiError, api, errorFrom, loginRedirect, streamTurn, type ApiErrorBody, type ChatMessage } from "@/lib/api";
+import { ApiError, api, errorFrom, loginRedirect, streamTurn, type ApiErrorBody, type ChatMessage, type Reference } from "@/lib/api";
 import { STAGES } from "@/lib/chat-labels";
 import { readEvents } from "@/lib/sse";
 import { Answer } from "./Answer";
 import { EvidencePanel } from "./EvidencePanel";
+import { References } from "./References";
 
 const LIMIT = 2000;
 type Failure = ApiErrorBody & { requestId: string; message_text: string };
@@ -18,10 +19,25 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState(about ? "In this paper, " : "");
   const [stage, setStage] = useState<string | null>(null);
+  // The search step, from the `references` frame, shown while the answer is written.
+  const [searched, setSearched] = useState<{ query: string; read: number } | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [focus, setFocus] = useState<{ message: string; evidence: string } | null>(null);
   const abort = useRef<AbortController | null>(null);
+  // A new chat's first answer moves the URL to /chat/<id> in place; "New chat" (`/`) then lands on
+  // this same mounted view, which starts over rather than keep the previous conversation.
+  const [path, setPath] = useState(pathname);
+  if (path !== pathname) {
+    setPath(pathname);
+    if (chatId === null && !pathname.startsWith("/chat/")) {
+      setId(null);
+      setMessages([]);
+      setFailure(null);
+      setFocus(null);
+      setDraft("");
+    }
+  }
 
   function expired() {
     router.replace(loginRedirect(pathname, true));
@@ -35,7 +51,7 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
       },
       (error: unknown) => {
         if (error instanceof ApiError && error.status === 401) expired();
-        else if (error instanceof ApiError && error.status === 404) router.replace("/chat");
+        else if (error instanceof ApiError && error.status === 404) router.replace("/");
         else setLoadFailed(true);
       },
     );
@@ -51,11 +67,12 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
   async function send(text: string, requestId: string) {
     setFailure(null);
     setStage("searching");
+    setSearched(null);
     const controller = new AbortController();
     abort.current = controller;
     const optimistic: ChatMessage = {
       id: requestId, ordinal: messages.length, role: "user", status: "complete", text,
-      claims: [], evidence: [], standalone_query: null, warnings: [], error_code: null,
+      claims: [], evidence: [], references: [], standalone_query: null, warnings: [], error_code: null,
       corpus_release_id: null, created_at: new Date().toISOString(),
     };
     setMessages((previous) => (previous.some((m) => m.id === requestId) ? previous : [...previous, optimistic]));
@@ -74,6 +91,8 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
           window.dispatchEvent(new Event("chats-changed"));
         } else if (event.event === "status" && typeof data.stage === "string") {
           setStage(data.stage);
+        } else if (event.event === "references" && typeof data.query === "string" && Array.isArray(data.items)) {
+          setSearched({ query: data.query, read: (data.items as Reference[]).filter((item) => item.read).length });
         } else if (event.event === "final") {
           setMessages((previous) => [...previous, data as unknown as ChatMessage]);
           window.dispatchEvent(new Event("chats-changed"));
@@ -88,6 +107,7 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
       setFailure({ ...body, requestId, message_text: text });
     } finally {
       setStage(null);
+      setSearched(null);
       abort.current = null;
     }
   }
@@ -117,6 +137,7 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
           ) : message.status === "complete" || message.status === "insufficient" ? (
             <li key={message.id}>
               <Answer message={message} onCite={(evidence) => setFocus({ message: message.id, evidence })} />
+              <References message={message} />
               {focus?.message === message.id ? <EvidencePanel message={message} focused={focus.evidence} /> : null}
             </li>
           ) : (
@@ -124,7 +145,12 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
           ),
         )}
       </ol>
-      <div role="status" aria-live="polite">{stage ? <p className="muted">{STAGES[stage] ?? "Working…"}</p> : null}</div>
+      <div role="status" aria-live="polite">
+        {stage && searched ? (
+          <p className="muted" style={{ margin: 0 }}>Searched for “{searched.query}” · reading {searched.read} paper{searched.read === 1 ? "" : "s"}</p>
+        ) : null}
+        {stage ? <p className="muted">{STAGES[stage] ?? "Working…"}</p> : null}
+      </div>
       {loadFailed && chatId ? (
         <p role="alert" className="banner error">
           This chat could not be loaded. <button type="button" onClick={() => loadChat(chatId)}>Retry</button>
@@ -141,7 +167,7 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
       <form onSubmit={submit}>
         <label htmlFor="composer">Ask about ML papers</label>
         <textarea id="composer" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey}
-          aria-describedby="composer-count" />
+          placeholder="Ask a question, or ask for papers on a topic" aria-describedby="composer-count" />
         <p id="composer-count" className="muted" style={{ margin: "4px 0" }}>{draft.length} / {LIMIT}</p>
         <button className="primary" type="submit" disabled={running || !draft.trim() || draft.length > LIMIT}>Send</button>
       </form>

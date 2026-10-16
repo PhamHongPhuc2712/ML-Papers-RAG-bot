@@ -34,13 +34,13 @@ export function ChatSidebar() {
   async function remove(id: string, title: string) {
     if (!window.confirm(`Delete “${title}”? This cannot be undone.`)) return;
     await api.deleteChat(id);
-    if (window.location.pathname === `/chat/${id}`) router.replace("/chat");
+    if (window.location.pathname === `/chat/${id}`) router.replace("/");
     load();
   }
 
   return (
     <nav aria-label="Chats" style={{ borderRight: "1px solid var(--border)", paddingRight: 12 }}>
-      <p><Link href="/chat">New chat</Link></p>
+      <p><Link href="/">New chat</Link></p>
       {failed ? (
         <p className="banner error" role="alert">
           Your chats could not be loaded. <button type="button" onClick={load}>Retry</button>

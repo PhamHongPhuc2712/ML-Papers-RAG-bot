@@ -11,8 +11,13 @@ References; one retrieval configuration (the chat's: reranker reads title + pass
 decided: sign-in required, 10 papers, one search per turn, a structured overview subject to U2's rule).
 **U1 is done (2026-10-15)**: `configs/search.yaml` is the one first stage (`rerank.text: title_chunk`, 2.5 s
 rerank deadline), `configs/chat.yaml` refuses overrides, and a turn sends a `references` SSE frame and
-stores `[{paper_id, rank, read}]` in `chat_messages.paper_references` (migration `0010`). U2–U4 are not
-started: the web app still serves the search page (`/`, `SearchView`) beside the chat. S3 (`eval topic-queries`, 1,048
+stores `[{paper_id, rank, read}]` in `chat_messages.paper_references` (migration `0010`, applied to
+`copilot_v2` 2026-10-16). **U2 is done, the overview not adopted** (one unsupported citation in its hand
+read; `reports/u2-overview.md`): short cited claims stay. **U3 is done (2026-10-16)**: `/` is the one
+entry point (signed out it explains and links to sign-in; signed in it is the ask box beside the chat
+history), each answer says "Searched for “…” · read N papers" and lists its References with venue and
+year filters (`components/References.tsx`); `SearchView`, its nav link and the search e2e tests are
+gone (`POST /v1/search` stays in the API). U4 is not started. S3 (`eval topic-queries`, 1,048
 model-written topic queries in `data/fixtures/retrieval-topics/`, text under
 `${DATA_DIR}/benchmarks/topics-v1/`) was built the same day; its registered search-page decision
 (`configs/experiments/m5-rerank-text-v2*.yaml`) is withdrawn before any run, and the set is kept
