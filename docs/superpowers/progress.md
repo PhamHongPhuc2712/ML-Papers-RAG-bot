@@ -1,6 +1,6 @@
 # ML Research Copilot — Progress Tracker
 
-Last updated: 2026-10-16 (U1–U4 done; G6 met locally, CI pending a push).
+Last updated: 2026-10-16 (U1–U4 done; G6 met, CI green on `d5364f5`).
 
 ## Current state
 
@@ -135,7 +135,7 @@ backend/tests/integration/{conftest, test_index_release, test_search_service, te
 | G3 | Grounded chat (revised 2026-10-11): ownership, idempotency and interruption tests; zero fabricated ids; the chat generator measured on ORB's frozen 400; follow-ups measured with condensing decided; chat calls in the ledger | **Passes 2026-10-11**: C1/C2/C6 suites (`test_auth`, `test_tokens`, `test_chat_store`, `test_chat_api`, `test_chat_stream`); citations validated by construction (C5, C6 tests); [C4](../../reports/orb-text.md#structured-generation-c4-2026-10-11) 0.884 frozen; [C7](../../reports/chat-followups.md) decided; [3 `chat` ledger rows](../../reports/m3-chat.md); full suite 745 passed, Ruff and mypy strict clean, `openapi.json` current |
 | G4 | Web app (revised): every page and state tested in CI, no serious axe violation, a recorded real-stack run | **Met 2026-10-14**: the CI `frontend` job's first run passed on `01e0280` (2026-10-14 03:16 UTC), with `backend` green beside it, and both stayed green through `8b11bef`; 16/16 browser tests and axe checks at W4, 20/20 after R2–R3; real-stack run recorded ([evidence](../../reports/m4-web.md)) |
 | G5 | Release (revised): S2 decided by its rule, deletion and restore verified, drills recorded, CI green, every published number traced | **Met 2026-10-14**: S2 decided by its registered rule (`reports/m5-rerank-text.md`); deletion and restore verified by tests and by drill 8 (`reports/m5-drills.md`); R1–R3 done with their reports; CI `backend` and `frontend` green on `8b11bef`; `README.md` and `docs/case-study.md` written, every figure grepped in its report before committing (three wrong figures caught and corrected that way) |
-| G6 | One RAG experience (reassigned 2026-10-15): one entry point and no search page, one retrieval configuration, References tested, the answer form decided by a registered rule, CI green, a real-stack walkthrough | **Met locally 2026-10-16, CI pending**: one page (U3), one first stage (U1), References in unit and browser tests with axe (U3), the answer form by U2's rule, the real-stack walk (U4). CI has not run on these commits: they are not pushed |
+| G6 | One RAG experience (reassigned 2026-10-15): one entry point and no search page, one retrieval configuration, References tested, the answer form decided by a registered rule, CI green, a real-stack walkthrough | **Met 2026-10-16**: one page (U3), one first stage (U1), References in unit and browser tests with axe (U3), the answer form by U2's rule, the real-stack walk (U4); CI `checks` green on `d5364f5` (run 38858492407, backend and frontend jobs) |
 | G6 | ML extension | **Removed 2026-10-11** |
 
 ## Decisions recorded during implementation
