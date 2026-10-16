@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MOCK, PASSWORD, signIn } from "./helpers";
+import { MOCK, PASSWORD, openAccountMenu, signIn } from "./helpers";
 
 test.beforeEach(async ({ request }) => {
   await request.post(`${MOCK}/__control/reset`);
@@ -30,6 +30,7 @@ test("chat needs a session and signing out ends it", async ({ page }) => {
   await page.goto("/chat");
   await expect(page).toHaveURL(/\/login\?next=%2Fchat/);
   await signIn(page);
+  await openAccountMenu(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.waitForURL("**/login");
   await page.goto("/chat");

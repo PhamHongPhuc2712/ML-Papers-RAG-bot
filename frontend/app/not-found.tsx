@@ -5,7 +5,7 @@ export default function NotFound() {
     <main>
       <h1>Not found</h1>
       <p>
-        That page does not exist. <Link href="/">Search papers</Link>.
+        That page does not exist. <Link href="/">Ask a question</Link>.
       </p>
     </main>
   );

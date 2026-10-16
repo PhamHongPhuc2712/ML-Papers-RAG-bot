@@ -12,6 +12,11 @@ export async function signIn(page: Page, next = "/chat") {
   await page.waitForURL(`**${next}`);
 }
 
+/** Sign out and the account page live in the sidebar's account menu (UI redesign, D1). */
+export async function openAccountMenu(page: Page) {
+  await page.getByRole("button", { name: /^Account menu/ }).click();
+}
+
 export async function noSeriousViolations(page: Page) {
   const results = await new AxeBuilder({ page }).analyze();
   const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");

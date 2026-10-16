@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MOCK, PASSWORD, noSeriousViolations, signIn } from "./helpers";
+import { MOCK, PASSWORD, noSeriousViolations, openAccountMenu, signIn } from "./helpers";
 
 test.beforeEach(async ({ request }) => {
   await request.post(`${MOCK}/__control/reset`);
@@ -23,6 +23,7 @@ test("a wrong password keeps the account and the session", async ({ page }) => {
 
 test("deleting the account signs out and the session is gone", async ({ page }) => {
   await signIn(page, "/chat");
+  await openAccountMenu(page);
   await page.getByRole("link", { name: "Account" }).click();
   await page.waitForURL("**/account");
   await page.getByLabel("Password").fill(PASSWORD);

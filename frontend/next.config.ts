@@ -6,6 +6,8 @@ const config: NextConfig = {
   // The browser tests reach `next dev` at 127.0.0.1, which Next 16 otherwise treats as a
   // foreign origin and refuses its dev resources (no hydration). Ignored by `next start`.
   allowedDevOrigins: ["127.0.0.1"],
+  // The dev-only build indicator sits over the sidebar's account button.
+  devIndicators: false,
 };
 
 export default config;
