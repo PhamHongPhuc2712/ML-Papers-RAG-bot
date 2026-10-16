@@ -1,22 +1,22 @@
 # ML Papers RAG bot
 
-Paper search and a chatbot that answers with citations, over **85,729 accepted main-conference
+A research assistant that answers questions about ML papers with citations, and lists the
+papers each answer read as its References, over **85,729 accepted main-conference
 ML papers from 42 venue-years** (AAAI, ACL, CVPR, ECCV, EMNLP, ICCV, ICLR, ICML, IJCAI,
 Interspeech, JMLR, NAACL, NeurIPS and WACV, 2023–2026). It runs entirely on one machine: the
 databases, the indexes, the embedding model and the reranker are self-hosted, and only answer
 generation calls a hosted LLM, under a daily spend cap.
 
-> **Direction (2026-10-15): RAG only, like Consensus.** The search page and the chat are becoming
-> one experience: every request, including "find me papers about X", gets a cited answer with
-> the papers it read listed as References. Not built yet; the plan is
-> [`2026-10-15-rag-only.md`](docs/superpowers/plans/2026-10-15-rag-only.md). What follows
-> describes the app as it runs today, with a search page and a chat.
+**RAG only, like Consensus (2026-10-15/16).** There is one ask box and no separate search page:
+every request, a question or "find me papers about X", is one turn that searches, reads the top
+10 papers and answers with cited claims, with the 20 ranked papers listed as References
+([plan](docs/superpowers/plans/2026-10-15-rag-only.md)).
 
-![A chat answer with numbered citations and the passages behind them](reports/m4-web/real-chat.png)
+![A paper-finding request answered with cited claims and its References](reports/u4-web/real-papers.png)
 
-*The chat on the real stack (`reports/m4-web.md`). Each claim cites the passages it rests on.
-Here the follow-up got "not enough evidence": it was taken with condensing off. Since
-2026-10-14 follow-ups are rewritten into a standalone question first, and this one is answered.*
+*A paper-finding request on the real stack, 2026-10-16 (`reports/u4-single-stage.md`). The answer
+cites four sentence-embedding papers; References 3–5 are unrelated 3D-generation papers the
+reranker placed there, the known weakness on topic requests measured below.*
 
 ## Run it
 
@@ -60,14 +60,17 @@ cd frontend && npm run lint && npm run typecheck && npm test && npm run e2e
   each paper is scored by its best chunk. The two lists are fused by reciprocal rank, and
   `bge-reranker-v2-m3` reranks the top 50. Every stage has a deadline; when one is missed, the
   results are marked degraded or the search fails with a typed, retryable error.
-- **Chat.** Each turn is a LangGraph graph: condense a follow-up into a standalone question,
-  search for 10 papers, retrieve evidence passages inside them, and generate structured
-  claims. Each claim's evidence ids are validated before the answer is stored and sent whole
-  over SSE.
+- **Answer turn.** Each turn is a LangGraph graph: condense a follow-up into a standalone
+  question, search once (the reranker reads each paper's title and the passage that found it),
+  read evidence passages inside the top 10 papers, and generate structured claims. Each claim's
+  evidence ids are validated before the answer is stored and sent whole over SSE, after a
+  `references` event with the 20 ranked papers.
 - **Spend ledger.** Every priced LLM call reserves its worst case against a daily cap before
   it is sent.
-- **Web app.** A Next.js app keeps the access token in an `httpOnly` cookie and proxies the
-  API.
+- **Web app.** One page: `/` is the ask box beside the chat history (sign-in required, since
+  every answer spends); each answer shows what it searched, its cited passages and its References
+  with venue and year filters. Paper pages are public. A Next.js server keeps the access token in
+  an `httpOnly` cookie and proxies the API.
 
 ```mermaid
 flowchart TD
@@ -103,16 +106,20 @@ bootstrap over query families for retrieval, Wilson for accuracy.
 | Retrieval on Open RAG Bench, all 1,914 text questions | `hybrid` nDCG@10 **0.948** [0.936, 0.959] | [orb-text](reports/orb-text.md) |
 | Answering on Open RAG Bench, frozen 400, haiku.rag's rubric | **0.880** [0.844, 0.908]. With the chat's `StructuredGenerator` (C4): **0.884** [0.849, 0.912], McNemar p = 0.824, adopted | [orb-text](reports/orb-text.md) |
 | Follow-up answering, 43 frozen ORB conversations (C7) | condensed **0.791** [0.648, 0.886], raw 0.674 [0.525, 0.795], standalone ceiling 0.930; McNemar p = 0.227, so C7's rule turned condensing off; the developer turned it **on** again (2026-10-14) on this underpowered but one-directional evidence | [chat-followups](reports/chat-followups.md) |
-| Search on our corpus, S1's 190 passage questions (validation) | `hybrid_rerank` reading abstracts nDCG@10 **0.350**; reading title + chunk **0.698**, a gain of **+0.348** [+0.292, +0.408]. By S2's registered rule, whose paper-level guard it failed, the search page keeps reading abstracts | [m5-rerank-text](reports/m5-rerank-text.md) |
+| The one first stage on our corpus (U4), validation, model-written queries | Passage questions (S1, 190): reranker reading title + passage nDCG@10 **0.698**, reading title + abstract 0.350. "Find papers" requests (S3, 349): title + passage **0.563**, title + abstract **0.663** (−0.100 [−0.130, −0.070]). Shipped: title + passage, the developer's choice; each set leans toward the reader of its source text | [u4-single-stage](reports/u4-single-stage.md) |
 | Failure drills on the local stack (R3) | 7 of 8 pass, 1 not possible; one failure found and fixed | [m5-drills](reports/m5-drills.md) |
 
 ## Limitations
 
 - **The judges are models.** In place of hand labels, a second model judge checked the judge
   of record: agreement 95.5%, κ 0.807 on 89 cases. That is weaker evidence than human labels.
-- **Some test questions are synthetic.** The follow-up conversations and S1's 571 passage
-  questions were written by a model. Each has one gold paper, so a question that many papers
-  answer is undercounted.
+- **Some test questions are synthetic.** The follow-up conversations, S1's 571 passage
+  questions and S3's 1,048 topic queries were written by a model. Each has one gold paper, so a
+  question that many papers answer is undercounted.
+- **Paper-finding ranks worse than it could.** The reranker reads the passage that found each
+  paper, which serves questions well, but on topic requests the old abstract reader ranked the
+  source paper higher (S3, above), and the real-stack walk shows unrelated papers in a topic
+  request's top 5. A fairer judged measurement is the open follow-up.
 - **3,802 papers (4.4%) have no full text.** 3,759 of them are zero-byte PDFs at the source,
   mostly NeurIPS 2025 and ICLR 2026 (`docs/data-card.md`). They have no chunks, and the
   shipped search finds papers through the chunk collection, so search cannot return them.
@@ -120,7 +127,8 @@ bootstrap over query families for retrieval, Wilson for accuracy.
   on an idle GPU; under contention, search degrades within its deadlines.
 - **It runs locally only.** Staged deployment, public rate limits and per-user quotas are
   deferred, not built. If Qdrant restarts while the API runs, the first searches are cold
-  again.
+  again; and after a fresh start the warm-up can report ready while the first live searches still
+  time out a branch (`reports/u4-single-stage.md`).
 
 More: [the case study](docs/case-study.md), [the data card](docs/data-card.md), the design spec
 in `docs/superpowers/specs/`, and the task and gate board in `docs/superpowers/progress.md`.

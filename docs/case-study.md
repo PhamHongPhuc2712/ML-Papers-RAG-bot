@@ -30,7 +30,7 @@ paper scored by its best evidence chunk, were registered and promoted on validat
 (git history keeps it). The decision stands on Open RAG Bench, which reproduced it: chunk-level
 candidates beat title-and-abstract ones by +0.22 to +0.25 nDCG@10 (`reports/orb-text.md`).
 
-### What the cross-encoder reads: the chunk for chat, the abstract for the search page
+### What the cross-encoder reads: title + chunk, the one first stage since 2026-10-15
 
 On Open RAG Bench's section-level questions, the reranker reading titles and abstracts *lost*
 0.163 nDCG@10 against plain fusion (`hybrid_rerank` 0.785, `hybrid` 0.948). Reading the title
@@ -42,9 +42,14 @@ plus the chunk that found the paper gained **+0.183** [+0.163, +0.204] over the 
 - **The search page** was decided separately, on our corpus (S2). The candidate gained
   **+0.348** [+0.292, +0.408] nDCG@10 on S1's 190 model-written passage questions, but failed
   the registered rule's paper-level guard, which was measured on LitSearch's 52 in-domain
-  queries and removed with them. So the search page keeps reading **abstracts**
-  (`reports/m5-rerank-text.md`). With LitSearch gone, the guard can no longer be re-measured; a
-  new decision needs a new registration.
+  queries and removed with them. So the search page kept reading **abstracts**
+  (`reports/m5-rerank-text.md`) until the search page itself was removed.
+- **One stage (U1, 2026-10-15).** With RAG only, the chat's setting became the only one. U4
+  measured its cost on topic requests: on S3's 349 model-written "find papers" queries the
+  abstract reader ranks the source paper higher (nDCG@10 0.663 against 0.563), while on S1's
+  passage questions title + chunk wins by 0.348. Each set was written from the text one reader
+  reads (S3 from abstracts), so both gaps are uncertain in size; a judged measurement is the
+  open follow-up (`reports/u4-single-stage.md`).
 
 ### The answer judge's rubric
 
@@ -121,15 +126,18 @@ That is $2.04 in total. The single largest item was the frozen 400: $0.2690 for 
 $0.2721 for v3 (`reports/orb-text.md`). Everything else is self-hosted and costs nothing to
 run: storage, search, embeddings and reranking.
 
-## What comes next: RAG only
+## RAG only (2026-10-15/16)
 
 On 2026-10-15 the developer decided to drop the separate search mode and make every request a
 cited-answer turn, as Consensus does: it shows the searches it ran and the papers it read, then
 a cited report, with the paper list behind References. The trigger was a measured inconsistency.
 The search page and the chat ran one search service with different reranker settings, so a
 "find papers" request gave two different lists: only 4/9, 3/10 and 6/8 of the chat's papers were
-in the search page's top 10. The chat's first stage becomes the only configuration. A topic
-query set built that day from abstracts (1,048 model-written queries) stays to measure it. Plan:
+in the search page's top 10. The chat's first stage became the only configuration (U1). A
+structured overview for paper-finding requests kept accuracy on ORB but was not adopted: its
+registered hand read found one claim its citation does not support (U2, `reports/u2-overview.md`).
+The web app became one page with References (U3), and U4 measured the stage on S1 and on a topic
+query set built from abstracts, then walked the real stack (`reports/u4-single-stage.md`). Plan:
 `docs/superpowers/plans/2026-10-15-rag-only.md`.
 
 ## What a deployment would add

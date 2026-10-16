@@ -17,7 +17,12 @@ read; `reports/u2-overview.md`): short cited claims stay. **U3 is done (2026-10-
 entry point (signed out it explains and links to sign-in; signed in it is the ask box beside the chat
 history), each answer says "Searched for “…” · read N papers" and lists its References with venue and
 year filters (`components/References.tsx`); `SearchView`, its nav link and the search e2e tests are
-gone (`POST /v1/search` stays in the API). U4 is not started. S3 (`eval topic-queries`, 1,048
+gone (`POST /v1/search` stays in the API). **U4 is done (2026-10-16)**, a measurement
+(`reports/u4-single-stage.md`): the shipped reranker (title + passage) leads title + abstract on S1's
+passage questions (0.698 vs 0.350 nDCG@10) and trails it on S3's "find papers" queries (0.563 vs
+0.663); both sets are model-written, each leaning toward the reader of its source text; the setting
+stands, and a judged paper-finding measure is the open follow-up. G6 is met locally; CI has not run
+on the RAG-only commits. S3 (`eval topic-queries`, 1,048
 model-written topic queries in `data/fixtures/retrieval-topics/`, text under
 `${DATA_DIR}/benchmarks/topics-v1/`) was built the same day; its registered search-page decision
 (`configs/experiments/m5-rerank-text-v2*.yaml`) is withdrawn before any run, and the set is kept

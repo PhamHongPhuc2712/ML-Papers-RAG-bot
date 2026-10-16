@@ -1,0 +1,565 @@
+{
+  "comparisons": {
+    "abstract_reranker_vs_shipped": {
+      "baseline": "shipped",
+      "candidate": "abstract_reranker",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.48607245190339743,
+          "candidate": 0.5842043025424114,
+          "difference": 0.09813185063901396,
+          "high": 0.13384133237822352,
+          "losses": 30,
+          "low": 0.0660575567380725,
+          "metric": "mrr@10",
+          "ties": 229,
+          "wins": 90
+        },
+        "ndcg@10": {
+          "baseline": 0.525998069142723,
+          "candidate": 0.616821050447258,
+          "difference": 0.09082298130453509,
+          "high": 0.1241123324408827,
+          "losses": 30,
+          "low": 0.06264576255465681,
+          "metric": "ndcg@10",
+          "ties": 229,
+          "wins": 90
+        },
+        "recall@10": {
+          "baseline": 0.6532951289398281,
+          "candidate": 0.7191977077363897,
+          "difference": 0.0659025787965616,
+          "high": 0.10315186246418338,
+          "losses": 9,
+          "low": 0.03151862464183381,
+          "metric": "recall@10",
+          "ties": 308,
+          "wins": 32
+        },
+        "recall@50": {
+          "baseline": 0.7822349570200573,
+          "candidate": 0.7822349570200573,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 349,
+          "wins": 0
+        }
+      }
+    },
+    "fusion_only_vs_shipped": {
+      "baseline": "shipped",
+      "candidate": "fusion_only",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.48607245190339743,
+          "candidate": 0.4489880383863191,
+          "difference": -0.03708441351707827,
+          "high": -0.003024400782280438,
+          "losses": 77,
+          "low": -0.07451499749852183,
+          "metric": "mrr@10",
+          "ties": 211,
+          "wins": 61
+        },
+        "ndcg@10": {
+          "baseline": 0.525998069142723,
+          "candidate": 0.4906101973601021,
+          "difference": -0.03538787178262078,
+          "high": -0.004142901834972153,
+          "losses": 77,
+          "low": -0.06953280591124499,
+          "metric": "ndcg@10",
+          "ties": 211,
+          "wins": 61
+        },
+        "recall@10": {
+          "baseline": 0.6532951289398281,
+          "candidate": 0.6246418338108882,
+          "difference": -0.02865329512893983,
+          "high": 0.011461318051575931,
+          "losses": 32,
+          "low": -0.06876790830945559,
+          "metric": "recall@10",
+          "ties": 295,
+          "wins": 22
+        },
+        "recall@50": {
+          "baseline": 0.7822349570200573,
+          "candidate": 0.7822349570200573,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 349,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "manifest": {
+    "bootstrap": {
+      "confidence": 0.95,
+      "resamples": 1000,
+      "seed": 42,
+      "unit": "query family"
+    },
+    "code": {
+      "diff_sha256": "77c56cac2d0a6acfa4c0fe3b93609300d3ac50af5aaf935ca51973c5f46105b2",
+      "dirty": true,
+      "git_sha": "112a98c019c12100ad99ad7f35d44673e28ad95e"
+    },
+    "corpus": {
+      "chunker_version": "paragraph-pack-v1",
+      "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+      "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "papers": "database",
+      "parser_version": "pypdf-text-v2",
+      "release_id": "m2-20260924T095724Z",
+      "releases": {
+        "m2-20260924T095724Z": {
+          "bm25_vocabulary_sha256": "499a7ffb0dbb12da4d192047a8bf9992809c01c0dfa48101b908c30e69a726b2",
+          "dense_dimensions": 1024,
+          "dense_vector_bytes": 351145984,
+          "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+          "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+          "paper_collection": "dev_paper_abstracts_m2-20260924T095724Z",
+          "points": 85729
+        }
+      }
+    },
+    "cost": {
+      "metered_usd": 0.0,
+      "note": "self-hosted models and services; no priced model call is made"
+    },
+    "created_at": "2026-10-16T04:00:46.662711+00:00",
+    "dataset": {
+      "digest": "1a24aa151aa543eb30085d6ea9cfcd891f912a69a1283a73881f9a124ca7000c",
+      "labels": "paper_id",
+      "limited_to": null,
+      "path": "data/fixtures/retrieval-topics",
+      "queries": 349,
+      "slice": "all",
+      "sources": [
+        "copilot_v2@m2-20260924T095724Z"
+      ],
+      "split": "development"
+    },
+    "experiment": {
+      "config_sha256": "92d56a0755d61080bb220275144f09c073279f2a39f14ed768f5daf9f24f14aa",
+      "name": "u4-single-stage-topics",
+      "path": "configs/experiments/u4-single-stage-topics.yaml"
+    },
+    "hardware": {
+      "cores": 12,
+      "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cuda": "13.0",
+      "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+      "ram_gb": 25.2,
+      "torch": "2.14.0+cu130"
+    },
+    "locked_test": false,
+    "run_id": "u4-single-stage-topics-development-20261016T040046Z",
+    "search": {
+      "config_sha256": "96727e4b1d6a990f7616115f132378ae71826e5923d80a50f4a277cafce29137",
+      "path": "configs/search.yaml",
+      "values": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "rerank_depth": 50,
+        "rerank_pair_max_tokens": null,
+        "rerank_retries": 1,
+        "rerank_seconds": 2.5,
+        "rerank_text": "title_chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      }
+    },
+    "seed": 42,
+    "timing": {
+      "gpu": {
+        "available": true,
+        "before_run": {
+          "available": true,
+          "busy": false,
+          "memory_mib": 912,
+          "samples": 5,
+          "utilization_percent_p50": 0.0
+        },
+        "compute_processes_seen": [],
+        "memory_mib": {
+          "max": 4379,
+          "min": 3249
+        },
+        "samples": 612,
+        "utilization_percent": {
+          "max": 100,
+          "p50": 98.0
+        }
+      },
+      "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+    },
+    "variants": {
+      "abstract_reranker": {
+        "baseline": "shipped",
+        "candidates": "chunks",
+        "changes": "the former search page's reranker, title + abstract at a 1.5 s rerank deadline",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_seconds": 1.5,
+          "rerank_text": "abstract"
+        },
+        "search_sha256": "ae8de0521687836b0f15b62e07ce0ffcb5f6feb60547bd297214b9d24c7a3a8e",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 12.999
+      },
+      "fusion_only": {
+        "baseline": "shipped",
+        "candidates": "chunks",
+        "changes": "no reranker, RRF fusion of the BM25 and dense chunk branches",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "none",
+        "reranker_precision": null,
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {},
+        "search_sha256": "c904fa8cdfb4bb60bfc4b2bb555da7b41e8e310c8815be15099e7c6141e97b18",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 7.582
+      },
+      "shipped": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": null,
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {},
+        "search_sha256": "c904fa8cdfb4bb60bfc4b2bb555da7b41e8e310c8815be15099e7c6141e97b18",
+        "warmup_queries": {
+          "count": 10,
+          "split": "validation"
+        },
+        "warmup_seconds": 20.814
+      }
+    }
+  },
+  "variants": {
+    "abstract_reranker": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.5842043025424114,
+            "ndcg@10": 0.616821050447258,
+            "queries": 349,
+            "recall@10": 0.7191977077363897,
+            "recall@50": 0.7822349570200573
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.5842043025424114,
+            "ndcg@10": 0.616821050447258,
+            "queries": 349,
+            "recall@10": 0.7191977077363897,
+            "recall@50": 0.7822349570200573
+          }
+        },
+        "candidate_recall": 0.8624641833810889,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07191977077363897,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.015644699140401147,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1257.5,
+          "p50_ms": 542.7,
+          "p95_ms": 590.2
+        },
+        "mrr@10": {
+          "high": 0.6297950209214536,
+          "low": 0.5375856756265065,
+          "mean": 0.5842043025424114
+        },
+        "ndcg@10": {
+          "high": 0.6608688110919597,
+          "low": 0.5718011076545844,
+          "mean": 0.616821050447258
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.7621776504297995,
+          "low": 0.673352435530086,
+          "mean": 0.7191977077363897
+        },
+        "recall@50": {
+          "high": 0.8252148997134671,
+          "low": 0.7392550143266475,
+          "mean": 0.7822349570200573
+        },
+        "rerank_pool_recall": 0.7822349570200573,
+        "stages": {
+          "dense": {
+            "max_ms": 746.5,
+            "p50_ms": 42.8,
+            "p95_ms": 53.6
+          },
+          "hydrate": {
+            "max_ms": 9.5,
+            "p50_ms": 6.8,
+            "p95_ms": 8.4
+          },
+          "lexical": {
+            "max_ms": 47.4,
+            "p50_ms": 22.6,
+            "p95_ms": 28.6
+          },
+          "rerank": {
+            "max_ms": 587.8,
+            "p50_ms": 490.7,
+            "p95_ms": 536.7
+          }
+        }
+      }
+    },
+    "fusion_only": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.4489880383863191,
+            "ndcg@10": 0.4906101973601021,
+            "queries": 349,
+            "recall@10": 0.6246418338108882,
+            "recall@50": 0.7822349570200573
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.4489880383863191,
+            "ndcg@10": 0.4906101973601021,
+            "queries": 349,
+            "recall@10": 0.6246418338108882,
+            "recall@50": 0.7822349570200573
+          }
+        },
+        "candidate_recall": 0.8624641833810889,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.06246418338108882,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.015644699140401147,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 803.8,
+          "p50_ms": 39.8,
+          "p95_ms": 51.2
+        },
+        "mrr@10": {
+          "high": 0.4939866455178059,
+          "low": 0.39865099263200987,
+          "mean": 0.4489880383863191
+        },
+        "ndcg@10": {
+          "high": 0.5345599413726454,
+          "low": 0.440511133731388,
+          "mean": 0.4906101973601021
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.673352435530086,
+          "low": 0.5702005730659025,
+          "mean": 0.6246418338108882
+        },
+        "recall@50": {
+          "high": 0.8252148997134671,
+          "low": 0.7392550143266475,
+          "mean": 0.7822349570200573
+        },
+        "rerank_pool_recall": null,
+        "stages": {
+          "dense": {
+            "max_ms": 803.4,
+            "p50_ms": 39.2,
+            "p95_ms": 50.7
+          },
+          "lexical": {
+            "max_ms": 34.1,
+            "p50_ms": 21.5,
+            "p95_ms": 25.7
+          }
+        }
+      }
+    },
+    "shipped": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.48607245190339743,
+            "ndcg@10": 0.525998069142723,
+            "queries": 349,
+            "recall@10": 0.6532951289398281,
+            "recall@50": 0.7822349570200573
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.48607245190339743,
+            "ndcg@10": 0.525998069142723,
+            "queries": 349,
+            "recall@10": 0.6532951289398281,
+            "recall@50": 0.7822349570200573
+          }
+        },
+        "candidate_recall": 0.8624641833810889,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.0653295128939828,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.015644699140401147,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1428.2,
+          "p50_ms": 1054.0,
+          "p95_ms": 1206.7
+        },
+        "mrr@10": {
+          "high": 0.5331282405512348,
+          "low": 0.43966809933142315,
+          "mean": 0.48607245190339743
+        },
+        "ndcg@10": {
+          "high": 0.5713339087604551,
+          "low": 0.4808026391828808,
+          "mean": 0.525998069142723
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.7048710601719198,
+          "low": 0.5988538681948424,
+          "mean": 0.6532951289398281
+        },
+        "recall@50": {
+          "high": 0.8252148997134671,
+          "low": 0.7392550143266475,
+          "mean": 0.7822349570200573
+        },
+        "rerank_pool_recall": 0.7822349570200573,
+        "stages": {
+          "dense": {
+            "max_ms": 524.3,
+            "p50_ms": 52.7,
+            "p95_ms": 73.1
+          },
+          "hydrate": {
+            "max_ms": 79.4,
+            "p50_ms": 24.4,
+            "p95_ms": 32.0
+          },
+          "lexical": {
+            "max_ms": 508.8,
+            "p50_ms": 37.0,
+            "p95_ms": 53.9
+          },
+          "rerank": {
+            "max_ms": 1178.3,
+            "p50_ms": 971.8,
+            "p95_ms": 1109.8
+          }
+        }
+      }
+    }
+  }
+}

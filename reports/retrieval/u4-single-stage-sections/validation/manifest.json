@@ -1,0 +1,205 @@
+{
+  "bootstrap": {
+    "confidence": 0.95,
+    "resamples": 1000,
+    "seed": 42,
+    "unit": "query family"
+  },
+  "code": {
+    "diff_sha256": "6d3761e770a32b9fe5d0f7e41b1c58266ed6ca70f8f156d6905dcb0f11f6593a",
+    "dirty": true,
+    "git_sha": "112a98c019c12100ad99ad7f35d44673e28ad95e"
+  },
+  "corpus": {
+    "chunker_version": "paragraph-pack-v1",
+    "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+    "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+    "papers": "database",
+    "parser_version": "pypdf-text-v2",
+    "release_id": "m2-20260924T095724Z",
+    "releases": {
+      "m2-20260924T095724Z": {
+        "bm25_vocabulary_sha256": "499a7ffb0dbb12da4d192047a8bf9992809c01c0dfa48101b908c30e69a726b2",
+        "dense_dimensions": 1024,
+        "dense_vector_bytes": 351145984,
+        "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+        "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "paper_collection": "dev_paper_abstracts_m2-20260924T095724Z",
+        "points": 85729
+      }
+    }
+  },
+  "cost": {
+    "metered_usd": 0.0,
+    "note": "self-hosted models and services; no priced model call is made"
+  },
+  "created_at": "2026-10-16T03:53:36.021938+00:00",
+  "dataset": {
+    "digest": "57e034f2272a8c316d0670c651acd53ce99b244b44fe1431057097ef4470de2c",
+    "labels": "paper_id",
+    "limited_to": null,
+    "path": "data/fixtures/retrieval-sections",
+    "queries": 190,
+    "slice": "all",
+    "sources": [
+      "copilot_v2@m2-20260924T095724Z"
+    ],
+    "split": "validation"
+  },
+  "experiment": {
+    "config_sha256": "13c15f5e37bdb28852ae50d75eaab5a24c57a1fa63e5c1b86a315ab74897f80f",
+    "name": "u4-single-stage-sections",
+    "path": "configs/experiments/u4-single-stage-sections.yaml"
+  },
+  "hardware": {
+    "cores": 12,
+    "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+    "cuda": "13.0",
+    "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+    "ram_gb": 25.2,
+    "torch": "2.14.0+cu130"
+  },
+  "locked_test": false,
+  "run_id": "u4-single-stage-sections-validation-20261016T035336Z",
+  "search": {
+    "config_sha256": "96727e4b1d6a990f7616115f132378ae71826e5923d80a50f4a277cafce29137",
+    "path": "configs/search.yaml",
+    "values": {
+      "branch_seconds": 1.0,
+      "cache_depth": 200,
+      "cache_ttl_seconds": 600,
+      "candidates_per_branch": 100,
+      "rerank_depth": 50,
+      "rerank_pair_max_tokens": null,
+      "rerank_retries": 1,
+      "rerank_seconds": 2.5,
+      "rerank_text": "title_chunk",
+      "rrf_k": 60,
+      "total_seconds": 3.0
+    }
+  },
+  "seed": 42,
+  "timing": {
+    "gpu": {
+      "available": true,
+      "before_run": {
+        "available": true,
+        "busy": false,
+        "memory_mib": 912,
+        "samples": 5,
+        "utilization_percent_p50": 0.0
+      },
+      "compute_processes_seen": [],
+      "memory_mib": {
+        "max": 4241,
+        "min": 3249
+      },
+      "samples": 367,
+      "utilization_percent": {
+        "max": 100,
+        "p50": 98.0
+      }
+    },
+    "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+  },
+  "variants": {
+    "abstract_reranker": {
+      "baseline": "shipped",
+      "candidates": "chunks",
+      "changes": "the former search page's reranker, title + abstract at a 1.5 s rerank deadline",
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "m2-20260924T095724Z",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_pair_max_tokens": null,
+        "rerank_retries": 1,
+        "rerank_seconds": 1.5,
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {
+        "rerank_seconds": 1.5,
+        "rerank_text": "abstract"
+      },
+      "search_sha256": "ae8de0521687836b0f15b62e07ce0ffcb5f6feb60547bd297214b9d24c7a3a8e",
+      "warmup_queries": {
+        "count": 10,
+        "split": "development"
+      },
+      "warmup_seconds": 13.231
+    },
+    "fusion_only": {
+      "baseline": "shipped",
+      "candidates": "chunks",
+      "changes": "no reranker, RRF fusion of the BM25 and dense chunk branches",
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid",
+      "release_id": "m2-20260924T095724Z",
+      "reranker": "none",
+      "reranker_precision": null,
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_pair_max_tokens": null,
+        "rerank_retries": 1,
+        "rerank_seconds": 2.5,
+        "rerank_text": "title_chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {},
+      "search_sha256": "c904fa8cdfb4bb60bfc4b2bb555da7b41e8e310c8815be15099e7c6141e97b18",
+      "warmup_queries": {
+        "count": 10,
+        "split": "development"
+      },
+      "warmup_seconds": 8.243
+    },
+    "shipped": {
+      "baseline": null,
+      "candidates": "chunks",
+      "changes": null,
+      "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "embedding_precision": "float16",
+      "mode": "hybrid_rerank",
+      "release_id": "m2-20260924T095724Z",
+      "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+      "reranker_precision": "float16",
+      "search": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "candidates_source": "chunks",
+        "rerank_depth": 50,
+        "rerank_pair_max_tokens": null,
+        "rerank_retries": 1,
+        "rerank_seconds": 2.5,
+        "rerank_text": "title_chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      },
+      "search_overrides": {},
+      "search_sha256": "c904fa8cdfb4bb60bfc4b2bb555da7b41e8e310c8815be15099e7c6141e97b18",
+      "warmup_queries": {
+        "count": 10,
+        "split": "development"
+      },
+      "warmup_seconds": 22.274
+    }
+  }
+}

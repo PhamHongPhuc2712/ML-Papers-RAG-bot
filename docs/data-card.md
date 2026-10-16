@@ -103,11 +103,13 @@ reports a null coverage percentage** rather than an implied 100%.
 
 ## What the product does with the corpus
 
-Revised 2026-10-11 (scope: search and grounded chat only):
-- **Search.** The search page and paper pages (`POST /v1/search`, `GET /v1/papers/{id}`) show
-  bibliographic metadata, the abstract and a link to the source PDF. They work without an
-  account. *Decided 2026-10-15, not yet built: the search page goes (RAG only); paper pages stay
-  public as citation targets, and the papers an answer read are listed with it as References.*
+Revised 2026-10-16 (RAG only, no separate search page):
+- **Paper pages and References.** Paper pages (`GET /v1/papers/{id}`) show bibliographic
+  metadata, the abstract and a link to the source PDF, and work without an account. Each answer
+  lists the papers its search ranked as References (title, venue, year, linking to paper pages);
+  only their ids, ranks and whether they were read are stored with the chat
+  (`chat_messages.paper_references`), deleted with it or with the account. `POST /v1/search`
+  stays in the API, used by the answer turn, evaluation and the paper pages' related papers.
 - **Grounded answers.** A signed-in user's chat answer shows the passages it cites, each with
   its paper, section and page span, together with the other passages it read (at most 12
   pieces, 3 per paper: `configs/evidence.yaml`). Those passages are stored with the user's chat

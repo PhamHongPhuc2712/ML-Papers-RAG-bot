@@ -1,0 +1,64 @@
+# RAG-only plan, U4 step 1: the single first stage measured on S1's passage questions (571
+# model-written questions about one passage each, data/fixtures/retrieval-sections/, text under
+# ${DATA_DIR}/benchmarks/sections-v1/). A measurement, not a decision: the configuration is the
+# developer's choice of the chat's measured stage (U1, 2026-10-15), and nothing here changes it.
+# The harness computes a `decision` on validation because it always does; it is not read.
+#
+# Variants: `shipped` is configs/search.yaml as it stands (the reranker reads title + the chunk
+# that found the paper, 2.5 s rerank deadline). Two references, for context only: the former
+# search page's reranker (title + abstract at its 1.5 s deadline) and fusion with no reranker.
+# Development and validation only; S1's test split stays unread.
+#
+#   eval retrieval --config configs/experiments/u4-single-stage-sections.yaml --split development --out reports/retrieval/u4-single-stage-sections
+#   eval retrieval --config configs/experiments/u4-single-stage-sections.yaml --split validation --out reports/retrieval/u4-single-stage-sections
+schema_version: 1
+name: u4-single-stage-sections
+
+dataset:
+  path: data/fixtures/retrieval-sections
+  query_text: benchmarks/sections-v1/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: m2-20260924T095724Z
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: shipped
+    mode: hybrid_rerank
+    candidates: chunks
+  - name: abstract_reranker
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: shipped
+    changes: the former search page's reranker, title + abstract at a 1.5 s rerank deadline
+    search:
+      rerank: {text: abstract}
+      deadlines_seconds: {rerank: 1.5}
+  - name: fusion_only
+    mode: hybrid
+    candidates: chunks
+    baseline: shipped
+    changes: no reranker, RRF fusion of the BM25 and dense chunk branches
+
+decision:
+  primary: ndcg@10
+  order: [shipped]
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
+  require_undegraded: true
