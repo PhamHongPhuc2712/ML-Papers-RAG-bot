@@ -100,4 +100,5 @@ What they show, beyond the boards being met:
 
 Boards 1 and 4–11 built in light and dark and matching the canvas (D1–D4); every behaviour of
 today's app kept and tested (Playwright 40); no serious or critical axe violation in either theme;
-one recorded real-stack walk (attempt 3). **Remaining: CI green on a pushed commit.**
+one recorded real-stack walk (attempt 3); CI `checks` green on `c71b7fe` (run 39233505623, backend
+and frontend jobs). **Met 2026-10-19.**
