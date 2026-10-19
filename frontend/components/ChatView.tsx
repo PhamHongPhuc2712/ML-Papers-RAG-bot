@@ -39,6 +39,8 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
   const [panel, setPanel] = useState<PanelState | null>(null);
   const abort = useRef<AbortController | null>(null);
   const autoSent = useRef(false);
+  // The question to bring to the top of the thread once it is drawn: a new one, or a loaded chat's last.
+  const reveal = useRef<{ id: string; smooth: boolean } | null>(null);
   // A new chat's first answer moves the URL to /chat/<id> in place; "New chat" (`/`) then lands on
   // this same mounted view, which starts over rather than keep the previous conversation.
   const [path, setPath] = useState(pathname);
@@ -62,6 +64,8 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
     api.chat(id).then(
       (detail) => {
         setMessages(detail.messages);
+        const last = [...detail.messages].reverse().find((m) => m.role === "user");
+        if (last) reveal.current = { id: last.id, smooth: false };
         setLoadFailed(false);
       },
       (error: unknown) => {
@@ -88,6 +92,17 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const target = reveal.current;
+    if (!target) return;
+    const element = document.querySelector(`[data-message="${target.id}"]`);
+    if (!element) return;
+    reveal.current = null;
+    // The answer is then read from its start, below its question, not from under the ask box.
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    element.scrollIntoView({ block: "start", behavior: target.smooth && !still ? "smooth" : "auto" });
+  }, [messages]);
+
   async function send(text: string, requestId: string) {
     setFailure(null);
     setStopped(null);
@@ -101,6 +116,7 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
       corpus_release_id: null, created_at: new Date().toISOString(),
     };
     setMessages((previous) => (previous.some((m) => m.id === requestId) ? previous : [...previous, optimistic]));
+    reveal.current = { id: requestId, smooth: true };
     try {
       const response = await streamTurn({ request_id: requestId, chat_id: id, message: text }, controller.signal);
       if (!response.ok || !response.body) {
@@ -197,7 +213,7 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
           <ol aria-label="Conversation" className="messages">
             {messages.map((message, index) =>
               message.role === "user" ? (
-                <li key={message.id} className="question"><p className="bubble">{message.text}</p></li>
+                <li key={message.id} className="question" data-message={message.id}><p className="bubble">{message.text}</p></li>
               ) : message.status === "complete" || message.status === "insufficient" ? (
                 <li key={message.id}>
                   <Answer message={message} selected={panel?.messageId === message.id ? panel.evidenceId : null}

@@ -82,8 +82,13 @@ claim and passage marked), `real-follow-up`, `real-paper`, `real-history`, `real
 show our corpus's own titles and passages.
 
 What they show, beyond the boards being met:
-- **The thread does not scroll to a new answer.** After the follow-up, its answer's actions sit
-  under the ask box at 1440×900 until the reader scrolls. Not fixed here; a small follow-up.
+- **The thread did not scroll to a new answer.** After the follow-up, its answer's actions sat
+  under the ask box at 1440×900 until the reader scrolled. **Fixed the same day**: sending a
+  question, or opening a chat, brings its latest question to the top of the thread (below the
+  sticky header; smooth unless reduced motion is asked for). A browser test on a 600 px tall
+  screen checks the follow-up's Copy button is uncovered after the turn and after a reload; it
+  failed before the fix (`toBeInViewport` alone passed it, since the ask box covers without
+  leaving the viewport). Playwright 41 passed.
 - **Citation 1 is the paper's front matter** (the proceedings header with the author list), cited
   for "WhitenedCSE … is a 2023 paper by …". The passage supports the claim, but a paper-finding
   answer that cites front matter shows the reader nothing of the method: a retrieval and

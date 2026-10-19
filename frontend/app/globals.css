@@ -369,7 +369,7 @@ main.workspace { max-width: none; margin: 0; padding: 0; }
 .live:empty { display: none; }
 .thread .composer-dock { margin-top: auto; }
 
-.question { display: flex; justify-content: flex-end; }
+.question { display: flex; justify-content: flex-end; scroll-margin-top: 80px; }
 .bubble { margin: 0; max-width: 80%; padding: 10px 16px; border-radius: 16px 16px 4px 16px; background: var(--accent-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .steps { list-style: none; margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); display: grid; gap: 10px; font-size: 0.875rem; }
@@ -452,6 +452,7 @@ mark { background: var(--mark); color: var(--ink); border-radius: 3px; padding: 
 }
 @media (max-width: 899px) {
   .thread-header { top: 57px; }
+  .question { scroll-margin-top: 136px; }
 }
 
 /* ---- History, the paper page, settings and the states (UI redesign, D4; boards 8 to 11). ---- */

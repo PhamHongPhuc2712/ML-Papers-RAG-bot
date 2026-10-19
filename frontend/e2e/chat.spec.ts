@@ -71,6 +71,39 @@ test("a follow-up shows what was searched, and history survives a reload", async
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(2);
 });
 
+/** In the viewport and not under the sticky header or ask box: what is drawn at its centre is it. */
+async function uncovered(locator: import("@playwright/test").Locator): Promise<boolean> {
+  return locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    if (y < 0 || y > window.innerHeight) return false;
+    const hit = document.elementFromPoint(x, y);
+    return hit !== null && element.contains(hit);
+  });
+}
+
+test.describe("on a short screen", () => {
+  test.use({ viewport: { width: 1280, height: 600 } });
+
+  test("a new question scrolls to the top, so its answer is read from the start", async ({ page }) => {
+    const box = page.getByLabel("Ask about ML papers");
+    const answers = page.getByRole("article", { name: "Answer" });
+    await box.fill("How are sentence pairs formed?");
+    await box.press("Enter");
+    await expect(answers).toHaveCount(1);
+    await box.fill("And the negatives?");
+    await box.press("Enter");
+    await expect(answers).toHaveCount(2);
+    await expect.poll(() => uncovered(page.locator(".question .bubble").last())).toBe(true);
+    await expect.poll(() => uncovered(answers.last().getByRole("button", { name: "Copy" }))).toBe(true);
+    // A chat opened later starts at its latest question too.
+    await page.reload();
+    await expect(answers).toHaveCount(2);
+    await expect.poll(() => uncovered(answers.last().getByRole("button", { name: "Copy" }))).toBe(true);
+  });
+});
+
 test("insufficient evidence is said plainly, and its References stay", async ({ page }) => {
   await page.getByLabel("Ask about ML papers").fill("How do proteins fold?");
   await page.getByRole("button", { name: "Send" }).click();
