@@ -3,14 +3,13 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, api, errorFrom, loginRedirect, streamTurn, type ApiErrorBody, type ChatMessage, type Reference } from "@/lib/api";
-import { STAGES } from "@/lib/chat-labels";
 import { corpusLine, withFilter, type AskFilter, type Corpus } from "@/lib/corpus";
 import { readEvents } from "@/lib/sse";
 import { Answer } from "./Answer";
 import { Composer } from "./Composer";
-import { EvidencePanel } from "./EvidencePanel";
 import { Hero } from "./Hero";
-import { References } from "./References";
+import { ReferencesPanel, type PanelState } from "./ReferencesPanel";
+import { LiveSteps, type LiveSearch } from "./StepsBox";
 import { Suggestions } from "./Suggestions";
 
 type Failure = ApiErrorBody & { requestId: string; message_text: string };
@@ -25,10 +24,12 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
   const [draft, setDraft] = useState(initialDraft ?? (about ? "In this paper, " : ""));
   const [stage, setStage] = useState<string | null>(null);
   // The search step, from the `references` frame, shown while the answer is written.
-  const [searched, setSearched] = useState<{ query: string; read: number } | null>(null);
+  const [searched, setSearched] = useState<LiveSearch>(null);
+  // A turn stopped here, by Stop: its question can be asked again.
+  const [stopped, setStopped] = useState<{ requestId: string; text: string } | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [focus, setFocus] = useState<{ message: string; evidence: string } | null>(null);
+  const [panel, setPanel] = useState<PanelState | null>(null);
   const abort = useRef<AbortController | null>(null);
   // A new chat's first answer moves the URL to /chat/<id> in place; "New chat" (`/`) then lands on
   // this same mounted view, which starts over rather than keep the previous conversation.
@@ -39,7 +40,8 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
       setId(null);
       setMessages([]);
       setFailure(null);
-      setFocus(null);
+      setPanel(null);
+      setStopped(null);
       setDraft("");
     }
   }
@@ -71,6 +73,7 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
 
   async function send(text: string, requestId: string) {
     setFailure(null);
+    setStopped(null);
     setStage("searching");
     setSearched(null);
     const controller = new AbortController();
@@ -97,7 +100,8 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
         } else if (event.event === "status" && typeof data.stage === "string") {
           setStage(data.stage);
         } else if (event.event === "references" && typeof data.query === "string" && Array.isArray(data.items)) {
-          setSearched({ query: data.query, read: (data.items as Reference[]).filter((item) => item.read).length });
+          const items = data.items as Reference[];
+          setSearched({ query: data.query, ranked: items.length, read: items.filter((item) => item.read).length });
         } else if (event.event === "final") {
           setMessages((previous) => [...previous, data as unknown as ChatMessage]);
           window.dispatchEvent(new Event("chats-changed"));
@@ -107,7 +111,10 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
         }
       }
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        setStopped({ requestId, text });
+        return;
+      }
       const body = error instanceof ApiError ? error.body : { code: "network_error", message: "The connection dropped. Try again.", retryable: true };
       setFailure({ ...body, requestId, message_text: text });
     } finally {
@@ -115,6 +122,17 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
       setSearched(null);
       abort.current = null;
     }
+  }
+
+  function askAgain(text: string, requestId: string) {
+    // The stopped question is asked again as a new turn, in place of its bubble.
+    setMessages((previous) => previous.filter((m) => m.id !== requestId));
+    void send(text, crypto.randomUUID());
+  }
+
+  function cite(message: ChatMessage, evidenceId: string) {
+    const paperId = (message.evidence ?? []).find((item) => item.id === evidenceId)?.paper_id ?? null;
+    setPanel({ messageId: message.id, paperId, evidenceId });
   }
 
   function ask(text: string, filter: AskFilter) {
@@ -141,43 +159,82 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
       </div>
     );
   }
+  const latest = [...messages].reverse().find((m) => m.role === "assistant" && (m.references ?? []).length > 0);
+  const panelMessage = panel ? messages.find((m) => m.id === panel.messageId) : undefined;
+  const title = messages.find((m) => m.role === "user")?.text ?? "New chat";
+  // The question a stored failed or stopped answer belongs to, for asking it again.
+  const question = (index: number) => (messages[index - 1]?.role === "user" ? messages[index - 1]?.text : undefined);
   return (
-    <div className="thread">
-      <ol aria-label="Conversation" style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
-        {messages.map((message) =>
-          message.role === "user" ? (
-            <li key={message.id}><p style={{ margin: 0, fontWeight: 600 }}>{message.text}</p></li>
-          ) : message.status === "complete" || message.status === "insufficient" ? (
-            <li key={message.id}>
-              <Answer message={message} onCite={(evidence) => setFocus({ message: message.id, evidence })} />
-              <References message={message} />
-              {focus?.message === message.id ? <EvidencePanel message={message} focused={focus.evidence} /> : null}
-            </li>
-          ) : (
-            <li key={message.id} className="muted">This answer was not completed ({message.error_code ?? message.status}).</li>
-          ),
-        )}
-      </ol>
-      <div role="status" aria-live="polite">
-        {stage && searched ? (
-          <p className="muted" style={{ margin: 0 }}>Searched for “{searched.query}” · reading {searched.read} paper{searched.read === 1 ? "" : "s"}</p>
-        ) : null}
-        {stage ? <p className="muted">{STAGES[stage] ?? "Working…"}</p> : null}
-      </div>
-      {loadFailed && chatId ? (
-        <p role="alert" className="banner error">
-          This chat could not be loaded. <button type="button" onClick={() => loadChat(chatId)}>Retry</button>
-        </p>
-      ) : null}
-      {failure ? (
-        <div role="alert" className="banner error">
-          {failure.message}{" "}
-          {failure.retryable ? (
-            <button type="button" onClick={() => void send(failure.message_text, failure.requestId)}>Retry</button>
+    <div className={panelMessage ? "conversation with-panel" : "conversation"}>
+      <div className="thread-column">
+        <header className="thread-header">
+          <h1 className="thread-title">{title}</h1>
+          <button type="button" className="chip-button" disabled={!latest}
+            aria-pressed={Boolean(panel && latest && panel.messageId === latest.id && !panel.paperId)}
+            onClick={() => latest && setPanel(panel && panel.messageId === latest.id && !panel.paperId ? null
+              : { messageId: latest.id, paperId: null, evidenceId: null })}>
+            References{latest ? ` (${latest.references?.length})` : ""}
+          </button>
+        </header>
+        <div className="thread">
+          <ol aria-label="Conversation" className="messages">
+            {messages.map((message, index) =>
+              message.role === "user" ? (
+                <li key={message.id} className="question"><p className="bubble">{message.text}</p></li>
+              ) : message.status === "complete" || message.status === "insufficient" ? (
+                <li key={message.id}>
+                  <Answer message={message} selected={panel?.messageId === message.id ? panel.evidenceId : null}
+                    onCite={(evidenceId) => cite(message, evidenceId)}
+                    onReferences={() => setPanel({ messageId: message.id, paperId: null, evidenceId: null })} />
+                </li>
+              ) : (
+                <li key={message.id} className="turn-note">
+                  {message.status === "interrupted" ? "Stopped." : "This answer could not be finished."}
+                  {question(index) && !running ? (
+                    <button type="button" onClick={() => void send(question(index) ?? "", crypto.randomUUID())}>
+                      {message.status === "interrupted" ? "Ask again" : "Try again"}
+                    </button>
+                  ) : null}
+                </li>
+              ),
+            )}
+            {stopped && !running ? (
+              <li className="turn-note">
+                Stopped.
+                <button type="button" onClick={() => askAgain(stopped.text, stopped.requestId)}>Ask again</button>
+              </li>
+            ) : null}
+          </ol>
+          <div role="status" aria-live="polite" className="live">
+            {stage ? (
+              <>
+                <LiveSteps stage={stage} searched={searched} />
+                <div className="skeleton" aria-hidden="true"><span /><span /><span /></div>
+              </>
+            ) : null}
+          </div>
+          {loadFailed && chatId ? (
+            <p role="alert" className="banner error">
+              This chat could not be loaded. <button type="button" onClick={() => loadChat(chatId)}>Retry</button>
+            </p>
           ) : null}
+          {failure ? (
+            <div role="alert" className="banner error">
+              {failure.message}{" "}
+              {failure.retryable ? (
+                <button type="button" onClick={() => void send(failure.message_text, failure.requestId)}>Try again</button>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="composer-dock">{composer}</div>
         </div>
+      </div>
+      {panel && panelMessage ? (
+        <ReferencesPanel message={panelMessage} state={panel}
+          onOpenPaper={(paperId) => setPanel({ ...panel, paperId, evidenceId: null })}
+          onBack={() => setPanel({ ...panel, paperId: null, evidenceId: null })}
+          onClose={() => setPanel(null)} />
       ) : null}
-      <div className="composer-dock">{composer}</div>
     </div>
   );
 }

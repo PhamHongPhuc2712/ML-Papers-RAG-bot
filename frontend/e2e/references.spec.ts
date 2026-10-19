@@ -38,40 +38,43 @@ test("a suggested question is asked at once", async ({ page }) => {
   await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
 });
 
-test("an answer says what it searched and lists its References, filterable", async ({ page }) => {
+test("an answer shows its search live, then its References in the panel, filterable", async ({ page }) => {
   await signIn(page, "/");
   const box = page.getByLabel("Ask about ML papers");
   // "slow" holds the turn open long enough to see the search step before the answer.
   await box.fill("Find papers on sentence embeddings, slowly");
   await box.press("Enter");
-  await expect(page.getByRole("status")).toContainText("Searched for “Find papers on sentence embeddings, slowly” · reading 2 papers");
+  await expect(page.getByRole("status")).toContainText("Searched for “Find papers on sentence embeddings, slowly”, 3 papers ranked");
+  await expect(page.getByRole("status")).toContainText("Reading the top 2 papers");
   const answer = page.getByRole("article", { name: "Answer" });
-  await expect(answer).toContainText("Searched for “Find papers on sentence embeddings, slowly” · read 2 papers");
+  await expect(answer).toContainText("Searched for “Find papers on sentence embeddings, slowly” and read 2 of 3 papers");
   await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
 
-  const references = page.getByRole("region", { name: "References" });
-  await references.getByText("References (3)").click();
+  await answer.getByRole("button", { name: "References (3)" }).click();
+  const references = page.getByRole("complementary", { name: "References" });
   const items = references.getByRole("listitem");
   await expect(items).toHaveCount(3);
-  await expect(items.nth(0)).toContainText("ACL 2024 · read for this answer · cited [1]");
-  await expect(items.nth(1)).toContainText("ICLR 2025 · read for this answer");
-  await expect(items.nth(2)).toHaveText(/Sentence embeddings from language model prompts\s+ACL 2025$/);
-  await expect(items.nth(0).getByRole("link")).toHaveAttribute("href", "/papers/aaaaaaaa-0000-4000-8000-000000000001");
+  await expect(items.nth(0)).toContainText("ACL 2024Cited 1Read");
+  await expect(items.nth(1)).toContainText("ICLR 2025Read");
+  await expect(items.nth(2)).toContainText("Sentence embeddings from language model promptsACL 2025Ranked, not read");
   await noSeriousViolations(page);
 
   await references.getByLabel("Venue").selectOption("ACL");
   await expect(items).toHaveCount(2);
   await references.getByLabel("Year").selectOption("2025");
   await expect(items).toHaveCount(1);
-  await expect(references).toContainText("Showing 1 of 3 papers.");
+  await expect(references).toContainText("Showing 1 of 3 papers");
   await references.getByLabel("Venue").selectOption("");
   await references.getByLabel("Year").selectOption("");
-  await expect(items).toHaveCount(3);
+  await references.getByLabel("Cited only").check();
+  await expect(items).toHaveCount(1);
 
-  // The References are stored with the answer.
+  // The header button toggles the same list, and the References are stored with the answer.
+  await page.getByRole("button", { name: "References (3)" }).first().click();
+  await expect(references).toHaveCount(0);
   await page.reload();
-  await page.getByRole("region", { name: "References" }).getByText("References (3)").click();
-  await expect(page.getByRole("region", { name: "References" }).getByRole("listitem")).toHaveCount(3);
+  await page.getByRole("button", { name: "References (3)" }).first().click();
+  await expect(page.getByRole("complementary", { name: "References" }).getByRole("listitem")).toHaveCount(3);
 });
 
 test("New chat goes back to the empty ask box", async ({ page }) => {

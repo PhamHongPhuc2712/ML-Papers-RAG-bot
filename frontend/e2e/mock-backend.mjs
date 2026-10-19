@@ -85,7 +85,8 @@ async function stream(req, res, payload) {
     status: insufficient ? "insufficient" : "complete",
     text: insufficient ? "" : "Sentence pairs are formed from a sentence and a noised copy of it.",
     claims: insufficient ? [] : [{ text: "Sentence pairs are formed from a sentence and a noised copy of it.", evidence_ids: ["E1"] }],
-    evidence, references, standalone_query: query, warnings: [], error_code: null, corpus_release_id: "mock-release", created_at: now,
+    // "partial" answers as if one search branch had run out of time.
+    evidence, references, standalone_query: query, warnings: /partial/i.test(payload.message) ? ["lexical_timeout"] : [], error_code: null, corpus_release_id: "mock-release", created_at: now,
   };
   chat.messages.push(assistant);
   send("final", assistant);

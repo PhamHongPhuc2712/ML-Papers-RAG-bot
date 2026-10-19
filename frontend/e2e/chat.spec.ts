@@ -9,23 +9,54 @@ test.beforeEach(async ({ request, page }) => {
   await signIn(page);
 });
 
-test("a question streams its progress, then an answer with numbered citations", async ({ page }) => {
+test("a question streams its steps, then an answer whose citation opens its passage", async ({ page }) => {
   const box = page.getByLabel("Ask about ML papers");
   await box.fill("How are sentence pairs formed?");
   await box.press("Enter");
-  await expect(page.getByRole("status")).toContainText(/Searching papers|Writing/);
+  await expect(page.getByRole("status")).toContainText(/Searching the papers|Reading the top|Writing the answer/);
+  await expect(page.getByRole("list", { name: "Conversation" }).getByText("How are sentence pairs formed?")).toBeVisible();
   const answer = page.getByRole("article", { name: "Answer" });
   await expect(answer).toContainText("Sentence pairs are formed");
+  await expect(answer).toContainText("Searched for “How are sentence pairs formed?” and read 2 of 3 papers");
   await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
   await answer.getByRole("button", { name: "Source 1" }).click();
-  const panel = page.getByRole("region", { name: "Sources" });
-  await expect(panel).toContainText("Contrastive sentence embeddings with in-batch negatives");
-  await expect(panel).toContainText("Method · p. 3");
-  // Passages the answer read but did not cite are collapsed under "Also read".
-  await panel.getByText("Also read").click();
-  await expect(panel.getByText("abstract only", { exact: false })).toBeVisible();
+  // The claim the citation supports is marked, and the panel shows its paper and passage.
+  await expect(answer.locator("mark")).toHaveText("Sentence pairs are formed from a sentence and a noised copy of it.");
+  await expect(answer.getByRole("button", { name: "Source 1" })).toHaveAttribute("aria-pressed", "true");
+  const panel = page.getByRole("complementary", { name: "Paper" });
+  await expect(panel.getByRole("heading")).toHaveText("Contrastive sentence embeddings with in-batch negatives");
+  await expect(panel).toContainText("Method, page 3");
+  await expect(panel).toContainText("Ada Lovelace, Alan Turing, Grace Hopper and 1 other. ACL 2024");
+  await expect(panel.getByRole("link", { name: "Paper page" })).toHaveAttribute("href", "/papers/aaaaaaaa-0000-4000-8000-000000000001");
+  await expect(panel.getByRole("link", { name: /PDF/ })).toHaveAttribute("href", "https://example.org/a.pdf");
   await expect(chats(page)).toHaveCount(1);
   await noSeriousViolations(page);
+  // A paper the answer read but did not cite keeps its passages under "more passages read".
+  await panel.getByRole("button", { name: "All references" }).click();
+  await page.getByRole("complementary", { name: "References" }).getByRole("button", { name: "Graph transformers at scale" }).click();
+  const other = page.getByRole("complementary", { name: "Paper" });
+  await expect(other).toContainText("cited none of its passages");
+  await other.getByText("1 more passage read from this paper").click();
+  await expect(other).toContainText("Abstract, abstract only");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("complementary", { name: "Paper" })).toHaveCount(0);
+});
+
+test("Copy puts the answer and its numbered sources on the clipboard", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByLabel("Ask about ML papers").fill("How are sentence pairs formed?");
+  await page.keyboard.press("Enter");
+  await page.getByRole("article", { name: "Answer" }).getByRole("button", { name: "Copy" }).click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "Sentence pairs are formed from a sentence and a noised copy of it. [1]\n\n[1] Contrastive sentence embeddings with in-batch negatives, ACL 2024",
+  );
+});
+
+test("an answer whose search ran out of time says it may have missed papers", async ({ page }) => {
+  await page.getByLabel("Ask about ML papers").fill("A partial search, please");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("article", { name: "Answer" })).toContainText("Part of the search ran out of time");
 });
 
 test("a follow-up shows what was searched, and history survives a reload", async ({ page }) => {
@@ -35,7 +66,7 @@ test("a follow-up shows what was searched, and history survives a reload", async
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
   await box.fill("And the negatives?");
   await box.press("Enter");
-  await expect(page.getByText("Searched for “And the negatives? (contrastive sentence embeddings)” · read 2 papers")).toBeVisible();
+  await expect(page.getByText("Searched for “And the negatives? (contrastive sentence embeddings)” and read 2 of 3 papers")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(2);
 });
@@ -79,6 +110,10 @@ test("Stop ends a running turn and the box is ready again", async ({ page }) => 
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(0);
   await expect(box).toBeEnabled();
+  // The stopped question can be asked again, as one question, not two.
+  await page.getByRole("button", { name: "Ask again" }).click();
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
+  await expect(page.getByRole("list", { name: "Conversation" }).getByText("Explain slowly how sentence pairs are formed", { exact: true })).toHaveCount(1);
 });
 
 test("the composer counts characters and refuses more than 2,000", async ({ page }) => {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** A conversation's column inside the shell (the sidebar holds the chat history since D1). */
+/** A signed-in page's area beside the sidebar: the home page or a conversation with its panel. */
 export function Workspace({ children }: { children: ReactNode }) {
-  return <main style={{ maxWidth: 820 }}>{children}</main>;
+  return <main className="workspace">{children}</main>;
 }

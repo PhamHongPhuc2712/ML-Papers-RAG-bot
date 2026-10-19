@@ -131,10 +131,15 @@ the sidebar pitch); the login page in board 2's layout says the question is kept
 **Files:** `components/ChatView.tsx` (split into `Thread.tsx` and the stream logic), `Answer.tsx`,
 new `StepsBox.tsx`, new `ReferencesPanel.tsx` (replaces `References.tsx` and `EvidencePanel.tsx`),
 `lib/references.ts` (extended: passages grouped by paper, cited parts).
-- [ ] Boards 5–7: the bubble, the steps box live and collapsed, the claims with chips, Copy,
+**Done 2026-10-19.** `ChatView.tsx` (the thread, its header and the panel state), `Answer.tsx`,
+`StepsBox.tsx`, `ReferencesPanel.tsx` (list and paper views; the paper view fetches authors and
+the PDF link from `GET /v1/papers/{id}`), `lib/references.ts`; `References.tsx` and
+`EvidencePanel.tsx` deleted. The whole cited passage is marked, since a stored passage does not
+record which of its sentences a claim rests on.
+- [x] Boards 5–7: the bubble, the steps box live and collapsed, the claims with chips, Copy,
   the panel's list and paper views, the highlighter on the selected claim and passage.
-- [ ] Stop while streaming; the stopped turn reads "Stopped" and can be asked again.
-- [ ] The partial-search note from the stored warnings (board 11).
+- [x] Stop while streaming; the stopped turn reads "Stopped" and can be asked again.
+- [x] The partial-search note from the stored warnings (board 11).
 
 ### Task D4: History, the other pages, the states, and the record
 

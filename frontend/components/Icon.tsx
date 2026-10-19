@@ -19,6 +19,11 @@ const PATHS = {
   filter: "M4 7h16M7 12h10M10 17h4",
   arrowUp: "M12 19V5M5 12l7-7l7 7",
   stop: "M7 7h10v10H7z",
+  check: "M5 12l5 5L19 7",
+  back: "M15 6l-6 6l6 6",
+  copy: "M9 9h10v10H9zM5 15V5h10",
+  books: "M5 4h4v16H5zM10 4h4v16h-4zM15.5 4.5l3.8 1l-3.9 15l-3.8-1",
+  external: "M14 5h5v5M19 5l-8 8M18 14v5H5V6h5",
 } as const;
 
 export type IconName = keyof typeof PATHS;

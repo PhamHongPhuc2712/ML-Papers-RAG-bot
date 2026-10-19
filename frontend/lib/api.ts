@@ -43,6 +43,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  paper: (id: string) => call<PaperDetail>(`papers/${encodeURIComponent(id)}`),
   chats: () => call<ChatList>("chats"),
   chat: (id: string) => call<ChatDetail>(`chats/${encodeURIComponent(id)}`),
   deleteChat: (id: string) => call<void>(`chats/${encodeURIComponent(id)}`, { method: "DELETE" }),

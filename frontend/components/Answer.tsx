@@ -1,36 +1,65 @@
+"use client";
+
+import { useState } from "react";
 import type { ChatMessage } from "@/lib/api";
 import { INSUFFICIENT, WARNINGS, citationNumbers } from "@/lib/chat-labels";
-import { searchLine } from "@/lib/references";
+import { answerAsText, partialSearch } from "@/lib/references";
+import { Icon } from "./Icon";
+import { DoneSteps } from "./StepsBox";
 
-type Props = { message: ChatMessage; onCite: (evidenceId: string) => void };
+type Props = {
+  message: ChatMessage;
+  /** The evidence id whose claim is marked, when this answer's citation is open in the panel. */
+  selected: string | null;
+  onCite: (evidenceId: string) => void;
+  onReferences: () => void;
+};
 
-export function Answer({ message, onCite }: Props) {
+/** One answer (canvas boards 6 and 7): steps, claims with numbered citations, and its actions. */
+export function Answer({ message, selected, onCite, onReferences }: Props) {
+  const [copied, setCopied] = useState(false);
   const numbers = citationNumbers(message);
   const notes = (message.warnings ?? []).map((code) => WARNINGS[code]).filter(Boolean);
-  const searched = searchLine(message);
+  const references = message.references ?? [];
+
+  async function copy() {
+    await navigator.clipboard.writeText(answerAsText(message)).catch(() => undefined);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
-    <article aria-label="Answer" style={{ background: "var(--surface)", borderRadius: "var(--radius)", padding: 12 }}>
-      {searched ? <p className="muted" style={{ marginTop: 0 }}>{searched}</p> : null}
-      {message.status === "insufficient" ? <p>{INSUFFICIENT}</p> : null}
-      {(message.claims ?? []).map((claim, index) => (
-        <p key={index} style={{ margin: "0 0 8px" }}>
-          {claim.text}{" "}
-          {claim.evidence_ids.map((id) => (
-            <button
-              key={id}
-              type="button"
-              aria-label={`Source ${numbers.get(id)}`}
-              onClick={() => onCite(id)}
-              style={{ padding: "0 6px", fontSize: "0.85em" }}
-            >
-              [{numbers.get(id)}]
-            </button>
-          ))}
-        </p>
-      ))}
-      {notes.map((note) => (
-        <p key={note} className="muted">{note}</p>
-      ))}
+    <article aria-label="Answer" className="answer">
+      <DoneSteps message={message} />
+      {partialSearch(message) ? (
+        <p className="banner warn note">Part of the search ran out of time, so this answer may have missed some papers. Asking again usually finds them.</p>
+      ) : null}
+      {message.status === "insufficient" ? <p className="answer-insufficient">{INSUFFICIENT}</p> : null}
+      <div className="claims">
+        {(message.claims ?? []).map((claim, index) => {
+          const marked = selected !== null && claim.evidence_ids.includes(selected);
+          return (
+            <p key={index}>
+              {marked ? <mark>{claim.text}</mark> : claim.text}{" "}
+              {claim.evidence_ids.map((id) => (
+                <button key={id} type="button" className={id === selected ? "chip selected" : "chip"}
+                  aria-label={`Source ${numbers.get(id)}`} aria-pressed={id === selected} onClick={() => onCite(id)}>
+                  {numbers.get(id)}
+                </button>
+              ))}
+            </p>
+          );
+        })}
+      </div>
+      {notes.map((note) => <p key={note} className="muted">{note}</p>)}
+      <div className="answer-actions">
+        {references.length ? (
+          <button type="button" onClick={onReferences}><Icon name="books" size={16} /> References ({references.length})</button>
+        ) : null}
+        {message.claims?.length ? (
+          <button type="button" onClick={() => void copy()}><Icon name={copied ? "check" : "copy"} size={16} /> {copied ? "Copied" : "Copy"}</button>
+        ) : null}
+      </div>
     </article>
   );
 }
