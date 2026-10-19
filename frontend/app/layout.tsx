@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { Shell } from "@/components/Shell";
-import { SESSION_COOKIE, currentUser } from "@/lib/server";
+import { SESSION_COOKIE, corpus, currentUser } from "@/lib/server";
 import { SHELL_INIT } from "@/lib/theme";
 import "./globals.css";
 
 // Downloaded at build time and served from this server: a reader's browser never calls Google.
-const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-plex", display: "swap" });
-const serif = Source_Serif_4({ subsets: ["latin"], axes: ["opsz"], variable: "--font-serif", display: "swap" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
   title: "ML Research Copilot",
@@ -18,14 +17,14 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const signedIn = Boolean((await cookies()).get(SESSION_COOKIE)?.value);
-  const user = signedIn ? await currentUser() : null;
+  const [user, facts] = await Promise.all([signedIn ? currentUser() : null, corpus()]);
   return (
-    <html lang="en" className={`${plex.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: SHELL_INIT }} />
       </head>
       <body>
-        <Shell signedIn={signedIn} email={user?.email ?? null}>{children}</Shell>
+        <Shell signedIn={signedIn} email={user?.email ?? null} papers={facts?.papers ?? null}>{children}</Shell>
       </body>
     </html>
   );

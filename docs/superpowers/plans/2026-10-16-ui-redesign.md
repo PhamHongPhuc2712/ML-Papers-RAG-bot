@@ -102,26 +102,29 @@ compared with the canvas board before the task is called done.
 
 ### Task D1: Tokens, font, theme and the app shell
 
-**Built 2026-10-16, not committed; to be brought to the sketches.** The shell, theme switch,
-grouped chat list, account menu and drawer exist (`Shell.tsx`, `ChatList.tsx`,
-`AccountMenu.tsx`, `ThemeToggle.tsx`, `Icon.tsx`, `lib/theme.ts`, `lib/use-root-data.ts`,
-`lib/chat-groups.ts`; 25 browser tests pass). Remaining:
-- [ ] Inter instead of IBM Plex Sans and Source Serif 4; the colour tokens above.
-- [ ] The sidebar of boards 1 and 4: New chat as a round plus, History, the signed-out pitch and
+**Done 2026-10-16.** The shell, theme switch, grouped chat list, account menu and drawer
+(`Shell.tsx`, `ChatList.tsx`, `AccountMenu.tsx`, `ThemeToggle.tsx`, `Icon.tsx`, `lib/theme.ts`,
+`lib/use-root-data.ts`, `lib/chat-groups.ts`), first committed in `1fe813c`, then brought to the
+sketches. The History link joins the sidebar in D4, with the page it opens.
+- [x] Inter instead of IBM Plex Sans and Source Serif 4; the colour tokens above.
+- [x] The sidebar of boards 1 and 4: New chat as a round plus, the signed-out Home link, pitch and
   Log in at the bottom. **Sign up is hidden until the sign-up plan builds it** (accounts are
   created only by `users create` until then); board 1's Sign up button appears with that plan.
-- [ ] A chat's delete stays in the sidebar as an icon shown on hover or keyboard focus (always
+- [x] A chat's delete stays in the sidebar as an icon shown on hover or keyboard focus (always
   on touch screens), as built, beside the delete action on the History page.
 
 ### Task D2: Home and the ask box
 
 **Files:** `app/page.tsx`, new `components/Composer.tsx`, `components/Suggestions.tsx`,
 `app/login/page.tsx` (restyled to board 2's layout, keeping email and password).
-- [ ] The ask box: grows to 8 lines, Enter sends, Shift+Enter a new line, the count shows only
+**Done 2026-10-16.** `Composer.tsx`, `Suggestions.tsx`, `Hero.tsx`, `SignedOutHome.tsx`,
+`lib/corpus.ts` (venues, years and the paper count from `GET /v1/corpus/coverage`, also shown in
+the sidebar pitch); the login page in board 2's layout says the question is kept.
+- [x] The ask box: grows to 8 lines, Enter sends, Shift+Enter a new line, the count shows only
   past 1,800 of 2,000 characters, the send button becomes Stop while a turn runs. The "Venues and
   years" button opens a small form whose choice is added to the question's text (the search has
   no filter parameter today; a real filter is a later backend change).
-- [ ] Boards 1 and 4; signed out, sending goes to log in with the question kept (`?q=`).
+- [x] Boards 1 and 4; signed out, sending goes to log in with the question kept (`?q=`).
 
 ### Task D3: The conversation and the panel
 

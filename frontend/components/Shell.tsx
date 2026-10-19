@@ -8,12 +8,11 @@ import { useRootData } from "@/lib/use-root-data";
 import { AccountMenu } from "./AccountMenu";
 import { ChatList } from "./ChatList";
 import { Icon, Mark } from "./Icon";
-import { ThemeToggle } from "./ThemeToggle";
 
-type Props = { signedIn: boolean; email: string | null; children: ReactNode };
+type Props = { signedIn: boolean; email: string | null; papers: number | null; children: ReactNode };
 
 /** Every page's frame: the sidebar (a rail when collapsed, a drawer on narrow screens) and the page. */
-export function Shell({ signedIn, email, children }: Props) {
+export function Shell({ signedIn, email, papers, children }: Props) {
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
   const collapsed = useRootData("sidebar") === "collapsed";
@@ -58,7 +57,8 @@ export function Shell({ signedIn, email, children }: Props) {
           <nav aria-label="Main">
             <Link href="/" className="brand">
               <Mark />
-              <span className="brand-name">ML Research Copilot</span>
+              {/* Signed out, the page itself shows the name beside the mark (canvas board 1). */}
+              <span className={signedIn ? "brand-name" : "visually-hidden"}>ML Research Copilot</span>
             </Link>
           </nav>
           <button type="button" className="icon-button collapse-toggle" onClick={toggleCollapsed}
@@ -69,21 +69,30 @@ export function Shell({ signedIn, email, children }: Props) {
             <Icon name="close" />
           </button>
         </div>
+        <Link href="/" className="side-link new-chat" onClick={() => setDrawer(false)}>
+          <span className="round" aria-hidden="true"><Icon name="plus" size={16} /></span>
+          <span className="label">New chat</span>
+        </Link>
         {signedIn ? (
           <>
-            <Link href="/" className="side-link" onClick={() => setDrawer(false)}>
-              <Icon name="plus" /> <span className="label">New chat</span>
-            </Link>
             <ChatList onNavigate={() => setDrawer(false)} />
             <AccountMenu email={email} />
           </>
         ) : (
           <>
-            <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="side-link">
-              <Icon name="signin" /> <span className="label">Sign in</span>
+            <Link href="/" className="side-link" aria-current={pathname === "/" ? "page" : undefined}>
+              <Icon name="home" size={18} /> <span className="label">Home</span>
             </Link>
-            <div className="sidebar-bottom label">
-              <ThemeToggle />
+            <div className="pitch label">
+              <p className="pitch-title">Answers from ML papers</p>
+              <p>Ask anything about machine learning research.</p>
+              <p>Every claim cites the <mark>passage it comes from</mark>, in {papers ? `${papers.toLocaleString("en")} ` : ""}conference papers.</p>
+            </div>
+            {/* Sign up appears with the sign-up plan; until then accounts are made by `users create`. */}
+            <div className="sidebar-bottom signed-out">
+              <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="outline-button">
+                <Icon name="signin" size={18} /> <span className="label">Log in</span>
+              </Link>
             </div>
           </>
         )}

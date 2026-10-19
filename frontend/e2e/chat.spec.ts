@@ -59,20 +59,32 @@ test("the spend cap is explained without a retry button, and the composer stays 
   await expect(box).toBeEnabled();
 });
 
-test("one click is one request: send is disabled while a turn runs", async ({ page }) => {
+test("one click is one request: send becomes Stop while a turn runs", async ({ page }) => {
   const box = page.getByLabel("Ask about ML papers");
   // "slow" makes the scripted backend pause longer, so the turn is still running below.
   await box.fill("Explain slowly how sentence pairs are formed");
-  const send = page.getByRole("button", { name: "Send" });
-  await send.click();
+  await page.getByRole("button", { name: "Send" }).click();
   await box.fill("A second question typed meanwhile");
-  await expect(send).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send" })).toHaveCount(0);
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
-  await expect(send).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Send" })).toBeEnabled();
+});
+
+test("Stop ends a running turn and the box is ready again", async ({ page }) => {
+  const box = page.getByLabel("Ask about ML papers");
+  await box.fill("Explain slowly how sentence pairs are formed");
+  await box.press("Enter");
+  await page.getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(0);
+  await expect(box).toBeEnabled();
 });
 
 test("the composer counts characters and refuses more than 2,000", async ({ page }) => {
   const box = page.getByLabel("Ask about ML papers");
+  await box.fill("x".repeat(1800));
+  await expect(page.getByText(/\/ 2000/)).toHaveCount(0);
   await box.fill("x".repeat(2001));
   await expect(page.getByText("2001 / 2000")).toBeVisible();
   await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();

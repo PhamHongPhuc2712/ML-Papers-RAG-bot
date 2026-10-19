@@ -1,23 +1,28 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api, errorFrom, loginRedirect, streamTurn, type ApiErrorBody, type ChatMessage, type Reference } from "@/lib/api";
 import { STAGES } from "@/lib/chat-labels";
+import { corpusLine, withFilter, type AskFilter, type Corpus } from "@/lib/corpus";
 import { readEvents } from "@/lib/sse";
 import { Answer } from "./Answer";
+import { Composer } from "./Composer";
 import { EvidencePanel } from "./EvidencePanel";
+import { Hero } from "./Hero";
 import { References } from "./References";
+import { Suggestions } from "./Suggestions";
 
-const LIMIT = 2000;
 type Failure = ApiErrorBody & { requestId: string; message_text: string };
 
-export function ChatView({ chatId, about }: { chatId: string | null; about: string | null }) {
+type Props = { chatId: string | null; about: string | null; initialDraft?: string | null; corpus?: Corpus | null };
+
+export function ChatView({ chatId, about, initialDraft = null, corpus = null }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [id, setId] = useState<string | null>(chatId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState(about ? "In this paper, " : "");
+  const [draft, setDraft] = useState(initialDraft ?? (about ? "In this paper, " : ""));
   const [stage, setStage] = useState<string | null>(null);
   // The search step, from the `references` frame, shown while the answer is written.
   const [searched, setSearched] = useState<{ query: string; read: number } | null>(null);
@@ -112,24 +117,32 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
     }
   }
 
-  function submit(event?: FormEvent) {
-    event?.preventDefault();
-    const text = draft.trim();
-    if (!text || text.length > LIMIT || stage) return;
+  function ask(text: string, filter: AskFilter) {
+    if (stage) return;
     setDraft("");
-    void send(text, crypto.randomUUID());
-  }
-
-  function onKey(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      submit();
-    }
+    void send(withFilter(text, filter), crypto.randomUUID());
   }
 
   const running = stage !== null;
+  const empty = !id && messages.length === 0;
+  const composer = (
+    <Composer value={draft} onChange={setDraft} onSubmit={ask} running={running} onStop={() => abort.current?.abort()}
+      placeholder={empty ? "Ask a question, or ask for papers on a topic" : "Ask a follow-up"}
+      venues={corpus?.venues} years={corpus?.years} autoFocus={empty} />
+  );
+  if (empty) {
+    const line = corpusLine(corpus);
+    return (
+      <div className="ask-home">
+        <Hero />
+        {composer}
+        <Suggestions onPick={(question) => ask(question, { venue: null, year: null })} />
+        {line ? <p className="corpus-line">{line}</p> : null}
+      </div>
+    );
+  }
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div className="thread">
       <ol aria-label="Conversation" style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
         {messages.map((message) =>
           message.role === "user" ? (
@@ -164,13 +177,7 @@ export function ChatView({ chatId, about }: { chatId: string | null; about: stri
           ) : null}
         </div>
       ) : null}
-      <form onSubmit={submit}>
-        <label htmlFor="composer">Ask about ML papers</label>
-        <textarea id="composer" rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey}
-          placeholder="Ask a question, or ask for papers on a topic" aria-describedby="composer-count" />
-        <p id="composer-count" className="muted" style={{ margin: "4px 0" }}>{draft.length} / {LIMIT}</p>
-        <button className="primary" type="submit" disabled={running || !draft.trim() || draft.length > LIMIT}>Send</button>
-      </form>
+      <div className="composer-dock">{composer}</div>
     </div>
   );
 }

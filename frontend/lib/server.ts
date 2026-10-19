@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { summarizeCoverage, type Corpus, type Coverage } from "./corpus";
 
 export const SESSION_COOKIE = "copilot_session";
 
@@ -22,6 +23,16 @@ export async function currentUser(): Promise<{ email: string } | null> {
       cache: "no-store",
     });
     return response.ok ? ((await response.json()) as { email: string }) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The corpus's venues, years and size, cached for five minutes; null when the API is unreachable. */
+export async function corpus(): Promise<Corpus | null> {
+  try {
+    const response = await fetch(`${backendUrl()}/v1/corpus/coverage`, { next: { revalidate: 300 } });
+    return response.ok ? summarizeCoverage((await response.json()) as Coverage) : null;
   } catch {
     return null;
   }

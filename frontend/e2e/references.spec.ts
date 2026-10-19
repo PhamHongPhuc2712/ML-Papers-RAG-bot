@@ -5,20 +5,37 @@ test.beforeEach(async ({ request }) => {
   await request.post(`${MOCK}/__control/reset`);
 });
 
-test("signed out, the home page explains and links to sign-in; there is no search page", async ({ page }) => {
+test("signed out, the home page asks first and keeps the question across log in; there is no search page", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ask ML papers");
-  await expect(page.getByText(/3 papers from 3 venue-years/)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("What do you want to know about ML research?");
+  await expect(page.getByText("Searches the main-conference papers of ACL and ICLR from 2024 to 2025.")).toBeVisible();
+  await expect(page.getByText("in 3 conference papers")).toBeVisible();
   await expect(page.getByRole("searchbox")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["ML Research Copilot"]);
+  // Sign up appears with the sign-up plan.
+  await expect(page.getByRole("link", { name: "Sign up" })).toHaveCount(0);
   await noSeriousViolations(page);
-  await page.getByRole("link", { name: "Sign in to ask" }).click();
-  await expect(page).toHaveURL(/\/login\?next=%2F$/);
+  // A filter chosen before asking is written into the question.
+  await page.getByRole("button", { name: "Venues and years" }).click();
+  await page.getByLabel("Venue").selectOption("ACL");
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("button", { name: "ACL" })).toBeVisible();
+  await page.getByLabel("Ask about ML papers").fill("Find papers on LoRA");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await expect(page.getByText("Your question is kept")).toBeVisible();
   await page.getByLabel("Email").fill("alice@example.org");
   await page.getByLabel("Password").fill("correct horse battery staple");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByLabel("Ask about ML papers")).toBeVisible();
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page.getByLabel("Ask about ML papers")).toHaveValue("Find papers on LoRA\n\nOnly use papers from ACL.");
   expect(new URL(page.url()).pathname).toBe("/");
+});
+
+test("a suggested question is asked at once", async ({ page }) => {
+  await signIn(page, "/");
+  await page.getByRole("button", { name: /Find papers on contrastive learning/ }).click();
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
+  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
 });
 
 test("an answer says what it searched and lists its References, filterable", async ({ page }) => {

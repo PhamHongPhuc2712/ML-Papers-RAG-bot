@@ -9,7 +9,7 @@ test("a wrong password says so and stays on the page", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("alice@example.org");
   await page.getByLabel("Password").fill("not the password at all");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Log in" }).click();
   // Next renders its own route announcer with role="alert"; this is the form's.
   await expect(page.getByRole("alert").and(page.locator("#login-error"))).toHaveText(
     "Email or password is incorrect.",
@@ -42,6 +42,6 @@ test("an open redirect is refused", async ({ page }) => {
   await page.goto("/login?next=//evil.example.org");
   await page.getByLabel("Email").fill("alice@example.org");
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Log in" }).click();
   await page.waitForURL((url) => url.hostname === "127.0.0.1" && url.pathname === "/");
 });

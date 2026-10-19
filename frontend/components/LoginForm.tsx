@@ -32,7 +32,7 @@ export function LoginForm({ next }: { next: string }) {
   }
 
   return (
-    <form onSubmit={submit} aria-describedby={error ? "login-error" : undefined}>
+    <form className="auth-form" onSubmit={submit} aria-describedby={error ? "login-error" : undefined}>
       <p>
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" autoComplete="username" required />
@@ -47,7 +47,7 @@ export function LoginForm({ next }: { next: string }) {
         </p>
       ) : null}
       <button className="primary" type="submit" disabled={busy}>
-        {busy ? "Signing in…" : "Sign in"}
+        {busy ? "Logging in…" : "Log in"}
       </button>
     </form>
   );

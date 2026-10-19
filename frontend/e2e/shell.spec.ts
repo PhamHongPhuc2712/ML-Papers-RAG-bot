@@ -32,9 +32,9 @@ test("the theme follows the system, and a chosen theme is kept", async ({ page }
   expect(await background()).toBe("rgb(26, 28, 34)");
   await openAccountMenu(page);
   await page.getByRole("group", { name: "Theme" }).getByRole("button", { name: "Light" }).click();
-  expect(await background()).toBe("rgb(246, 247, 249)");
+  expect(await background()).toBe("rgb(255, 255, 255)");
   await page.reload();
-  expect(await background()).toBe("rgb(246, 247, 249)");
+  expect(await background()).toBe("rgb(255, 255, 255)");
   await openAccountMenu(page);
   await expect(page.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
   await noSeriousViolations(page);

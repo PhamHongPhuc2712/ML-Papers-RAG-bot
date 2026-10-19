@@ -8,7 +8,7 @@ export async function signIn(page: Page, next = "/chat") {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await page.getByLabel("Email").fill("alice@example.org");
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Log in" }).click();
   await page.waitForURL(`**${next}`);
 }
 

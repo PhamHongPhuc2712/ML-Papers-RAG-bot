@@ -15,6 +15,10 @@ const PATHS = {
   signout: "M10 5H5v14h5M14 8l4 4l-4 4M18 12H9",
   signin: "M14 5h5v14h-5M10 8l4 4l-4 4M14 12H5",
   chevrons: "M8 9l4-4l4 4M8 15l4 4l4-4",
+  home: "M4 11l8-6l8 6v8h-5v-5h-6v5H4z",
+  filter: "M4 7h16M7 12h10M10 17h4",
+  arrowUp: "M12 19V5M5 12l7-7l7 7",
+  stop: "M7 7h10v10H7z",
 } as const;
 
 export type IconName = keyof typeof PATHS;
