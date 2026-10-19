@@ -8,7 +8,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  use: { baseURL: process.env.REAL_STACK ? "http://127.0.0.1:3000" : "http://127.0.0.1:3100", trace: "retain-on-failure" },
+  use: { baseURL: process.env.REAL_STACK ? (process.env.REAL_BASE_URL ?? "http://127.0.0.1:3000") : "http://127.0.0.1:3100", trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: process.env.REAL_STACK
     ? undefined

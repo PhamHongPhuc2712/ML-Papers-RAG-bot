@@ -34,7 +34,7 @@ async function forward(request: Request, { params }: Context): Promise<Response>
   try {
     upstream = await fetch(target, init);
   } catch {
-    return failure(503, "backend_unreachable", "The service is not reachable.", true);
+    return failure(503, "backend_unreachable", "The service can’t be reached right now. Your chats are safe. Try again in a minute.", true);
   }
   const out = new Headers();
   for (const name of RESPONSE_HEADERS) {

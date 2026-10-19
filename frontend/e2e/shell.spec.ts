@@ -46,9 +46,9 @@ test("the theme follows the system, and a chosen theme is kept", async ({ page }
 test("the account menu closes with Escape and returns focus", async ({ page }) => {
   await signIn(page, "/");
   await openAccountMenu(page);
-  await expect(page.getByRole("link", { name: "Account" })).toBeFocused();
+  await expect(page.getByRole("link", { name: "Settings" })).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("link", { name: "Account" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Account menu/ })).toBeFocused();
 });
 

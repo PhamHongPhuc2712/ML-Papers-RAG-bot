@@ -37,6 +37,28 @@ test("chat needs a session and signing out ends it", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
+test.describe("before the page's script runs", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("logging in posts the form, never puts the password in the URL, and lands on next", async ({ page }) => {
+    await page.goto("/login?next=%2Fhistory");
+    await page.getByLabel("Email").fill("alice@example.org");
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Log in" }).click();
+    await page.waitForURL("**/history");
+    expect(page.url()).not.toContain("password");
+  });
+
+  test("a wrong password comes back as the form's error, without the password", async ({ page }) => {
+    await page.goto("/login?next=%2Fhistory");
+    await page.getByLabel("Email").fill("alice@example.org");
+    await page.getByLabel("Password").fill("not the password at all");
+    await page.getByRole("button", { name: "Log in" }).click();
+    await page.waitForURL(/\/login\?next=%2Fhistory&error=credentials$/);
+    await expect(page.locator("#login-error")).toHaveText("Email or password is incorrect.");
+  });
+});
+
 test("an open redirect is refused", async ({ page }) => {
   await signIn(page, "/chat");
   await page.goto("/login?next=//evil.example.org");

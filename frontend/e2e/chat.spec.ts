@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MOCK, noSeriousViolations, signIn } from "./helpers";
+import { MOCK, noSeriousViolations, noSeriousViolationsInBothThemes, signIn } from "./helpers";
 
 const chats = (page: import("@playwright/test").Page) =>
   page.getByRole("navigation", { name: "Chats" }).getByRole("listitem");
@@ -71,23 +71,38 @@ test("a follow-up shows what was searched, and history survives a reload", async
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(2);
 });
 
-test("insufficient evidence is said plainly", async ({ page }) => {
+test("insufficient evidence is said plainly, and its References stay", async ({ page }) => {
   await page.getByLabel("Ask about ML papers").fill("How do proteins fold?");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText("The indexed papers don't contain enough evidence")).toBeVisible();
+  const answer = page.getByRole("article", { name: "Answer" });
+  await expect(answer).toContainText("The papers this search found don’t say enough to answer that.");
+  await expect(answer).toContainText("The 3 papers it found are still in References.");
+  await expect(answer.getByRole("button", { name: "References (3)" })).toBeVisible();
+  await noSeriousViolationsInBothThemes(page);
 });
 
 test("the spend cap is explained without a retry button, and the composer stays usable", async ({ page }) => {
   const box = page.getByLabel("Ask about ML papers");
   await box.fill("Will the budget hold?");
   await box.press("Enter");
-  // Next renders its own route announcer with role="alert"; the app's alerts are banners.
-  const alert = page.getByRole("alert").and(page.locator(".banner"));
-  await expect(alert).toContainText("resets at 00:00 UTC");
-  await expect(alert.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  // A spent budget is a notice, not a fault, and offers no retry.
+  const notice = page.getByRole("status").and(page.locator(".banner"));
+  await expect(notice).toContainText("resets at 00:00 UTC");
+  await expect(notice.getByRole("button")).toHaveCount(0);
   // The message stays in the conversation (the sidebar also lists it as the chat's title).
   await expect(page.getByRole("list", { name: "Conversation" }).getByText("Will the budget hold?")).toBeVisible();
   await expect(box).toBeEnabled();
+});
+
+test("a search that timed out says so, and Try again asks the question again", async ({ page }) => {
+  await page.getByLabel("Ask about ML papers").fill("A timeout, then an answer");
+  await page.keyboard.press("Enter");
+  const alert = page.getByRole("alert").and(page.locator(".banner"));
+  await expect(alert).toContainText("The answer could not be finished because the search timed out. Your question is kept.");
+  await noSeriousViolationsInBothThemes(page);
+  await alert.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
+  await expect(page.locator(".banner.error")).toHaveCount(0);
 });
 
 test("one click is one request: send becomes Stop while a turn runs", async ({ page }) => {
@@ -144,7 +159,11 @@ test("an expired session sends you to sign in and back", async ({ page, request 
   await page.reload();
   await expect(page).toHaveURL(/\/login\?next=.*&expired=1/);
   expect(new URL(page.url()).searchParams.get("next")).toBe(here);
-  await expect(page.getByRole("status")).toContainText("Your session expired");
+  await expect(page.getByRole("status")).toContainText("Your session ended. Log in again and you return to the same chat.");
+  // The shell is signed out too: no chats or account menu left from the ended session.
+  await expect(page.getByRole("link", { name: "Log in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Account menu/ })).toHaveCount(0);
+  await noSeriousViolationsInBothThemes(page);
 });
 
 test("a database outage is said, with a retry, never shown as an empty history", async ({ page, request }) => {

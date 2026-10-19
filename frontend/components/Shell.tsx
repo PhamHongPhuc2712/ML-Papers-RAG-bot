@@ -75,6 +75,9 @@ export function Shell({ signedIn, email, papers, children }: Props) {
         </Link>
         {signedIn ? (
           <>
+            <Link href="/history" className="side-link" aria-current={pathname === "/history" ? "page" : undefined}>
+              <Icon name="history" size={18} /> <span className="label">History</span>
+            </Link>
             <ChatList onNavigate={() => setDrawer(false)} />
             <AccountMenu email={email} />
           </>

@@ -6,7 +6,7 @@ import { PAPERS, PASSWORD, USER } from "./fixtures.mjs";
 const PORT = Number(process.env.MOCK_BACKEND_PORT ?? 8799);
 let state;
 function reset() {
-  state = { expired: false, deleted: false, databaseDown: false, chats: new Map() };
+  state = { expired: false, deleted: false, databaseDown: false, chats: new Map(), timedOut: new Set() };
 }
 reset();
 
@@ -58,6 +58,13 @@ async function stream(req, res, payload) {
   send("status", { stage: follow ? "condensing" : "searching" });
   const pause = /slow/i.test(payload.message) ? 700 : 150;
   await sleep(pause);
+  if (/timeout/i.test(payload.message) && !state.timedOut.has(payload.message)) {
+    // Both search branches missed their deadlines, once; asking again succeeds.
+    state.timedOut.add(payload.message);
+    chat.messages.push({ ...user, id: messageId, ordinal: user.ordinal + 1, role: "assistant", status: "failed", text: "", error_code: "candidates_unavailable" });
+    send("error", { error: { code: "candidates_unavailable", message: "Something went wrong while answering. Try again.", retryable: true } });
+    return res.end();
+  }
   if (/budget/i.test(payload.message)) {
     chat.messages.push({ ...user, id: messageId, ordinal: user.ordinal + 1, role: "assistant", status: "failed", text: "", error_code: "llm_spend_cap" });
     send("error", { error: { code: "llm_spend_cap", message: "Today's answer budget is used up. It resets at 00:00 UTC.", retryable: false } });
@@ -99,6 +106,18 @@ createServer(async (req, res) => {
   if (path === "/__control/reset") { reset(); return json(res, 200, { ok: true }); }
   if (path === "/__control/database") { state.databaseDown = url.searchParams.get("down") === "1"; return json(res, 200, { ok: true }); }
   if (path === "/__control/expire") { state.expired = true; return json(res, 200, { ok: true }); }
+  if (path === "/__control/seed-history") {
+    // Three answered chats last used today, 3 days ago and 30 days ago, for the History page.
+    for (const [title, days] of [["What loss does SimCSE use?", 0], ["Graph transformers for molecules", 3], ["Speculative decoding speedups", 30]]) {
+      const at = new Date(Date.now() - days * 86400000 - 3600000).toISOString();
+      const id = randomUUID();
+      state.chats.set(id, { id, title, created_at: at, updated_at: at, messages: [
+        { id: randomUUID(), ordinal: 0, role: "user", status: "complete", text: title, claims: [], evidence: [], references: [],
+          standalone_query: null, warnings: [], error_code: null, corpus_release_id: null, created_at: at },
+      ] });
+    }
+    return json(res, 200, { ok: true });
+  }
   if (path === "/v1/auth/token" && req.method === "POST") {
     const payload = await body(req);
     if (!state.deleted && payload.email?.toLowerCase() === USER.email && payload.password === PASSWORD) {

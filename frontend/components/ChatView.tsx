@@ -2,7 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, api, errorFrom, loginRedirect, streamTurn, type ApiErrorBody, type ChatMessage, type Reference } from "@/lib/api";
+import { ApiError, api, errorFrom, sessionEnded, streamTurn, type ApiErrorBody, type ChatMessage, type Reference } from "@/lib/api";
+import { ERRORS } from "@/lib/chat-labels";
 import { corpusLine, withFilter, type AskFilter, type Corpus } from "@/lib/corpus";
 import { readEvents } from "@/lib/sse";
 import { Answer } from "./Answer";
@@ -14,14 +15,20 @@ import { Suggestions } from "./Suggestions";
 
 type Failure = ApiErrorBody & { requestId: string; message_text: string };
 
-type Props = { chatId: string | null; about: string | null; initialDraft?: string | null; corpus?: Corpus | null };
+type Props = {
+  chatId: string | null;
+  /** A question to start with: put in the box, or asked at once with `autoSend` (from a paper page). */
+  initialDraft?: string | null;
+  autoSend?: boolean;
+  corpus?: Corpus | null;
+};
 
-export function ChatView({ chatId, about, initialDraft = null, corpus = null }: Props) {
+export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus = null }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [id, setId] = useState<string | null>(chatId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState(initialDraft ?? (about ? "In this paper, " : ""));
+  const [draft, setDraft] = useState(autoSend ? "" : (initialDraft ?? ""));
   const [stage, setStage] = useState<string | null>(null);
   // The search step, from the `references` frame, shown while the answer is written.
   const [searched, setSearched] = useState<LiveSearch>(null);
@@ -31,6 +38,7 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
   const [loadFailed, setLoadFailed] = useState(false);
   const [panel, setPanel] = useState<PanelState | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const autoSent = useRef(false);
   // A new chat's first answer moves the URL to /chat/<id> in place; "New chat" (`/`) then lands on
   // this same mounted view, which starts over rather than keep the previous conversation.
   const [path, setPath] = useState(pathname);
@@ -47,7 +55,7 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
   }
 
   function expired() {
-    router.replace(loginRedirect(pathname, true));
+    sessionEnded(router, pathname);
   }
 
   function loadChat(id: string) {
@@ -70,6 +78,15 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
     return () => abort.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
+
+  useEffect(() => {
+    if (!autoSend || !initialDraft || autoSent.current) return;
+    autoSent.current = true;
+    // Asked once: Back or a reload must not ask it again, so `?q=…&send=1` leaves the history.
+    window.history.replaceState(null, "", "/");
+    void send(initialDraft, crypto.randomUUID());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function send(text: string, requestId: string) {
     setFailure(null);
@@ -218,11 +235,14 @@ export function ChatView({ chatId, about, initialDraft = null, corpus = null }: 
               This chat could not be loaded. <button type="button" onClick={() => loadChat(chatId)}>Retry</button>
             </p>
           ) : null}
-          {failure ? (
+          {failure?.code === "llm_spend_cap" ? (
+            // Not a fault: today's budget is spent, and asking works again after the reset (board 11).
+            <p role="status" className="banner warn">{failure.message}</p>
+          ) : failure ? (
             <div role="alert" className="banner error">
-              {failure.message}{" "}
+              <p>{ERRORS[failure.code] ?? failure.message}{failure.retryable ? " Your question is kept." : ""}</p>
               {failure.retryable ? (
-                <button type="button" onClick={() => void send(failure.message_text, failure.requestId)}>Try again</button>
+                <button type="button" className="primary" onClick={() => void send(failure.message_text, failure.requestId)}>Try again</button>
               ) : null}
             </div>
           ) : null}

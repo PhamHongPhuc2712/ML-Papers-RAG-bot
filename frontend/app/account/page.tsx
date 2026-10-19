@@ -1,16 +1,33 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { DeleteAccount } from "@/components/DeleteAccount";
-import { SESSION_COOKIE } from "@/lib/server";
+import { SignOutButton } from "@/components/SignOutButton";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { SESSION_COOKIE, currentUser } from "@/lib/server";
 
-export default async function AccountPage() {
+/** Settings (canvas board 10, the parts that exist today): the account, the theme and deleting the
+ *  account. Usage, a password change and "delete all chats" come with the sign-up plan. */
+export default async function SettingsPage() {
   if (!(await cookies()).get(SESSION_COOKIE)?.value) redirect("/login?next=%2Faccount");
+  const user = await currentUser();
   return (
-    <main style={{ maxWidth: 560 }}>
-      <h1>Account</h1>
-      <h2>Delete your account</h2>
-      <p>Deleting your account removes all of your chats at once. This cannot be undone.</p>
-      <DeleteAccount />
+    <main className="page settings">
+      <h1>Settings</h1>
+      <section aria-labelledby="settings-account">
+        <h2 id="settings-account">Account</h2>
+        <div>
+          <p>{user?.email ?? "Your account"}</p>
+          <SignOutButton className="text-button link">Log out</SignOutButton>
+        </div>
+      </section>
+      <section aria-labelledby="settings-theme">
+        <h2 id="settings-theme">Theme</h2>
+        <div><ThemeToggle /></div>
+      </section>
+      <section aria-labelledby="settings-data">
+        <h2 id="settings-data">Your data</h2>
+        <DeleteAccount />
+      </section>
     </main>
   );
 }

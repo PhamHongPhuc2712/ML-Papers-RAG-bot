@@ -3,9 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-export function LoginForm({ next }: { next: string }) {
+const MESSAGES = {
+  credentials: "Email or password is incorrect.",
+  unreachable: "The service is not reachable. Try again in a moment.",
+};
+
+/** Email and password. Posted by the script as JSON; before the script runs, the browser posts the
+ *  form itself to the same route, which redirects (`initialError` is how a failure comes back). */
+export function LoginForm({ next, initialError = null }: { next: string; initialError?: keyof typeof MESSAGES | null }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ? MESSAGES[initialError] : null);
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -24,15 +31,13 @@ export function LoginForm({ next }: { next: string }) {
       router.refresh();
       return;
     }
-    setError(
-      response?.status === 401
-        ? "Email or password is incorrect."
-        : "The service is not reachable. Try again in a moment.",
-    );
+    setError(response?.status === 401 ? MESSAGES.credentials : MESSAGES.unreachable);
   }
 
   return (
-    <form className="auth-form" onSubmit={submit} aria-describedby={error ? "login-error" : undefined}>
+    <form className="auth-form" method="post" action="/api/session" onSubmit={submit}
+      aria-describedby={error ? "login-error" : undefined}>
+      <input type="hidden" name="next" value={next} />
       <p>
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" autoComplete="username" required />

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ChatMessage } from "@/lib/api";
-import { INSUFFICIENT, WARNINGS, citationNumbers } from "@/lib/chat-labels";
+import { INSUFFICIENT, WARNINGS, citationNumbers, insufficientHint } from "@/lib/chat-labels";
 import { answerAsText, partialSearch } from "@/lib/references";
 import { Icon } from "./Icon";
 import { DoneSteps } from "./StepsBox";
@@ -34,7 +34,12 @@ export function Answer({ message, selected, onCite, onReferences }: Props) {
       {partialSearch(message) ? (
         <p className="banner warn note">Part of the search ran out of time, so this answer may have missed some papers. Asking again usually finds them.</p>
       ) : null}
-      {message.status === "insufficient" ? <p className="answer-insufficient">{INSUFFICIENT}</p> : null}
+      {message.status === "insufficient" ? (
+        <div className="answer-insufficient">
+          <p>{INSUFFICIENT}</p>
+          <p className="muted">{insufficientHint(references.length)}</p>
+        </div>
+      ) : null}
       <div className="claims">
         {(message.claims ?? []).map((claim, index) => {
           const marked = selected !== null && claim.evidence_ids.includes(selected);

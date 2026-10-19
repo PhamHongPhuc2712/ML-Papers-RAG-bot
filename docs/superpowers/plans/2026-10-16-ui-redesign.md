@@ -145,9 +145,16 @@ record which of its sentences a claim rests on.
 
 **Files:** new `app/history/page.tsx`, `app/papers/[id]/page.tsx`, `app/account/page.tsx`,
 `app/not-found.tsx`, the e2e specs, `reports/ui-redesign.md`.
-- [ ] Board 9 (searching titles in the browser over `GET /v1/chats`), board 8, board 10's existing
+**Pages and tests done 2026-10-19** (`HistoryView.tsx`, `PaperAsk.tsx`, `CopyButton.tsx`,
+`SignOutButton.tsx`, `lib/papers.ts`, `lib/next-path.ts`; `PaperCard.tsx` deleted). History shows
+each chat's title and age, not the board's answer preview and question count, which `GET
+/v1/chats` does not return. A paper page's question names the paper in its text, as the venue
+filter does, and is asked at once when signed in. Two fixes found on the way: an ended session left
+the signed-in sidebar on the log-in page, and a log-in submitted before the page's script ran put
+the password in the URL (the form now posts to `/api/session`, which redirects).
+- [x] Board 9 (searching titles in the browser over `GET /v1/chats`), board 8, board 10's existing
   parts, board 11's states in both themes.
-- [ ] Browser tests for every behaviour of today's app plus collapse, theme, Stop, the panel,
+- [x] Browser tests for every behaviour of today's app plus collapse, theme, Stop, the panel,
   History search and the partial-search note; axe with no serious or critical violation in both
   themes.
 - [ ] One real-stack walk with screenshots (about $0.01), recorded in `reports/ui-redesign.md`.
@@ -166,6 +173,9 @@ recorded real-stack walk.
   An email service is new infrastructure, which the spec's zero-budget, on-this-machine rule
   does not allow yet: the developer's decision to record first. "Continue with Google" is left
   out unless asked for.
+- **Small API additions** the boards show and D4 left out: History's answer preview and question
+  count (fields on `GET /v1/chats`), a paper attached to a turn rather than named in its text, and
+  a real venue and year filter on the search.
 - **Deployment plan:** hosting a real product (a server with a GPU or a CPU-only reranker, the
   85,729-paper index, PostgreSQL, a domain, TLS) changes the same rule.
 - **Phone layouts**, designed when the developer asks.

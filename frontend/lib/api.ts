@@ -44,7 +44,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   paper: (id: string) => call<PaperDetail>(`papers/${encodeURIComponent(id)}`),
-  chats: () => call<ChatList>("chats"),
+  chats: (limit = 50) => call<ChatList>(`chats?limit=${limit}`),
   chat: (id: string) => call<ChatDetail>(`chats/${encodeURIComponent(id)}`),
   deleteChat: (id: string) => call<void>(`chats/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
@@ -64,4 +64,11 @@ export function loginRedirect(next: string, expired: boolean): string {
   const query = new URLSearchParams({ next });
   if (expired) query.set("expired", "1");
   return `/login?${query.toString()}`;
+}
+
+/** A session the API no longer accepts: to log in, and back to `next` after. The proxy has dropped
+ *  the cookie; refreshing renders the shell again, signed out, instead of keeping the old sidebar. */
+export function sessionEnded(router: { replace: (href: string) => void; refresh: () => void }, next: string): void {
+  router.replace(loginRedirect(next, true));
+  router.refresh();
 }

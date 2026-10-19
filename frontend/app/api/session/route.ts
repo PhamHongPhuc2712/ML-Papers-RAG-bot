@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { safeNext } from "@/lib/next-path";
 import { SESSION_COOKIE, backendUrl, cookieSecure } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -8,13 +9,31 @@ const unreachable = {
   error: { code: "backend_unreachable", message: "The service is not reachable.", retryable: true },
 };
 
+type Credentials = { email?: unknown; password?: unknown };
+
+/** A form posted before the page's script ran (no JavaScript yet, or none at all): log in, then
+ *  redirect, so the password never travels in a URL. The script's own path sends JSON. */
+async function fromForm(request: Request): Promise<Response> {
+  const form = await request.formData();
+  const next = safeNext(typeof form.get("next") === "string" ? (form.get("next") as string) : null);
+  const outcome = await logIn({ email: form.get("email"), password: form.get("password") });
+  const target = outcome.ok ? next : `/login?${new URLSearchParams({ next, error: outcome.status === 401 ? "credentials" : "unreachable" })}`;
+  return new Response(null, { status: 303, headers: { location: target } });
+}
+
 export async function POST(request: Request): Promise<Response> {
-  const body = (await request.json().catch(() => null)) as { email?: unknown; password?: unknown } | null;
-  if (typeof body?.email !== "string" || typeof body.password !== "string") {
-    return Response.json(
-      { error: { code: "validation_error", message: "Email and password are required.", retryable: false } },
-      { status: 422 },
-    );
+  if (request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded")) return fromForm(request);
+  const body = (await request.json().catch(() => null)) as Credentials | null;
+  const outcome = await logIn(body ?? {});
+  return outcome.ok ? Response.json({ ok: true }) : Response.json(outcome.body, { status: outcome.status });
+}
+
+type Outcome = { ok: true } | { ok: false; status: number; body: unknown };
+
+/** Exchange credentials for a token and keep it in the httpOnly cookie. */
+async function logIn(body: Credentials): Promise<Outcome> {
+  if (typeof body.email !== "string" || typeof body.password !== "string") {
+    return { ok: false, status: 422, body: { error: { code: "validation_error", message: "Email and password are required.", retryable: false } } };
   }
   let upstream: Response;
   try {
@@ -25,13 +44,13 @@ export async function POST(request: Request): Promise<Response> {
       cache: "no-store",
     });
   } catch {
-    return Response.json(unreachable, { status: 503 });
+    return { ok: false, status: 503, body: unreachable };
   }
   const payload = (await upstream.json().catch(() => null)) as
     | { access_token?: string; expires_in?: number }
     | null;
   if (!upstream.ok || !payload?.access_token) {
-    return Response.json(payload ?? unreachable, { status: upstream.ok ? 502 : upstream.status });
+    return { ok: false, status: upstream.ok ? 502 : upstream.status, body: payload ?? unreachable };
   }
   (await cookies()).set(SESSION_COOKIE, payload.access_token, {
     httpOnly: true,
@@ -40,7 +59,7 @@ export async function POST(request: Request): Promise<Response> {
     path: "/",
     maxAge: payload.expires_in ?? 3600,
   });
-  return Response.json({ ok: true });
+  return { ok: true };
 }
 
 export async function DELETE(): Promise<Response> {

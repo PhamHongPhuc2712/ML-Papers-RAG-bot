@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { filterLabel, type AskFilter } from "@/lib/corpus";
 import { Icon } from "./Icon";
 
@@ -19,11 +19,13 @@ type Props = {
   venues?: string[];
   years?: number[];
   autoFocus?: boolean;
+  /** What the question is about, shown inside the box above the text (canvas board 8). */
+  attachment?: ReactNode;
 };
 
 /** The ask box (canvas boards 1 and 4): grows with its text, Enter sends, Stop while a turn runs. */
 export function Composer({ value, onChange, onSubmit, placeholder, label = "Ask about ML papers", running = false,
-  onStop, venues = [], years = [], autoFocus = false }: Props) {
+  onStop, venues = [], years = [], autoFocus = false, attachment = null }: Props) {
   const [filter, setFilter] = useState<AskFilter>({ venue: null, year: null });
   const [filtering, setFiltering] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -61,6 +63,7 @@ export function Composer({ value, onChange, onSubmit, placeholder, label = "Ask 
 
   return (
     <form className="composer" onSubmit={submit}>
+      {attachment ? <p className="composer-attachment">{attachment}</p> : null}
       <label htmlFor={`${ids}-text`} className="visually-hidden">{label}</label>
       <textarea id={`${ids}-text`} ref={field} rows={2} value={value} placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)} onKeyDown={onKey}

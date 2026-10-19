@@ -22,3 +22,13 @@ export async function noSeriousViolations(page: Page) {
   const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(serious.map((v) => v.id)).toEqual([]);
 }
+
+/** Axe in the light theme, then in the dark one (the system setting), then light again. */
+export async function noSeriousViolationsInBothThemes(page: Page) {
+  await page.emulateMedia({ colorScheme: "light" });
+  await noSeriousViolations(page);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(26, 28, 34)");
+  await noSeriousViolations(page);
+  await page.emulateMedia({ colorScheme: "light" });
+}

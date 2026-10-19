@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { SignOutButton } from "./SignOutButton";
 import { ThemeToggle } from "./ThemeToggle";
 
-/** The sidebar's bottom: who is signed in, the account page, the theme and signing out. */
+/** The sidebar's bottom: who is signed in, the settings page, the theme and signing out. */
 export function AccountMenu({ email }: { email: string | null }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -34,12 +33,6 @@ export function AccountMenu({ email }: { email: string | null }) {
     };
   }, [open]);
 
-  async function signOut() {
-    await fetch("/api/session", { method: "DELETE" });
-    router.push("/login");
-    router.refresh();
-  }
-
   const name = email ?? "Your account";
   return (
     <div className="sidebar-bottom" ref={box}>
@@ -47,15 +40,15 @@ export function AccountMenu({ email }: { email: string | null }) {
         <div className="menu" id={id}>
           {email ? <p className="menu-section" style={{ margin: 0 }}>{email}</p> : null}
           <Link className="menu-item" href="/account" onClick={() => setOpen(false)}>
-            <Icon name="user" size={18} /> Account
+            <Icon name="user" size={18} /> Settings
           </Link>
           <hr />
           <p className="menu-section" style={{ margin: 0 }}>Theme</p>
           <ThemeToggle />
           <hr />
-          <button type="button" className="menu-item" onClick={() => void signOut()}>
+          <SignOutButton className="menu-item">
             <Icon name="signout" size={18} /> Sign out
-          </button>
+          </SignOutButton>
         </div>
       ) : null}
       <button ref={button} type="button" className="account-button" aria-expanded={open} aria-controls={id}

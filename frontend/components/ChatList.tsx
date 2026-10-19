@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, api, loginRedirect, type ChatList as Chats } from "@/lib/api";
+import { ApiError, api, sessionEnded, type ChatList as Chats } from "@/lib/api";
 import { groupChats } from "@/lib/chat-groups";
 import { Icon } from "./Icon";
 
@@ -21,7 +21,7 @@ export function ChatList({ onNavigate }: { onNavigate: () => void }) {
         setFailed(false);
       },
       (error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) router.replace(loginRedirect(window.location.pathname, true));
+        if (error instanceof ApiError && error.status === 401) sessionEnded(router, window.location.pathname);
         // Anything else (a database outage is a 503) is said, never shown as an empty history.
         else setFailed(true);
       },
@@ -38,7 +38,8 @@ export function ChatList({ onNavigate }: { onNavigate: () => void }) {
     if (!window.confirm(`Delete “${title}”? This cannot be undone.`)) return;
     await api.deleteChat(id);
     if (window.location.pathname === `/chat/${id}`) router.replace("/");
-    load();
+    // The History page lists the same chats.
+    window.dispatchEvent(new Event("chats-changed"));
   }
 
   return (
