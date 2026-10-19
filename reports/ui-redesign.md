@@ -53,17 +53,46 @@ task D4. The design is the sketch canvas (boards 8–11). No backend or API chan
 | `npm run build` | clean, 10 routes |
 | Screenshots at 1440 px, light and dark, against the scripted backend | History, the paper page signed in and out, Settings with the delete form open, not found, an insufficient answer, the spend-cap notice, the ended session; compared by eye with boards 8–11, differences only where the API lacks the data (above) |
 
-## The real-stack walk: not yet run
+## The real-stack walk
 
-`frontend/e2e/real-stack.spec.ts` was rewritten for the redesign: log in, a paper-finding request,
-its References panel, a citation, a follow-up, the cited paper's page, History and Settings, each
-screenshotted in light and dark (two turns, about $0.01). `playwright.config.ts` takes
-`REAL_BASE_URL` so it can run against `next start` on any port.
+`frontend/e2e/real-stack.spec.ts`, rewritten for the redesign: log in, "Find papers on contrastive
+learning of sentence embeddings", its References panel, citation 1, the follow-up "Which of them
+uses dropout as augmentation?", the cited paper's page, History and Settings, each screenshotted in
+light and dark. `playwright.config.ts` takes `REAL_BASE_URL`; the walk ran against `next start` on
+port 3200 (this commit's build) and the running API (release `m2-20260924T095724Z`), each attempt
+with a throwaway account made by `users create` and deleted after by `users delete`.
 
-| Attempt | UTC | Outcome |
-|---|---|---|
-| 1 | 08:44 | **Set aside.** The first turn failed with `candidates_unavailable` (both search branches past their deadlines) before any model call ($0). The GPU was 29–40% busy with 4 GB held by a Windows-side process WSL cannot see. |
+| Attempt | UTC | Outcome | Stored turns |
+|---|---|---|---|
+| 1 | 08:44 | Failed, **set aside** | the first turn failed `candidates_unavailable` (both search branches past their deadlines) before any model call, $0; GPU 29–40% busy with 4 GB held by a Windows-side process WSL cannot see |
+| — | 08:47–09:17 | No run | the GPU never stayed under 5% for 60 s in 30 minutes; the developer then asked for the walk to run anyway |
+| 2 | 09:34 | Passed (31.8 s), **set aside** | follow-up degraded (`dense_timeout`, its answer showing the partial-search note); first turn retrieve 12.4 s; $0.00061 |
+| 3 | 09:35 | **Passed** (8.7 s) | no warnings; retrieve 1.69 s and 2.12 s; the follow-up condensed to "Which of the papers on contrastive learning of sentence embeddings uses dropout as augmentation?" and answered with one claim citing two passages; $0.00054 |
 
-The GPU then stayed busy for 30 minutes (sampled every 3 s, never 60 s under 5%), so by the
-idle-GPU policy the walk waits. The throwaway account was deleted (`users delete`). Still to do: the
-walk on an idle GPU, its screenshots under `reports/ui-redesign/`, and then G7.
+**The GPU was not idle** during attempts 2 and 3: the same Windows-side workload ran beside them
+(attempt 3: 5 samples at 2 s, median 17%, peak 99%). Nothing here is a timing measurement; the
+walk checks that the pages work against the real stack. The first turn cost $0 in both passing
+attempts because the hosted model's answer to that exact question was already in the response
+cache (U4's walk asked it), and the follow-up's condensing hit the cache in attempt 3. Spent this
+task: **$0.0012**.
+
+Screenshots of attempt 3, light and dark, under [`ui-redesign/`](ui-redesign/): `real-home`,
+`real-references` (the answer with its 20 References), `real-citation` (citation 1 opened: the
+claim and passage marked), `real-follow-up`, `real-paper`, `real-history`, `real-settings`. They
+show our corpus's own titles and passages.
+
+What they show, beyond the boards being met:
+- **The thread does not scroll to a new answer.** After the follow-up, its answer's actions sit
+  under the ask box at 1440×900 until the reader scrolls. Not fixed here; a small follow-up.
+- **Citation 1 is the paper's front matter** (the proceedings header with the author list), cited
+  for "WhitenedCSE … is a 2023 paper by …". The passage supports the claim, but a paper-finding
+  answer that cites front matter shows the reader nothing of the method: a retrieval and
+  generation observation, recorded and not acted on.
+- In attempt 2's light citation screenshot the panel's author line was not yet loaded (it comes
+  from `GET /v1/papers/{id}` after the panel opens); attempt 3's has it.
+
+## G7
+
+Boards 1 and 4–11 built in light and dark and matching the canvas (D1–D4); every behaviour of
+today's app kept and tested (Playwright 40); no serious or critical axe violation in either theme;
+one recorded real-stack walk (attempt 3). **Remaining: CI green on a pushed commit.**

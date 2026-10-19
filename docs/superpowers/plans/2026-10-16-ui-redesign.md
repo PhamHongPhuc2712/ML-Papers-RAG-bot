@@ -157,7 +157,8 @@ the password in the URL (the form now posts to `/api/session`, which redirects).
 - [x] Browser tests for every behaviour of today's app plus collapse, theme, Stop, the panel,
   History search and the partial-search note; axe with no serious or critical violation in both
   themes.
-- [ ] One real-stack walk with screenshots (about $0.01), recorded in `reports/ui-redesign.md`.
+- [x] One real-stack walk with screenshots (about $0.01), recorded in `reports/ui-redesign.md`
+  (2026-10-19, attempt 3 of 3, $0.0012 in all; the GPU was shared, at the developer's go-ahead).
 
 ## Gate
 
