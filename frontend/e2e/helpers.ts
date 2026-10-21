@@ -2,12 +2,16 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 
 export const PASSWORD = "correct horse battery staple";
+/** The scripted backend's code for every email (e2e/fixtures.mjs). */
+export const CODE = "246810";
 export const MOCK = "http://127.0.0.1:8799";
 
-export async function signIn(page: Page, next = "/chat") {
+/** Sign in by emailed code (sign-up plan, A2): the email, then the code the scripted backend accepts. */
+export async function signIn(page: Page, next = "/chat", email = "alice@example.org") {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
-  await page.getByLabel("Email").fill("alice@example.org");
-  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Code").fill(CODE);
   await page.getByRole("button", { name: "Log in" }).click();
   await page.waitForURL(`**${next}`);
 }

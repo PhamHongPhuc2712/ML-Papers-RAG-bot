@@ -7,14 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Sign-up plan (2026-10-21, `docs/superpowers/plans/2026-10-21-sign-up.md`, A1–A6, gate G8):** sign-in and
 sign-up by a 6-digit code emailed to **Mailpit**, a local mail catcher (`docker compose --profile core up -d
 mailpit`, inbox http://127.0.0.1:8025; test profile `mailpit-test` on 51025/58025), `SMTP_HOST`/`SMTP_PORT`/
-`MAIL_FROM` in `.env`; codes only, no passwords (A2 removes them); 20 answers a day. **A1 done**.
+`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1 and A2 done** (the sign-in page; `/v1/auth/token` takes
+`{email, code}` only; deleting an account still asks for a password until A4).
 
 **Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,
 including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
 References; one retrieval configuration (the chat's). **Since 2026-10-21 the reranker reads title +
 abstract + passage** (`rerank.text: title_abstract_chunk`, the developer's decision;
-`reports/rerank-title-abstract-chunk.md`: +0.023 nDCG@10 on S1 validation, +0.056 on S3 development,
-−0.002 on ORB, against title + passage). Plan
+`reports/rerank-title-abstract-chunk.md`: +0.023 nDCG@10 on S1 validation, +0.056 on S3 development and
++0.015 [−0.009, +0.040] on S3 validation, −0.002 on ORB, against title + passage). Plan
 `docs/superpowers/plans/2026-10-15-rag-only.md` (M6 and G6 numbers reassigned; U1–U4; settings
 decided: sign-in required, 10 papers, one search per turn, a structured overview subject to U2's rule).
 **U1 is done (2026-10-15)**: `configs/search.yaml` is the one first stage (`rerank.text: title_chunk`, 2.5 s
@@ -268,7 +269,7 @@ cd frontend && npm ci                     # install
 npm run dev                               # http://localhost:3000, BACKEND_URL defaults to http://127.0.0.1:8000
 npm run lint && npm run typecheck && npm test && npm run e2e   # checks; e2e uses the scripted backend
 npm run api-types                         # after re-exporting frontend/openapi.json
-REAL_STACK=1 REAL_EMAIL=... REAL_PASSWORD=... npx playwright test real-stack.spec.ts   # against a running API + `npm run start`; spends
+REAL_STACK=1 REAL_EMAIL=... npx playwright test real-stack.spec.ts   # against a running API + `npm run start` + Mailpit (reads the code from it); spends
 ```
 
 `mypy` **must** be given `--config-file`: run from the repository root it finds no

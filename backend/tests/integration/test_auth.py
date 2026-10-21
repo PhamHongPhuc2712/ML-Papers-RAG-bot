@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import io
-
 import pytest
 
 from copilot.cli import main
@@ -14,11 +12,9 @@ pytestmark = pytest.mark.integration
 PASSWORD = "correct horse battery staple"
 
 
-def test_login_issues_a_token_that_identifies_the_user(api_client, make_user):
+def test_a_code_issues_a_token_that_identifies_the_user(api_client, make_user, sign_in_by_code):
     user_id, _ = make_user(email="Alice@Example.org")
-    response = api_client.post(
-        "/v1/auth/token", json={"email": "alice@example.org", "password": PASSWORD}
-    )
+    response = sign_in_by_code(api_client, "alice@example.org")
     assert response.status_code == 200
     body = response.json()
     assert body["token_type"] == "bearer" and body["expires_in"] == 43200 and body["request_id"]
@@ -27,18 +23,14 @@ def test_login_issues_a_token_that_identifies_the_user(api_client, make_user):
     assert me.json()["user_id"] == str(user_id) and me.json()["email"] == "alice@example.org"
 
 
-def test_a_wrong_password_and_an_unknown_email_fail_identically(api_client, make_user):
-    make_user(email="bob@example.org")
-    wrong = api_client.post(
-        "/v1/auth/token", json={"email": "bob@example.org", "password": "not the password!"}
+def test_a_password_no_longer_signs_in(api_client, make_user):
+    """Codes only since the sign-up plan (A2): an account that has a password cannot use it."""
+
+    make_user(email="bob@example.org", password=PASSWORD)
+    response = api_client.post(
+        "/v1/auth/token", json={"email": "bob@example.org", "password": PASSWORD}
     )
-    unknown = api_client.post(
-        "/v1/auth/token", json={"email": "nobody@example.org", "password": PASSWORD}
-    )
-    for response in (wrong, unknown):
-        assert response.status_code == 401
-        assert response.json()["error"]["code"] == "invalid_credentials"
-    assert wrong.json()["error"]["message"] == unknown.json()["error"]["message"]
+    assert response.status_code == 422
 
 
 def test_missing_malformed_and_forged_tokens_are_401(api_client, make_user):
@@ -56,7 +48,7 @@ def test_missing_malformed_and_forged_tokens_are_401(api_client, make_user):
 
 
 def test_a_disabled_accounts_token_stops_working_at_once(
-    api_client, make_user, auth_headers, migrated_database
+    api_client, make_user, auth_headers, migrated_database, mailbox
 ):
     user_id, email = make_user()
     headers = auth_headers(user_id)
@@ -64,14 +56,16 @@ def test_a_disabled_accounts_token_stops_working_at_once(
     assert UserStore(migrated_database).disable(email)
     response = api_client.get("/v1/me", headers=headers)
     assert response.status_code == 401 and response.json()["error"]["code"] == "token_invalid"
-    login = api_client.post("/v1/auth/token", json={"email": email, "password": PASSWORD})
+    asked = api_client.post("/v1/auth/code", json={"email": email})
+    assert asked.status_code == 202 and mailbox.sent == []
+    login = api_client.post("/v1/auth/token", json={"email": email, "code": "123456"})
     assert login.status_code == 401
 
 
 def test_emails_are_unique_ignoring_case(make_user, migrated_database):
     make_user(email="carol@example.org")
     with pytest.raises(AccountError) as caught:
-        UserStore(migrated_database).create("CAROL@example.org", PASSWORD)
+        UserStore(migrated_database).create("CAROL@example.org")
     assert caught.value.code == "email_taken"
 
 
@@ -83,13 +77,13 @@ def test_a_client_supplied_user_id_is_never_identity(api_client, make_user, auth
     )
     assert response.json()["user_id"] == str(me)
     login = api_client.post(
-        "/v1/auth/token", json={"email": "x@example.org", "password": PASSWORD, "user_id": str(me)}
+        "/v1/auth/token", json={"email": "x@example.org", "code": "123456", "user_id": str(me)}
     )
     assert login.status_code == 422
 
 
 def test_the_cli_creates_an_account_without_a_password(test_settings, migrated_database, capsys):
-    """Accounts sign in by emailed code since the sign-up plan (A1); stdin is not read."""
+    """Accounts sign in by emailed code since the sign-up plan (A1)."""
 
     from sqlalchemy import text
 
@@ -103,28 +97,3 @@ def test_the_cli_creates_an_account_without_a_password(test_settings, migrated_d
             {"email": email},
         ).scalar_one()
     assert stored is None
-
-
-def test_the_cli_creates_an_account_reading_the_password_from_stdin(
-    test_settings, migrated_database, monkeypatch, capsys
-):
-    email = "dana-cli@example.org"
-    monkeypatch.setattr("sys.stdin", io.StringIO(PASSWORD + "\n"))
-    argv = [
-        "users",
-        "create",
-        "--email",
-        email,
-        "--password-stdin",
-        "--database-url",
-        test_settings.database_url,
-    ]
-    assert main(argv) == 0
-    assert '"email": "dana-cli@example.org"' in capsys.readouterr().out
-    store = UserStore(migrated_database)
-    user_id = store.authenticate(email, PASSWORD)
-    assert user_id is not None
-    with migrated_database.begin() as connection:
-        from sqlalchemy import text
-
-        connection.execute(text("delete from users where id = :id"), {"id": user_id})

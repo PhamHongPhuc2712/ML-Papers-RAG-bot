@@ -571,16 +571,13 @@ export interface components {
         };
         /**
          * TokenRequest
-         * @description An email with the code sent to it, or (until the sign-in page stops asking, A2) with
-         *     the account's password.
+         * @description An email with the code sent to it: the only way in since the sign-up plan (A2).
          */
         TokenRequest: {
             /** Code */
-            code?: string | null;
+            code: string;
             /** Email */
             email: string;
-            /** Password */
-            password?: string | null;
         };
         /** TokenResponse */
         TokenResponse: {

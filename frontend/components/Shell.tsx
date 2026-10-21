@@ -91,8 +91,11 @@ export function Shell({ signedIn, email, papers, children }: Props) {
               <p>Ask anything about machine learning research.</p>
               <p>Every claim cites the <mark>passage it comes from</mark>, in {papers ? `${papers.toLocaleString("en")} ` : ""}conference papers.</p>
             </div>
-            {/* Sign up appears with the sign-up plan; until then accounts are made by `users create`. */}
+            {/* One page does both (sign-up plan, A2): a new email gets an account on its first code. */}
             <div className="sidebar-bottom signed-out">
+              <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="primary-button">
+                <span className="label">Sign up</span>
+              </Link>
               <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="outline-button">
                 <Icon name="signin" size={18} /> <span className="label">Log in</span>
               </Link>

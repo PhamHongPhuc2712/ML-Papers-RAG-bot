@@ -1,12 +1,12 @@
 // A scripted stand-in for the API, for browser tests: no GPU, database or money.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { PAPERS, PASSWORD, USER } from "./fixtures.mjs";
+import { CODE, PAPERS, PASSWORD, USER } from "./fixtures.mjs";
 
 const PORT = Number(process.env.MOCK_BACKEND_PORT ?? 8799);
 let state;
 function reset() {
-  state = { expired: false, deleted: false, databaseDown: false, chats: new Map(), timedOut: new Set() };
+  state = { expired: false, deleted: false, databaseDown: false, chats: new Map(), timedOut: new Set(), email: USER.email, codes: [], askedAt: new Map() };
 }
 reset();
 
@@ -118,13 +118,32 @@ createServer(async (req, res) => {
     }
     return json(res, 200, { ok: true });
   }
+  if (path === "/__control/codes") return json(res, 200, { codes: state.codes });
+  // Sign-in by emailed code: every email's code is CODE; "111111" stands for a code whose tries
+  // are used up and "000000" for an expired one. Asking again within 60 s is refused, as the API does.
+  if (path === "/v1/auth/code" && req.method === "POST") {
+    const payload = await body(req);
+    const email = String(payload.email ?? "").trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return error(res, 422, "validation_error", "email: not a valid email address");
+    const last = state.askedAt.get(email);
+    if (last && Date.now() - last < 60000) {
+      const wait = Math.ceil((60000 - (Date.now() - last)) / 1000);
+      return json(res, 429, { error: { code: "code_rate_limited", message: `wait ${wait} s before asking for another code`, retryable: true, retry_after: wait }, request_id: randomUUID() });
+    }
+    state.askedAt.set(email, Date.now());
+    state.codes.push({ email, code: CODE });
+    return json(res, 202, { resend_after: 60, request_id: randomUUID() });
+  }
   if (path === "/v1/auth/token" && req.method === "POST") {
     const payload = await body(req);
-    if (!state.deleted && payload.email?.toLowerCase() === USER.email && payload.password === PASSWORD) {
-      state.expired = false;
-      return json(res, 200, { access_token: "token-alice", token_type: "bearer", expires_in: 3600, request_id: randomUUID() });
-    }
-    return error(res, 401, "invalid_credentials", "email or password is incorrect");
+    if (typeof payload.code !== "string" || !/^\d{6}$/.test(payload.code)) return error(res, 422, "validation_error", "code: invalid");
+    if (payload.code === "111111") return error(res, 401, "code_exhausted", "too many wrong tries; ask for a new code");
+    if (payload.code === "000000") return error(res, 401, "code_expired", "that code has expired or was already used; ask for a new code");
+    if (payload.code !== CODE) return error(res, 401, "invalid_code", "that code is not right; check it and try again");
+    state.expired = false;
+    state.deleted = false;
+    state.email = String(payload.email).trim().toLowerCase();
+    return json(res, 200, { access_token: "token-alice", token_type: "bearer", expires_in: 3600, request_id: randomUUID() });
   }
   if (path === "/v1/corpus/coverage") {
     return json(res, 200, { request_id: randomUUID(), as_of: "2026-10-11T00:00:00Z", venue_years: [
@@ -154,7 +173,7 @@ createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
-  if (path === "/v1/me") return json(res, 200, { ...USER, request_id: randomUUID() });
+  if (path === "/v1/me") return json(res, 200, { ...USER, email: state.email, request_id: randomUUID() });
   if (path === "/v1/chats" && req.method === "GET") {
     const items = [...state.chats.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       .map(({ id, title, created_at, updated_at }) => ({ id, title, created_at, updated_at }));

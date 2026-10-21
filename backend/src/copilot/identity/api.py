@@ -1,6 +1,6 @@
 """Login and the caller's identity (spec §10). Identity comes only from a verified bearer token.
 
-Since the sign-up plan (A1, 2026-10-21) a token is also issued for a code sent to the email by
+Since the sign-up plan (2026-10-21) a token is issued only for a code sent to the email by
 ``POST /v1/auth/code``; an email without an account gets one on its first correct code.
 """
 
@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from ..contracts import ContractModel, Principal
 from ..search.api import ApiError, request_id
@@ -56,18 +56,10 @@ class CodeResponse(ContractModel):
 
 
 class TokenRequest(ContractModel):
-    """An email with the code sent to it, or (until the sign-in page stops asking, A2) with
-    the account's password."""
+    """An email with the code sent to it: the only way in since the sign-up plan (A2)."""
 
     email: str = Field(min_length=3, max_length=320)
-    code: str | None = Field(default=None, pattern=r"^\d{6}$")
-    password: str | None = Field(default=None, min_length=1, max_length=1024)
-
-    @model_validator(mode="after")
-    def _one_secret(self) -> TokenRequest:
-        if (self.code is None) == (self.password is None):
-            raise ValueError("send either a code or a password")
-        return self
+    code: str = Field(pattern=r"^\d{6}$")
 
 
 class TokenResponse(ContractModel):
@@ -154,13 +146,7 @@ def router() -> APIRouter:
     @api.post("/v1/auth/token", response_model=TokenResponse)
     def token(body: TokenRequest, request: Request) -> TokenResponse:
         identity = _identity(request)
-        if body.code is not None:
-            user_id = _by_code(identity, _email_or_422(body.email), body.code)
-        else:
-            found = identity.users.authenticate(body.email, body.password or "")
-            if found is None:
-                raise ApiError(401, "invalid_credentials", "email or password is incorrect")
-            user_id = found
+        user_id = _by_code(identity, _email_or_422(body.email), body.code)
         issued = identity.tokens.issue(user_id)
         return TokenResponse(
             access_token=issued.token, expires_in=issued.expires_in, request_id=request_id(request)

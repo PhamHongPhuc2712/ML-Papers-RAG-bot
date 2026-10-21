@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MOCK, noSeriousViolations, signIn } from "./helpers";
+import { CODE, MOCK, noSeriousViolations, signIn } from "./helpers";
 
 test.beforeEach(async ({ request }) => {
   await request.post(`${MOCK}/__control/reset`);
@@ -12,8 +12,8 @@ test("signed out, the home page asks first and keeps the question across log in;
   await expect(page.getByText("in 3 conference papers")).toBeVisible();
   await expect(page.getByRole("searchbox")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link")).toHaveText(["ML Research Copilot"]);
-  // Sign up appears with the sign-up plan.
-  await expect(page.getByRole("link", { name: "Sign up" })).toHaveCount(0);
+  // Sign up appears with the sign-up plan (A2), beside Log in.
+  await expect(page.getByRole("link", { name: "Sign up" })).toHaveCount(1);
   await noSeriousViolations(page);
   // A filter chosen before asking is written into the question.
   await page.getByRole("button", { name: "Venues and years" }).click();
@@ -25,7 +25,8 @@ test("signed out, the home page asks first and keeps the question across log in;
   await expect(page).toHaveURL(/\/login\?next=/);
   await expect(page.getByText("Your question is kept")).toBeVisible();
   await page.getByLabel("Email").fill("alice@example.org");
-  await page.getByLabel("Password").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Code").fill(CODE);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByLabel("Ask about ML papers")).toHaveValue("Find papers on LoRA\n\nOnly use papers from ACL.");
   expect(new URL(page.url()).pathname).toBe("/");

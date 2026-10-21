@@ -90,21 +90,48 @@ def test_qdrant(test_settings: Settings) -> Iterator[QdrantClient]:
 
 
 @pytest.fixture
+def mailbox() -> object:
+    """Mail the app would have sent (sign-in codes), kept instead of sent."""
+
+    from copilot.identity.mail import RecordingSender
+
+    return RecordingSender()
+
+
+@pytest.fixture
+def sign_in_by_code(mailbox) -> object:
+    """Ask for a code, read it from the mailbox, and exchange it: the token response."""
+
+    import re
+
+    def sign_in(client: TestClient, email: str) -> object:
+        asked = client.post("/v1/auth/code", json={"email": email})
+        assert asked.status_code == 202, asked.text
+        code = re.search(r"\b(\d{6})\b", mailbox.sent[-1].body).group(1)
+        return client.post("/v1/auth/token", json={"email": email, "code": code})
+
+    return sign_in
+
+
+@pytest.fixture
 def api_client(
     test_settings: Settings,
     migrated_database: object,
     test_qdrant: QdrantClient,
+    mailbox: object,
 ) -> Iterator[TestClient]:
     """Yield a fresh app/client and clean only the configured test namespace."""
 
     app = create_app(
         test_settings,
-        {"db_engine": migrated_database, "qdrant_client": test_qdrant},
+        {"db_engine": migrated_database, "qdrant_client": test_qdrant, "mail_sender": mailbox},
     )
     with TestClient(app) as client:
         yield client
     cleanup_test_namespace(test_settings, migrated_database)
     cleanup_test_vectors(test_settings, test_qdrant)
+    with migrated_database.begin() as connection:  # type: ignore[attr-defined]
+        connection.execute(text("delete from login_codes"))
 
 
 PASSWORD = "correct horse battery staple"

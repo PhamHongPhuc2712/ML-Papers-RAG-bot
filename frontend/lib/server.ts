@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { summarizeCoverage, type Corpus, type Coverage } from "./corpus";
 
 export const SESSION_COOKIE = "copilot_session";
+/** The email a sign-in code was sent to, for the code step (sign-up plan, A2); 15 minutes. */
+export const LOGIN_EMAIL_COOKIE = "copilot_login_email";
 
 /** Where the Next server reaches the API; the browser never sees it. */
 export function backendUrl(): string {

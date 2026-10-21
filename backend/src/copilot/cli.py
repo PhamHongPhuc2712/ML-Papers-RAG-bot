@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import socket
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1413,17 +1412,14 @@ def run_chat_stats(*, database_url: str, day: str | None) -> dict[str, Any]:
         engine.dispose()
 
 
-def run_users_create(
-    *, database_url: str, email: str, password: str | None = None
-) -> dict[str, Any]:
-    """Create an account, signed in to by emailed code (sign-up plan, A1); a password only
-    when one is given."""
+def run_users_create(*, database_url: str, email: str) -> dict[str, Any]:
+    """Create an account, signed in to by emailed code (sign-up plan); for walks and tests."""
 
     from .identity.users import UserStore, normalize_email
 
     engine = make_engine(database_url)
     try:
-        user_id = UserStore(engine).create(email, password)
+        user_id = UserStore(engine).create(email)
     finally:
         engine.dispose()
     return {"user_id": str(user_id), "email": normalize_email(email)}
@@ -1742,11 +1738,6 @@ def _parser() -> argparse.ArgumentParser:
         "create", help="create an account that signs in by emailed code"
     )
     create_user.add_argument("--email", required=True)
-    create_user.add_argument(
-        "--password-stdin",
-        action="store_true",
-        help="also set a password, read from stdin (never an argument)",
-    )
     create_user.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
     disable_user = user_commands.add_parser(
         "disable", help="disable an account; its tokens stop working at once"
@@ -2414,18 +2405,7 @@ def main(argv: list[str] | None = None) -> int:
             max_jobs=args.max_jobs,
         )
     elif args.command == "users" and args.users_command == "create":
-        import getpass
-
-        password = None
-        if args.password_stdin:
-            password = (
-                getpass.getpass("Password: ")
-                if sys.stdin.isatty()
-                else sys.stdin.readline().rstrip("\n")
-            )
-        result = run_users_create(
-            database_url=_database_url(args.database_url), email=args.email, password=password
-        )
+        result = run_users_create(database_url=_database_url(args.database_url), email=args.email)
     elif args.command == "users" and args.users_command == "disable":
         result = run_users_disable(database_url=_database_url(args.database_url), email=args.email)
     elif args.command == "users" and args.users_command == "delete":
