@@ -112,6 +112,8 @@ main { max-width: 960px; margin: 0 auto; padding: 32px var(--gutter) 48px; }
 
 .banner { padding: 10px 14px; border-radius: var(--radius-m); margin: 12px 0; }
 .banner.warn { background: var(--warn-bg); }
+.banner.warn p { margin: 0; }
+.composer-note { margin: 6px 4px 0; color: var(--ink-soft); font-size: 0.8125rem; }
 .banner.error { background: var(--error-bg); }
 .muted { color: var(--ink-soft); }
 .visually-hidden {

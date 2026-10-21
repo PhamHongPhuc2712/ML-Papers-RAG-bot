@@ -36,6 +36,11 @@ history:
 # searched without its subject when it is off (reports/chat-followups.md).
 condense: true
 
+# Answers a day per account (sign-up plan, A3, the developer's choice 2026-10-21): a turn past it
+# is refused before anything is spent; failed and interrupted turns do not count. UTC days.
+limits:
+  daily_answers: 20
+
 timeouts_seconds:
   condense: 15
   generate: 60

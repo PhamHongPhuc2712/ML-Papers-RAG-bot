@@ -8,7 +8,8 @@ export type ChatDetail = Schemas["ChatDetail"];
 export type ChatMessage = Schemas["ChatMessage"];
 export type StoredEvidence = Schemas["StoredEvidence"];
 export type Reference = Schemas["Reference"];
-export type ApiErrorBody = { code: string; message: string; retryable: boolean };
+export type Me = Schemas["MeResponse"];
+export type ApiErrorBody = { code: string; message: string; retryable: boolean; retry_after?: number | null };
 
 export class ApiError extends Error {
   constructor(
@@ -43,6 +44,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  me: () => call<Me>("me"),
   paper: (id: string) => call<PaperDetail>(`papers/${encodeURIComponent(id)}`),
   chats: (limit = 50) => call<ChatList>(`chats?limit=${limit}`),
   chat: (id: string) => call<ChatDetail>(`chats/${encodeURIComponent(id)}`),

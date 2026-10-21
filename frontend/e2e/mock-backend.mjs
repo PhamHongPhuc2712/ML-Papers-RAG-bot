@@ -6,7 +6,7 @@ import { CODE, PAPERS, PASSWORD, USER } from "./fixtures.mjs";
 const PORT = Number(process.env.MOCK_BACKEND_PORT ?? 8799);
 let state;
 function reset() {
-  state = { expired: false, deleted: false, databaseDown: false, chats: new Map(), timedOut: new Set(), email: USER.email, codes: [], askedAt: new Map() };
+  state = { expired: false, deleted: false, databaseDown: false, chats: new Map(), timedOut: new Set(), email: USER.email, codes: [], askedAt: new Map(), answered: 0 };
 }
 reset();
 
@@ -38,8 +38,15 @@ const searchResponse = (items) => ({
 });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const LIMIT = 20;
+const nextMidnight = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return d; };
+
 async function stream(req, res, payload) {
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  if (state.answered >= LIMIT) {
+    const wait = Math.ceil((nextMidnight().getTime() - Date.now()) / 1000);
+    return json(res, 429, { error: { code: "daily_limit", message: `you have used today's ${LIMIT} answers; they reset at 00:00 UTC`, retryable: true, retry_after: wait }, request_id: randomUUID() });
+  }
   let chat = payload.chat_id ? state.chats.get(payload.chat_id) : null;
   if (payload.chat_id && !chat) return error(res, 404, "chat_not_found", "no such chat");
   if (!chat) {
@@ -96,6 +103,7 @@ async function stream(req, res, payload) {
     evidence, references, standalone_query: query, warnings: /partial/i.test(payload.message) ? ["lexical_timeout"] : [], error_code: null, corpus_release_id: "mock-release", created_at: now,
   };
   chat.messages.push(assistant);
+  state.answered += 1;
   send("final", assistant);
   res.end();
 }
@@ -119,6 +127,7 @@ createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
   if (path === "/__control/codes") return json(res, 200, { codes: state.codes });
+  if (path === "/__control/answered") { state.answered = Number(url.searchParams.get("n") ?? 0); return json(res, 200, { ok: true }); }
   // Sign-in by emailed code: every email's code is CODE; "111111" stands for a code whose tries
   // are used up and "000000" for an expired one. Asking again within 60 s is refused, as the API does.
   if (path === "/v1/auth/code" && req.method === "POST") {
@@ -173,7 +182,8 @@ createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
-  if (path === "/v1/me") return json(res, 200, { ...USER, email: state.email, request_id: randomUUID() });
+  if (path === "/v1/me") return json(res, 200, { ...USER, email: state.email, request_id: randomUUID(),
+    usage: { today: state.answered, month: state.answered, limit: LIMIT, resets_at: nextMidnight().toISOString().replace(".000Z", "Z") } });
   if (path === "/v1/chats" && req.method === "GET") {
     const items = [...state.chats.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       .map(({ id, title, created_at, updated_at }) => ({ id, title, created_at, updated_at }));

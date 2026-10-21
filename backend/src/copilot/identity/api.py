@@ -6,8 +6,10 @@ Since the sign-up plan (2026-10-21) a token is issued only for a code sent to th
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from datetime import datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -44,6 +46,8 @@ class Identity:
     codes: CodeStore | None = None
     # None when no SMTP host is configured: asking for a code is then a typed 503.
     mail: MailSender | None = None
+    # The account's answers today and this month (chat/limits.py ``usage``), for GET /v1/me.
+    usage: Callable[[UUID], Any] | None = None
 
 
 class CodeRequest(ContractModel):
@@ -69,9 +73,19 @@ class TokenResponse(ContractModel):
     request_id: UUID
 
 
+class Usage(ContractModel):
+    """Answers used (sign-up plan, A3): complete or insufficient ones, UTC days and months."""
+
+    today: int
+    month: int
+    limit: int
+    resets_at: datetime
+
+
 class MeResponse(ContractModel):
     user_id: UUID
     email: str
+    usage: Usage | None = None
     request_id: UUID
 
 
@@ -154,10 +168,21 @@ def router() -> APIRouter:
 
     @api.get("/v1/me", response_model=MeResponse)
     def me(principal: CurrentPrincipal, request: Request) -> MeResponse:
-        email = _identity(request).users.email(principal.user_id)
+        identity = _identity(request)
+        email = identity.users.email(principal.user_id)
         if email is None:
             raise ApiError(401, "token_invalid", _SIGN_IN_AGAIN)
-        return MeResponse(user_id=principal.user_id, email=email, request_id=request_id(request))
+        used = None if identity.usage is None else identity.usage(principal.user_id)
+        return MeResponse(
+            user_id=principal.user_id,
+            email=email,
+            usage=None
+            if used is None
+            else Usage(
+                today=used.today, month=used.month, limit=used.limit, resets_at=used.resets_at
+            ),
+            request_id=request_id(request),
+        )
 
     @api.delete("/v1/me", status_code=204, response_class=Response)
     def delete_me(

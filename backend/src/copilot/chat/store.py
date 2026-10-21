@@ -28,6 +28,7 @@ from ..contracts import (
     Reference,
     StoredEvidence,
 )
+from .limits import check_daily_limit, lock_account
 from .turns import INSUFFICIENT_TEXT, HistoryItem, TurnResult, answer_text, chat_title
 
 ANSWERED = ("complete", "insufficient")
@@ -143,12 +144,22 @@ class ChatStore:
             return _interrupt(connection, now=now, before=now - stale_after, chat_id=None)
 
     def begin_turn(
-        self, principal: Principal, request: ChatRequest, *, stale_after: timedelta
+        self,
+        principal: Principal,
+        request: ChatRequest,
+        *,
+        stale_after: timedelta,
+        daily_answers: int | None = None,
     ) -> Turn:
+        """Write the turn's pending answer; ``DailyLimitReached`` when ``daily_answers`` are
+        used (a replay of an answered request is never refused: it spends nothing)."""
+
         now = self._clock()
         try:
             with self._engine.begin() as connection:
-                return self._begin(connection, principal.user_id, request, now, stale_after)
+                return self._begin(
+                    connection, principal.user_id, request, now, stale_after, daily_answers
+                )
         except IntegrityError as error:
             # A concurrent copy of this request won the insert.
             raise TurnConflict("request_in_progress") from error
@@ -160,7 +171,12 @@ class ChatStore:
         request: ChatRequest,
         now: datetime,
         stale_after: timedelta,
+        daily_answers: int | None,
     ) -> Turn:
+        if daily_answers is not None:
+            # Before anything is written: inserting a chat takes a key-share lock on this row
+            # through its foreign key, so locking it later could deadlock two turns at once.
+            lock_account(connection, user_id)
         chat_id = request.chat_id
         if chat_id is None:
             chat_id = connection.execute(
@@ -203,6 +219,8 @@ class ChatStore:
                 return Turn(chat_id, user_row.id, assistant_row.id, assistant_row.ordinal, replay)
             if assistant_row.status == "pending":
                 raise TurnConflict("request_in_progress")
+            if daily_answers is not None:
+                check_daily_limit(connection, user_id, daily_answers, now)
             connection.execute(
                 text(
                     "update chat_messages set status = 'pending', error_code = null, text = '',"
@@ -227,6 +245,8 @@ class ChatStore:
         ).first()
         if busy is not None:
             raise TurnConflict("chat_busy")
+        if daily_answers is not None:
+            check_daily_limit(connection, user_id, daily_answers, now)
         last = connection.execute(
             text("select coalesce(max(ordinal), -1) from chat_messages where chat_id = :chat"),
             {"chat": chat_id},

@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +19,9 @@ from sqlalchemy.orm import Session
 
 from .chat.api import ChatApi
 from .chat.api import router as chat_router
+from .chat.config import load_chat_config
 from .chat.graph import ChatGraph
+from .chat.limits import usage as answer_usage
 from .chat.store import ChatStore
 from .config import Settings
 from .corpus.api import router as corpus_router
@@ -170,6 +173,7 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
         TokenIssuer(settings.secret_key, settings.access_token_ttl_seconds),
         codes=CodeStore(engine, settings.secret_key, identity_clock),
         mail=mail,
+        usage=partial(answer_usage, engine, limit=load_chat_config().daily_answers),
     )
     app.include_router(chat_router())
     app.state.chat_store = ChatStore(engine)

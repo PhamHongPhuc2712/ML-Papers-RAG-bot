@@ -32,6 +32,7 @@ class ChatConfig:
     condense_timeout: float
     generate_timeout: float
     turn_timeout: float
+    daily_answers: int
 
 
 def load_chat_config(path: str | Path = DEFAULT_PATH) -> ChatConfig:
@@ -58,6 +59,7 @@ def load_chat_config(path: str | Path = DEFAULT_PATH) -> ChatConfig:
             condense_timeout=float(timeouts["condense"]),
             generate_timeout=float(timeouts["generate"]),
             turn_timeout=float(timeouts["turn"]),
+            daily_answers=int(raw["limits"]["daily_answers"]),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError(f"chat_config_invalid:{error}") from error
@@ -66,6 +68,7 @@ def load_chat_config(path: str | Path = DEFAULT_PATH) -> ChatConfig:
     if (
         not 1 <= config.papers <= config.references <= MAX_REFERENCES
         or config.history_turns < 0
+        or config.daily_answers < 1
     ):
         raise ValueError("chat_config_invalid:bounds")
     return config

@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Sign-up plan (2026-10-21, `docs/superpowers/plans/2026-10-21-sign-up.md`, A1–A6, gate G8):** sign-in and
 sign-up by a 6-digit code emailed to **Mailpit**, a local mail catcher (`docker compose --profile core up -d
 mailpit`, inbox http://127.0.0.1:8025; test profile `mailpit-test` on 51025/58025), `SMTP_HOST`/`SMTP_PORT`/
-`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1 and A2 done** (the sign-in page; `/v1/auth/token` takes
+`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1–A3 done** (the daily limit: `limits.daily_answers` in `configs/chat.yaml`, a `429 daily_limit`;
+the sign-in page; `/v1/auth/token` takes
 `{email, code}` only; deleting an account still asks for a password until A4).
 
 **Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,

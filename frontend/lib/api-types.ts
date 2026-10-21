@@ -376,6 +376,7 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+            usage?: components["schemas"]["Usage"] | null;
             /**
              * User Id
              * Format: uuid
@@ -596,6 +597,23 @@ export interface components {
              * @constant
              */
             token_type: "bearer";
+        };
+        /**
+         * Usage
+         * @description Answers used (sign-up plan, A3): complete or insufficient ones, UTC days and months.
+         */
+        Usage: {
+            /** Limit */
+            limit: number;
+            /** Month */
+            month: number;
+            /**
+             * Resets At
+             * Format: date-time
+             */
+            resets_at: string;
+            /** Today */
+            today: number;
         };
         /** ValidationError */
         ValidationError: {

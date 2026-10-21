@@ -6,6 +6,8 @@ import { ApiError, api, errorFrom, sessionEnded, streamTurn, type ApiErrorBody, 
 import { ERRORS } from "@/lib/chat-labels";
 import { corpusLine, withFilter, type AskFilter, type Corpus } from "@/lib/corpus";
 import { readEvents } from "@/lib/sse";
+import { answersLeft, limitReached } from "@/lib/usage";
+import { useUsage } from "@/lib/use-usage";
 import { Answer } from "./Answer";
 import { Composer } from "./Composer";
 import { Hero } from "./Hero";
@@ -29,6 +31,7 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
   const [id, setId] = useState<string | null>(chatId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState(autoSend ? "" : (initialDraft ?? ""));
+  const usage = useUsage();
   const [stage, setStage] = useState<string | null>(null);
   // The search step, from the `references` frame, shown while the answer is written.
   const [searched, setSearched] = useState<LiveSearch>(null);
@@ -149,6 +152,11 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
         return;
       }
       const body = error instanceof ApiError ? error.body : { code: "network_error", message: "The connection dropped. Try again.", retryable: true };
+      if (body.code === "daily_limit") {
+        // Nothing was stored: the question leaves the thread and waits in the box.
+        setMessages((previous) => previous.filter((m) => m.id !== requestId));
+        setDraft(text);
+      }
       setFailure({ ...body, requestId, message_text: text });
     } finally {
       setStage(null);
@@ -179,14 +187,22 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
   const composer = (
     <Composer value={draft} onChange={setDraft} onSubmit={ask} running={running} onStop={() => abort.current?.abort()}
       placeholder={empty ? "Ask a question, or ask for papers on a topic" : "Ask a follow-up"}
-      venues={corpus?.venues} years={corpus?.years} autoFocus={empty} />
+      venues={corpus?.venues} years={corpus?.years} autoFocus={empty} note={answersLeft(usage)} />
   );
+  // Board 11: not a fault; the question went back into the box for after the reset.
+  const limitBanner = failure?.code === "daily_limit" ? (
+    <div role="status" className="banner warn">
+      <p><strong>Daily limit reached.</strong> {limitReached(usage?.limit ?? 20,
+        usage?.resets_at ?? new Date(Date.now() + (failure.retry_after ?? 0) * 1000).toISOString())}</p>
+    </div>
+  ) : null;
   if (empty) {
     const line = corpusLine(corpus);
     return (
       <div className="ask-home">
         <Hero />
         {composer}
+        {limitBanner}
         <Suggestions onPick={(question) => ask(question, { venue: null, year: null })} />
         {line ? <p className="corpus-line">{line}</p> : null}
       </div>
@@ -251,7 +267,7 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
               This chat could not be loaded. <button type="button" onClick={() => loadChat(chatId)}>Retry</button>
             </p>
           ) : null}
-          {failure?.code === "llm_spend_cap" ? (
+          {failure?.code === "daily_limit" ? limitBanner : failure?.code === "llm_spend_cap" ? (
             // Not a fault: today's budget is spent, and asking works again after the reset (board 11).
             <p role="status" className="banner warn">{failure.message}</p>
           ) : failure ? (

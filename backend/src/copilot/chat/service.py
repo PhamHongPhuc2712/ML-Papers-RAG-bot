@@ -66,15 +66,25 @@ def _preview(item: Evidence) -> dict[str, Any]:
 
 
 class ChatService:
-    def __init__(self, store: ChatStore, graph: ChatGraph, *, stale_after: timedelta) -> None:
+    def __init__(
+        self,
+        store: ChatStore,
+        graph: ChatGraph,
+        *,
+        stale_after: timedelta,
+        daily_answers: int | None = None,
+    ) -> None:
         self._store = store
         self._graph = graph
         self._stale_after = stale_after
+        self._daily_answers = daily_answers
 
     def stream(self, principal: Principal, body: ChatRequest) -> Iterator[str]:
         """Begin the turn now (errors raise here, before any frame), then stream it."""
 
-        turn = self._store.begin_turn(principal, body, stale_after=self._stale_after)
+        turn = self._store.begin_turn(
+            principal, body, stale_after=self._stale_after, daily_answers=self._daily_answers
+        )
         return self._events(turn, body)
 
     def _events(self, turn: Turn, body: ChatRequest) -> Iterator[str]:

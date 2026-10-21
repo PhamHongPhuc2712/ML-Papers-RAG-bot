@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+import math
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from ..identity.api import CurrentPrincipal
 from ..search.api import ApiError, request_id
 from .config import load_chat_config
 from .graph import ChatGraph, build_default_chat_graph
+from .limits import DailyLimitReached
 from .service import ChatService
 from .store import ChatNotFound, ChatStore, TurnConflict
 
@@ -40,6 +42,7 @@ class ChatApi:
         self._store = ChatStore(engine)
         config = load_chat_config()
         self._stale_after = timedelta(seconds=2 * config.turn_timeout)
+        self._daily_answers = config.daily_answers
         self._service: ChatService | None = None
         self._unavailable = "chat_not_started"
 
@@ -60,7 +63,9 @@ class ChatApi:
             self._unavailable = getattr(error, "code", None) or type(error).__name__
             logger.warning("chat unavailable: %s", self._unavailable, exc_info=error)
             return
-        self._service = ChatService(self._store, graph, stale_after=self._stale_after)
+        self._service = ChatService(
+            self._store, graph, stale_after=self._stale_after, daily_answers=self._daily_answers
+        )
 
     def close(self) -> None:
         self._service = None
@@ -125,6 +130,15 @@ def router() -> APIRouter:
             events = chat_api.service().stream(principal, body)
         except ChatNotFound as error:
             raise _not_found() from error
+        except DailyLimitReached as error:
+            wait = max(1, math.ceil((error.resets_at - datetime.now(UTC)).total_seconds()))
+            raise ApiError(
+                429,
+                "daily_limit",
+                f"you have used today's {error.limit} answers; they reset at 00:00 UTC",
+                retryable=True,
+                retry_after=wait,
+            ) from error
         except TurnConflict as error:
             raise ApiError(
                 409,

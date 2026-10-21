@@ -21,11 +21,13 @@ type Props = {
   autoFocus?: boolean;
   /** What the question is about, shown inside the box above the text (canvas board 8). */
   attachment?: ReactNode;
+  /** A line under the box, such as "3 answers left today" (sign-up plan, A3). */
+  note?: string | null;
 };
 
 /** The ask box (canvas boards 1 and 4): grows with its text, Enter sends, Stop while a turn runs. */
 export function Composer({ value, onChange, onSubmit, placeholder, label = "Ask about ML papers", running = false,
-  onStop, venues = [], years = [], autoFocus = false, attachment = null }: Props) {
+  onStop, venues = [], years = [], autoFocus = false, attachment = null, note = null }: Props) {
   const [filter, setFilter] = useState<AskFilter>({ venue: null, year: null });
   const [filtering, setFiltering] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -113,6 +115,7 @@ export function Composer({ value, onChange, onSubmit, placeholder, label = "Ask 
           )}
         </span>
       </div>
+      {note ? <p className="composer-note" role="status">{note}</p> : null}
     </form>
   );
 }

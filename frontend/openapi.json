@@ -384,6 +384,16 @@
             "title": "Request Id",
             "type": "string"
           },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Usage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",
@@ -962,6 +972,37 @@
           "request_id"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "Usage": {
+        "additionalProperties": false,
+        "description": "Answers used (sign-up plan, A3): complete or insufficient ones, UTC days and months.",
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "month": {
+            "title": "Month",
+            "type": "integer"
+          },
+          "resets_at": {
+            "format": "date-time",
+            "title": "Resets At",
+            "type": "string"
+          },
+          "today": {
+            "title": "Today",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "today",
+          "month",
+          "limit",
+          "resets_at"
+        ],
+        "title": "Usage",
         "type": "object"
       },
       "ValidationError": {
