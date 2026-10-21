@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,
 including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
-References; one retrieval configuration (the chat's: reranker reads title + passage). Plan
+References; one retrieval configuration (the chat's). **Since 2026-10-21 the reranker reads title +
+abstract + passage** (`rerank.text: title_abstract_chunk`, the developer's decision;
+`reports/rerank-title-abstract-chunk.md`: +0.023 nDCG@10 on S1 validation, +0.056 on S3 development,
+−0.002 on ORB, against title + passage). Plan
 `docs/superpowers/plans/2026-10-15-rag-only.md` (M6 and G6 numbers reassigned; U1–U4; settings
 decided: sign-in required, 10 papers, one search per turn, a structured overview subject to U2's rule).
 **U1 is done (2026-10-15)**: `configs/search.yaml` is the one first stage (`rerank.text: title_chunk`, 2.5 s
@@ -275,6 +278,8 @@ uv run --env-file .env --project backend python -m copilot.cli corpus mirror-ind
 uv run --env-file .env --project backend python -m copilot.cli corpus run            # the whole venue plan
 uv run --env-file .env --project backend python -m copilot.cli corpus run --only JMLR:2025
 uv run --env-file .env --project backend python -m copilot.cli corpus rechunk        # re-chunk without PDFs
+uv run --env-file .env --project backend python -m copilot.cli corpus relabel-references [--apply]   # bibliography chunks stored as body (2026-10-20)
+uv run --env-file .env --project backend python -m copilot.cli corpus exclude-volumes [--apply]      # 13 whole proceedings volumes out of search (2026-10-21)
 uv run --env-file .env --project backend python -m copilot.cli corpus export --run SNAP --out SNAP
 uv run --env-file .env --project backend python -m copilot.cli corpus validate --manifest SNAP/manifest.json
 uv run --env-file .env --project backend python -m copilot.cli corpus restore --manifest SNAP/manifest.json --database-url ...
@@ -300,8 +305,9 @@ cross-encoder rerank of at most 50, every stage under a deadline with explicit, 
 fallbacks. Ranking parameters live in `configs/search.yaml`; the reranker is pinned in
 `configs/models.yaml` beside the embedder. `rerank.text` (2026-10-08) says what the
 cross-encoder reads: `abstract` or the chunk that found the paper (`chunk`, `title_chunk`), the
-mechanism haiku.rag's reranker uses. Shipped since U1 (2026-10-15): `title_chunk` at a 2.5 s rerank
-deadline, the chat's measured first stage, now the only one. A harness variant over `papers` or
+mechanism haiku.rag's reranker uses, or `title_abstract_chunk` (title, abstract, then that chunk).
+Shipped: `title_chunk` at a 2.5 s rerank deadline from U1 (2026-10-15), `title_abstract_chunk` at the
+same deadline since 2026-10-21. A harness variant over `papers` or
 `both` candidates names no chunk and reads abstracts unless it asks otherwise.
 
 ```bash
