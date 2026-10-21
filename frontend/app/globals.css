@@ -526,6 +526,10 @@ main.paper-page > h1 { margin: 0; line-height: 1.2; }
 .text-button.link:hover { background: none; color: var(--ink); }
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-row p { flex: 1 1 260px; }
+.settings-row .banner { flex-basis: 100%; }
+.settings section > .settings-data { display: grid; gap: 20px; justify-items: stretch; }
+.settings-hint { color: var(--ink-soft); }
+.settings-done { color: var(--ink-soft); font-size: 0.875rem; }
 button.danger { border-color: var(--danger); background: transparent; color: var(--danger); font-weight: 500; }
 button.danger:hover:not(:disabled) { background: var(--error-bg); }
 button.danger.solid { background: var(--danger); color: var(--canvas); }

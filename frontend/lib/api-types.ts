@@ -87,7 +87,12 @@ export interface paths {
         get: operations["chats_v1_chats_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete All
+         * @description Delete every chat of the caller, confirmed by a code from POST /v1/me/code (A4).
+         *     Today's answers stay counted.
+         */
+        delete: operations["delete_all_v1_chats_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -158,6 +163,26 @@ export interface paths {
         post?: never;
         /** Delete Me */
         delete: operations["delete_me_v1_me_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * My Code
+         * @description Email a code to the signed-in account's own address, to confirm a delete.
+         */
+        post: operations["my_code_v1_me_code_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -337,10 +362,13 @@ export interface components {
             /** Resend After */
             resend_after: number;
         };
-        /** DeleteAccountRequest */
-        DeleteAccountRequest: {
-            /** Password */
-            password: string;
+        /**
+         * ConfirmRequest
+         * @description A code from POST /v1/me/code, confirming a delete (sign-up plan, A4).
+         */
+        ConfirmRequest: {
+            /** Code */
+            code: string;
         };
         /** ErrorBody */
         ErrorBody: {
@@ -772,6 +800,37 @@ export interface operations {
             };
         };
     };
+    delete_all_v1_chats_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_v1_chats_stream_post: {
         parameters: {
             query?: never;
@@ -916,7 +975,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DeleteAccountRequest"];
+                "application/json": components["schemas"]["ConfirmRequest"];
             };
         };
         responses: {
@@ -934,6 +993,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_code_v1_me_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeResponse"];
                 };
             };
         };

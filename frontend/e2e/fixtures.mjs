@@ -1,4 +1,3 @@
-export const PASSWORD = "correct horse battery staple";
 // The scripted backend's sign-in code for every email (sign-up plan, A2).
 export const CODE = "246810";
 export const USER = { user_id: "11111111-1111-4111-8111-111111111111", email: "alice@example.org" };

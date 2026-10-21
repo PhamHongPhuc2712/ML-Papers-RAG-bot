@@ -289,20 +289,20 @@
         "title": "CodeResponse",
         "type": "object"
       },
-      "DeleteAccountRequest": {
+      "ConfirmRequest": {
         "additionalProperties": false,
+        "description": "A code from POST /v1/me/code, confirming a delete (sign-up plan, A4).",
         "properties": {
-          "password": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Password",
+          "code": {
+            "pattern": "^\\d{6}$",
+            "title": "Code",
             "type": "string"
           }
         },
         "required": [
-          "password"
+          "code"
         ],
-        "title": "DeleteAccountRequest",
+        "title": "ConfirmRequest",
         "type": "object"
       },
       "ErrorBody": {
@@ -1169,6 +1169,41 @@
       }
     },
     "/v1/chats": {
+      "delete": {
+        "description": "Delete every chat of the caller, confirmed by a code from POST /v1/me/code (A4).\nToday's answers stay counted.",
+        "operationId": "delete_all_v1_chats_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete All"
+      },
       "get": {
         "operationId": "chats_v1_chats_get",
         "parameters": [
@@ -1365,7 +1400,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeleteAccountRequest"
+                "$ref": "#/components/schemas/ConfirmRequest"
               }
             }
           },
@@ -1413,6 +1448,30 @@
           }
         ],
         "summary": "Me"
+      }
+    },
+    "/v1/me/code": {
+      "post": {
+        "description": "Email a code to the signed-in account's own address, to confirm a delete.",
+        "operationId": "my_code_v1_me_code_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Code"
       }
     },
     "/v1/papers/{paper_id}": {

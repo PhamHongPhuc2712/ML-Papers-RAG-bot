@@ -28,7 +28,7 @@ from ..contracts import (
     Reference,
     StoredEvidence,
 )
-from .limits import check_daily_limit, lock_account
+from .limits import check_daily_limit, count_answer, lock_account
 from .turns import INSUFFICIENT_TEXT, HistoryItem, TurnResult, answer_text, chat_title
 
 ANSWERED = ("complete", "insufficient")
@@ -137,6 +137,16 @@ class ChatStore:
             ).rowcount
         if not deleted:
             raise ChatNotFound()
+
+    def delete_all_chats(self, principal: Principal) -> int:
+        """Delete every chat of this account; its answers stay counted (``answer_usage``)."""
+
+        with self._engine.begin() as connection:
+            return int(
+                connection.execute(
+                    text("delete from chats where user_id = :user"), {"user": principal.user_id}
+                ).rowcount
+            )
 
     def interrupt_stale(self, *, stale_after: timedelta) -> int:
         now = self._clock()
@@ -323,6 +333,7 @@ class ChatStore:
             ).rowcount
             if not updated:
                 raise TurnConflict("turn_superseded")
+            count_answer(connection, turn.assistant_message_id)
             papers = _paper_facts(connection, sorted({str(e.source_id) for e in result.evidence}))
             for position, item in enumerate(result.evidence):
                 facts = papers.get(str(item.source_id), {})

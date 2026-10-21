@@ -7,9 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Sign-up plan (2026-10-21, `docs/superpowers/plans/2026-10-21-sign-up.md`, A1–A6, gate G8):** sign-in and
 sign-up by a 6-digit code emailed to **Mailpit**, a local mail catcher (`docker compose --profile core up -d
 mailpit`, inbox http://127.0.0.1:8025; test profile `mailpit-test` on 51025/58025), `SMTP_HOST`/`SMTP_PORT`/
-`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1–A3 done** (the daily limit: `limits.daily_answers` in `configs/chat.yaml`, a `429 daily_limit`;
+`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1–A4 done** (Settings: usage, delete all chats / the account by a code from `POST /v1/me/code`;
+the count lives in `answer_usage`, so deleting chats does not reset it; no password code is left. The daily limit: `limits.daily_answers` in `configs/chat.yaml`, a `429 daily_limit`;
 the sign-in page; `/v1/auth/token` takes
-`{email, code}` only; deleting an account still asks for a password until A4).
+`{email, code}` only).
 
 **Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,
 including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
@@ -60,8 +61,8 @@ done (2026-10-12): the title+chunk reranker gains +0.35 nDCG@10 on passage quest
 paper-level guard, so by the registered rule `rerank.text` stays `abstract`
 (`reports/m5-rerank-text.md`); S1's test split is unread. R1 is done (2026-10-14): one JSON line per request on
 `copilot.requests` (route template, never a path or body), `llm spend` by purpose and `chat stats --day`.
-R2 is done (2026-10-14): `DELETE /v1/me` and `/account`, `users delete`, `backup create|restore` of the four
-user tables under `${DATA_DIR}/backups/` (restore refuses another revision or non-empty tables without
+R2 is done (2026-10-14): `DELETE /v1/me` and `/account`, `users delete`, `backup create|restore` of the user
+tables (five since A4, with `answer_usage`) under `${DATA_DIR}/backups/` (restore refuses another revision or non-empty tables without
 `--replace`, and `--database-url` is required). R3's drills are done (2026-10-14, `reports/m5-drills.md`): 7 of 8
 pass, drill 6 was not possible, and drill 2's hidden database outage on `/chat` is fixed. Cold start: startup now waits
 for `warmup` in `configs/search.yaml` (3 warm-up searches in a row within deadlines, at most 180 s) and the

@@ -15,8 +15,13 @@ export function cookieSecure(): boolean {
   return process.env.SESSION_COOKIE_SECURE === "true";
 }
 
-/** Who the session cookie belongs to, for the account menu; null when it is absent or not accepted. */
-export async function currentUser(): Promise<{ email: string } | null> {
+export type CurrentUser = {
+  email: string;
+  usage?: { today: number; month: number; limit: number; resets_at: string } | null;
+};
+
+/** Who the session cookie belongs to, and their answers used (Settings); null when it is absent or not accepted. */
+export async function currentUser(): Promise<CurrentUser | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
@@ -24,7 +29,7 @@ export async function currentUser(): Promise<{ email: string } | null> {
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store",
     });
-    return response.ok ? ((await response.json()) as { email: string }) : null;
+    return response.ok ? ((await response.json()) as CurrentUser) : null;
   } catch {
     return null;
   }

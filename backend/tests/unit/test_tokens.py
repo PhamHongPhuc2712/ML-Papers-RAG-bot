@@ -1,4 +1,4 @@
-"""Access tokens and passwords: what is issued verifies, and nothing else does."""
+"""Access tokens: what is issued verifies, and nothing else does."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from uuid import uuid4
 import jwt
 import pytest
 
-from copilot.identity.passwords import hash_password, verify_password
 from copilot.identity.tokens import AUDIENCE, ISSUER, TokenError, TokenIssuer, token_key
 
 SECRET = "test-only-secret"
@@ -59,17 +58,3 @@ def test_another_key_no_algorithm_or_garbage_is_invalid():
 def test_the_signing_key_is_derived_never_the_raw_secret():
     key = token_key(SECRET)
     assert key != SECRET.encode() and len(key) == 32
-
-
-def test_passwords_hash_with_argon2id_and_verify():
-    stored = hash_password("correct horse battery staple")
-    assert stored.startswith("$argon2id$")
-    assert verify_password(stored, "correct horse battery staple")
-    assert not verify_password(stored, "wrong horse battery staple")
-    # An unknown account verifies against a dummy hash and still fails.
-    assert not verify_password(None, "correct horse battery staple")
-
-
-def test_short_passwords_are_refused():
-    with pytest.raises(ValueError, match="password_length"):
-        hash_password("short")

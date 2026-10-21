@@ -1,7 +1,7 @@
 """Accounts (spec §10). Since the sign-up plan (2026-10-21) anyone can make one with a code
 sent to their email (``identity/codes.py``), and sign in only that way; the operator's CLI
-still makes them. Accounts made before then keep an Argon2id password hash, which only
-deleting the account still checks, until that asks for a code too (A4)."""
+still makes them. Accounts made before then keep an Argon2id hash in ``password_hash``,
+which nothing reads any more; the column is dropped in a later migration."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
-
-from .passwords import hash_password, verify_password
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -38,21 +36,17 @@ class UserStore:
         self._engine = engine
         self._clock = clock
 
-    def create(self, email: str, password: str | None = None) -> UUID:
+    def create(self, email: str) -> UUID:
         address = normalize_email(email)
-        try:
-            stored = None if password is None else hash_password(password)
-        except ValueError as error:
-            raise AccountError("password_length") from error
         user_id = uuid4()
         try:
             with self._engine.begin() as connection:
                 connection.execute(
                     text(
                         "insert into users (id, email, password_hash, created_at)"
-                        " values (:id, :email, :hash, :now)"
+                        " values (:id, :email, null, :now)"
                     ),
-                    {"id": user_id, "email": address, "hash": stored, "now": self._clock()},
+                    {"id": user_id, "email": address, "now": self._clock()},
                 )
         except IntegrityError as error:
             raise AccountError("email_taken") from error
@@ -117,16 +111,6 @@ class UserStore:
                 {"email": normalize_email(email), "now": self._clock()},
             )
         return result.rowcount > 0
-
-    def check_password(self, user_id: UUID, password: str) -> bool:
-        """Whether the password is this enabled account's, at the same cost either way."""
-
-        with self._engine.connect() as connection:
-            stored = connection.execute(
-                text("select password_hash from users where id = :id and disabled_at is null"),
-                {"id": user_id},
-            ).scalar_one_or_none()
-        return verify_password(None if stored is None else str(stored), password)
 
     def delete(self, user_id: UUID) -> bool:
         """Delete the account; chats, messages and evidence go with it (ON DELETE CASCADE).

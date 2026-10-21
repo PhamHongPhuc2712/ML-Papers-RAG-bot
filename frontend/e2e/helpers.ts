@@ -1,7 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 
-export const PASSWORD = "correct horse battery staple";
 /** The scripted backend's code for every email (e2e/fixtures.mjs). */
 export const CODE = "246810";
 export const MOCK = "http://127.0.0.1:8799";

@@ -134,7 +134,6 @@ def api_client(
         connection.execute(text("delete from login_codes"))
 
 
-PASSWORD = "correct horse battery staple"
 
 
 @pytest.fixture
@@ -146,9 +145,9 @@ def make_user(test_settings: Settings, migrated_database) -> Iterator[object]:
     store = UserStore(migrated_database)
     created: list[UUID] = []
 
-    def make(email: str | None = None, password: str = PASSWORD) -> tuple[UUID, str]:
+    def make(email: str | None = None) -> tuple[UUID, str]:
         address = email or f"user-{uuid4().hex[:12]}@example.org"
-        user_id = store.create(address, password)
+        user_id = store.create(address)
         created.append(user_id)
         return user_id, address.strip().lower()
 

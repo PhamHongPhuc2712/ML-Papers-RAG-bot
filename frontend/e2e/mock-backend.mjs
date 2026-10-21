@@ -1,7 +1,7 @@
 // A scripted stand-in for the API, for browser tests: no GPU, database or money.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { CODE, PAPERS, PASSWORD, USER } from "./fixtures.mjs";
+import { CODE, PAPERS, USER } from "./fixtures.mjs";
 
 const PORT = Number(process.env.MOCK_BACKEND_PORT ?? 8799);
 let state;
@@ -174,10 +174,16 @@ createServer(async (req, res) => {
   if (state.databaseDown && path.startsWith("/v1/chats") && req.method === "GET") {
     return error(res, 503, "database_unavailable", "database is unavailable", true);
   }
-  if (path === "/v1/me" && req.method === "DELETE") {
+  // Deletes confirmed by an emailed code (sign-up plan, A4): POST /v1/me/code, then DELETE {code}.
+  if (path === "/v1/me/code" && req.method === "POST") {
+    state.codes.push({ email: state.email, code: CODE });
+    return json(res, 202, { resend_after: 60, request_id: randomUUID() });
+  }
+  if ((path === "/v1/me" || path === "/v1/chats") && req.method === "DELETE") {
     const payload = await body(req);
-    if (payload.password !== PASSWORD) return error(res, 401, "invalid_credentials", "the password is incorrect");
-    state.deleted = true;
+    if (typeof payload.code !== "string" || !/^\d{6}$/.test(payload.code)) return error(res, 422, "validation_error", "code: invalid");
+    if (payload.code !== CODE) return error(res, 401, "invalid_code", "that code is not right; check it and try again");
+    if (path === "/v1/me") state.deleted = true;
     state.chats.clear();
     res.writeHead(204);
     return res.end();

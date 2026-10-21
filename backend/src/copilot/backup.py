@@ -1,4 +1,4 @@
-"""Backups of user data (spec §12): accounts, chats, messages and evidence snapshots.
+"""Backups of user data (spec §12): accounts, answers used, chats, messages and evidence snapshots.
 
 The corpus is rebuilt from its own snapshots (corpus export/restore); this covers only what
 users created. Each table is copied out as CSV with PostgreSQL's COPY, beside a manifest of
@@ -19,7 +19,8 @@ from sqlalchemy import Engine, text
 
 # Table names are this constant, never input: the f-strings below interpolate only these.
 # Foreign-key order, so a table is loaded after the ones it references.
-USER_TABLES = ("users", "chats", "chat_messages", "message_evidence")
+# answer_usage since the sign-up plan (A4): the daily count, kept apart from the chats.
+USER_TABLES = ("users", "answer_usage", "chats", "chat_messages", "message_evidence")
 
 
 class BackupError(RuntimeError):

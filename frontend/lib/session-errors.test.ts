@@ -10,8 +10,11 @@ describe("endsSession", () => {
     expect(endsSession(401, "not json")).toBe(true);
   });
 
-  it("keeps it for a wrong password and for anything but 401", () => {
-    expect(endsSession(401, body("invalid_credentials"))).toBe(false);
+  it("keeps it for a wrong, used-up or expired code, and for anything but 401", () => {
+    expect(endsSession(401, body("invalid_code"))).toBe(false);
+    expect(endsSession(401, body("code_expired"))).toBe(false);
+    expect(endsSession(401, body("code_exhausted"))).toBe(false);
+    expect(endsSession(401, body("invalid_credentials"))).toBe(true);
     expect(endsSession(403, body("token_invalid"))).toBe(false);
     expect(endsSession(204, "")).toBe(false);
   });

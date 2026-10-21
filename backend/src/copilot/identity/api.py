@@ -89,8 +89,10 @@ class MeResponse(ContractModel):
     request_id: UUID
 
 
-class DeleteAccountRequest(ContractModel):
-    password: str = Field(min_length=1, max_length=1024)
+class ConfirmRequest(ContractModel):
+    """A code from POST /v1/me/code, confirming a delete (sign-up plan, A4)."""
+
+    code: str = Field(pattern=r"^\d{6}$")
 
 
 def _identity(request: Request) -> Identity:
@@ -129,33 +131,24 @@ def router() -> APIRouter:
 
         identity = _identity(request)
         email = _email_or_422(body.email)
-        if identity.codes is None or identity.mail is None:
-            raise ApiError(503, "mail_unavailable", "email is not configured", retryable=True)
-        answer = CodeResponse(
+        if not identity.users.disabled(email):
+            _send_code(identity, email)
+        return CodeResponse(
             resend_after=int(RESEND_AFTER.total_seconds()), request_id=request_id(request)
         )
-        if identity.users.disabled(email):
-            return answer
-        try:
-            issued = identity.codes.issue(email)
-        except CodeRateLimited as limited:
-            raise ApiError(
-                429,
-                "code_rate_limited",
-                f"wait {limited.retry_after} s before asking for another code",
-                retryable=True,
-                retry_after=limited.retry_after,
-            ) from limited
-        if issued.code is None or issued.code_id is None:
-            return answer
-        try:
-            identity.mail.send(email, _CODE_SUBJECT, _CODE_BODY.format(code=issued.code))
-        except MailError as error:
-            identity.codes.discard(issued.code_id)
-            raise ApiError(
-                503, "mail_unavailable", "the code could not be sent; try again", retryable=True
-            ) from error
-        return answer
+
+    @api.post("/v1/me/code", status_code=202, response_model=CodeResponse)
+    def my_code(principal: CurrentPrincipal, request: Request) -> CodeResponse:
+        """Email a code to the signed-in account's own address, to confirm a delete."""
+
+        identity = _identity(request)
+        email = identity.users.email(principal.user_id)
+        if email is None:
+            raise ApiError(401, "token_invalid", _SIGN_IN_AGAIN)
+        _send_code(identity, email)
+        return CodeResponse(
+            resend_after=int(RESEND_AFTER.total_seconds()), request_id=request_id(request)
+        )
 
     @api.post("/v1/auth/token", response_model=TokenResponse)
     def token(body: TokenRequest, request: Request) -> TokenResponse:
@@ -185,16 +178,53 @@ def router() -> APIRouter:
         )
 
     @api.delete("/v1/me", status_code=204, response_class=Response)
-    def delete_me(
-        body: DeleteAccountRequest, principal: CurrentPrincipal, request: Request
-    ) -> Response:
-        users = _identity(request).users
-        if not users.check_password(principal.user_id, body.password):
-            raise ApiError(401, "invalid_credentials", "the password is incorrect")
-        users.delete(principal.user_id)
+    def delete_me(body: ConfirmRequest, principal: CurrentPrincipal, request: Request) -> Response:
+        confirm_code(request, principal, body.code)
+        _identity(request).users.delete(principal.user_id)
         return Response(status_code=204)
 
     return api
+
+
+def confirm_code(request: Request, principal: Principal, code: str) -> None:
+    """Check a code sent to the signed-in account's email by POST /v1/me/code; a typed 401
+    that keeps the session when it is wrong, used up or expired."""
+
+    identity = _identity(request)
+    email = identity.users.email(principal.user_id)
+    if email is None:
+        raise ApiError(401, "token_invalid", _SIGN_IN_AGAIN)
+    if identity.codes is None:
+        raise ApiError(503, "mail_unavailable", "email is not configured", retryable=True)
+    verdict = identity.codes.verify(email, code)
+    if verdict is not Verdict.ACCEPTED:
+        raise ApiError(401, verdict.value, _CODE_MESSAGES[verdict])
+
+
+def _send_code(identity: Identity, email: str) -> None:
+    """Issue and email a code; silent when the hourly limit says to send nothing."""
+
+    if identity.codes is None or identity.mail is None:
+        raise ApiError(503, "mail_unavailable", "email is not configured", retryable=True)
+    try:
+        issued = identity.codes.issue(email)
+    except CodeRateLimited as limited:
+        raise ApiError(
+            429,
+            "code_rate_limited",
+            f"wait {limited.retry_after} s before asking for another code",
+            retryable=True,
+            retry_after=limited.retry_after,
+        ) from limited
+    if issued.code is None or issued.code_id is None:
+        return
+    try:
+        identity.mail.send(email, _CODE_SUBJECT, _CODE_BODY.format(code=issued.code))
+    except MailError as error:
+        identity.codes.discard(issued.code_id)
+        raise ApiError(
+            503, "mail_unavailable", "the code could not be sent; try again", retryable=True
+        ) from error
 
 
 def _email_or_422(email: str) -> str:

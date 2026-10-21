@@ -228,7 +228,7 @@ def test_bad_input_is_rejected_before_anything_runs(
 def test_the_daily_limit_is_a_429_before_anything_runs(
     chat_client, search_corpus, make_user, auth_headers
 ):
-    """Sign-up plan, A3: configs/chat.yaml's daily_answers (20) answered today, then a 429."""
+    """Sign-up plan, A3: configs/chat.yaml's daily_answers (20) used today, then a 429."""
 
     from datetime import UTC, datetime
 
@@ -238,24 +238,10 @@ def test_the_daily_limit_is_a_429_before_anything_runs(
     alice, _ = make_user()
     now = datetime.now(UTC)
     with search_corpus.engine.begin() as connection:
-        chat_id = uuid4()
         connection.execute(
-            text(
-                "insert into chats (id, user_id, title, created_at, updated_at)"
-                " values (:id, :user, 'used up', :now, :now)"
-            ),
-            {"id": chat_id, "user": alice, "now": now},
+            text("insert into answer_usage (user_id, day, answers) values (:user, :day, 20)"),
+            {"user": alice, "day": now.date()},
         )
-        for n in range(20):
-            connection.execute(
-                text(
-                    "insert into chat_messages (id, chat_id, user_id, ordinal, role, request_id,"
-                    " status, text, created_at, started_at) values (:id, :chat, :user, :ordinal,"
-                    " 'assistant', :request, 'complete', 'an answer', :now, :now)"
-                ),
-                {"id": uuid4(), "chat": chat_id, "user": alice, "ordinal": n,
-                 "request": uuid4(), "now": now},
-            )
     with chat_client(_graph(search_corpus.ids[TITLE], calls)) as client:
         response, _ = _post(client, auth_headers(alice))
     assert response.status_code == 429

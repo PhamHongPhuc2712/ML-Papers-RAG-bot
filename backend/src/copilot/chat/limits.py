@@ -5,6 +5,8 @@ failed or was interrupted delivered nothing and does not. A turn still ``pending
 place, and the check runs under a lock on the account's row, so two turns started together
 cannot both take the last answer. Days and months are UTC, like the spend cap, and an answer
 belongs to the day its turn started (``started_at``, renewed when a failed turn is retried).
+Completed answers are counted in ``answer_usage`` (A4), not read back from the messages, so
+deleting chats does not give answers back.
 """
 
 from __future__ import annotations
@@ -14,8 +16,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Connection, Engine, text
-
-COUNTED = ("complete", "insufficient")
 
 
 class DailyLimitReached(Exception):
@@ -37,16 +37,41 @@ def day_start(now: datetime) -> datetime:
     return now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _answers(connection: Connection, user_id: UUID, since: datetime, *, pending: bool) -> int:
-    statuses = (*COUNTED, "pending") if pending else COUNTED
+def _answers(connection: Connection, user_id: UUID, since: datetime) -> int:
+    return int(
+        connection.execute(
+            text(
+                "select coalesce(sum(answers), 0) from answer_usage"
+                " where user_id = :user and day >= :since"
+            ),
+            {"user": user_id, "since": since.date()},
+        ).scalar_one()
+    )
+
+
+def _pending(connection: Connection, user_id: UUID, since: datetime) -> int:
     return int(
         connection.execute(
             text(
                 "select count(*) from chat_messages where user_id = :user and role = 'assistant'"
-                " and status = any(:statuses) and started_at >= :since"
+                " and status = 'pending' and started_at >= :since"
             ),
-            {"user": user_id, "statuses": list(statuses), "since": since},
+            {"user": user_id, "since": since},
         ).scalar_one()
+    )
+
+
+def count_answer(connection: Connection, message_id: UUID) -> None:
+    """Count a just-completed answer on its turn's UTC day, in the completing transaction."""
+
+    connection.execute(
+        text(
+            "insert into answer_usage (user_id, day, answers)"
+            " select user_id, (started_at at time zone 'UTC')::date, 1 from chat_messages"
+            " where id = :id on conflict (user_id, day)"
+            " do update set answers = answer_usage.answers + 1"
+        ),
+        {"id": message_id},
     )
 
 
@@ -63,7 +88,7 @@ def check_daily_limit(connection: Connection, user_id: UUID, limit: int, now: da
 
     lock_account(connection, user_id)
     start = day_start(now)
-    if _answers(connection, user_id, start, pending=True) >= limit:
+    if _answers(connection, user_id, start) + _pending(connection, user_id, start) >= limit:
         raise DailyLimitReached(limit, start + timedelta(days=1))
 
 
@@ -71,6 +96,6 @@ def usage(engine: Engine, user_id: UUID, *, limit: int, now: datetime | None = N
     current = now or datetime.now(UTC)
     start = day_start(current)
     with engine.connect() as connection:
-        today = _answers(connection, user_id, start, pending=False)
-        month = _answers(connection, user_id, start.replace(day=1), pending=False)
+        today = _answers(connection, user_id, start)
+        month = _answers(connection, user_id, start.replace(day=1))
     return Usage(today=today, month=month, limit=limit, resets_at=start + timedelta(days=1))

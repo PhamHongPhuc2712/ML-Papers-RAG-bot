@@ -9,7 +9,6 @@ description = "ML Research Copilot backend"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic==1.16.5",
-  "argon2-cffi==25.1.0",
   "fastapi==0.116.1",
   "httpx==0.28.1",
   "langchain-core==1.6.5",

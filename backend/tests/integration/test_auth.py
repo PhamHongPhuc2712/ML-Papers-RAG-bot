@@ -26,7 +26,7 @@ def test_a_code_issues_a_token_that_identifies_the_user(api_client, make_user, s
 def test_a_password_no_longer_signs_in(api_client, make_user):
     """Codes only since the sign-up plan (A2): an account that has a password cannot use it."""
 
-    make_user(email="bob@example.org", password=PASSWORD)
+    make_user(email="bob@example.org")
     response = api_client.post(
         "/v1/auth/token", json={"email": "bob@example.org", "password": PASSWORD}
     )

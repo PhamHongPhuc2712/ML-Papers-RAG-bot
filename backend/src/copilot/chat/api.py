@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from ..config import Settings
 from ..contracts import ChatDetail, ChatList, ChatRequest
-from ..identity.api import CurrentPrincipal
+from ..identity.api import ConfirmRequest, CurrentPrincipal, confirm_code
 from ..search.api import ApiError, request_id
 from .config import load_chat_config
 from .graph import ChatGraph, build_default_chat_graph
@@ -106,6 +106,15 @@ def router() -> APIRouter:
         except ChatNotFound as error:
             raise _not_found() from error
         return ChatDetail(request_id=request_id(request), chat=summary, messages=messages)
+
+    @api.delete("/v1/chats", status_code=204, response_class=Response)
+    def delete_all(body: ConfirmRequest, principal: CurrentPrincipal, request: Request) -> Response:
+        """Delete every chat of the caller, confirmed by a code from POST /v1/me/code (A4).
+        Today's answers stay counted."""
+
+        confirm_code(request, principal, body.code)
+        _store(request).delete_all_chats(principal)
+        return Response(status_code=204)
 
     @api.delete("/v1/chats/{chat_id}", status_code=204, response_class=Response)
     def delete(chat_id: UUID, principal: CurrentPrincipal, request: Request) -> Response:

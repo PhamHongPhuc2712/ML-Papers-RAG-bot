@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -576,6 +577,22 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AnswerUsage(Base):
+    """Answers an account used on one UTC day (sign-up plan, A4): the daily limit's count,
+    which deleting chats does not change."""
+
+    __tablename__ = "answer_usage"
+    __table_args__ = (CheckConstraint("answers >= 0", name="ck_answer_usage_answers"),)
+
+    user_id: Mapped[UUID] = mapped_column(
+        SAUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_answer_usage_user_id_users"),
+        primary_key=True,
+    )
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    answers: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class LoginCode(Base):

@@ -175,3 +175,16 @@ def test_me_reports_usage(api_client, make_user, auth_headers):
     assert body["usage"]["today"] == 0 and body["usage"]["month"] == 0
     assert body["usage"]["limit"] == 20
     assert body["usage"]["resets_at"].endswith("T00:00:00Z")
+
+
+def test_deleting_chats_does_not_give_answers_back(store, alice, paper, search_corpus, clock):
+    """The count is kept apart from the chats (A4), so deleting them cannot reset the limit."""
+
+    turn = _answer(store, alice, paper, 2)
+    _answer(store, alice, paper, 2)
+    store.delete_chat(alice, turn.chat_id)
+    store.delete_all_chats(alice)
+    with pytest.raises(DailyLimitReached):
+        store.begin_turn(alice, _request(), stale_after=STALE, daily_answers=2)
+    now = usage(search_corpus.engine, alice.user_id, limit=2, now=clock.now)
+    assert (now.today, now.month) == (2, 2)
