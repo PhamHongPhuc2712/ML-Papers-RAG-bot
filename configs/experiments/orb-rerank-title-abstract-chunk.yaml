@@ -43,6 +43,10 @@ variants:
   - name: shipped
     mode: hybrid_rerank
     candidates: chunks
+    # Pinned 2026-10-21, when configs/search.yaml moved to title_abstract_chunk: the stage
+    # these runs measured as `shipped` (title + chunk, 2.5 s), which the file then held.
+    search:
+      rerank: {text: title_chunk}
   - name: title_abstract_chunk
     mode: hybrid_rerank
     candidates: chunks
