@@ -111,11 +111,21 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ACCESS_TOKEN_TTL_SECONDS"),
     )
 
+    # Where sign-in codes are sent (sign-up plan, A1). On this machine, Mailpit's SMTP port
+    # (compose service `mailpit`); unset, asking for a code is a typed 503.
+    smtp_host: str | None = Field(default=None, validation_alias=AliasChoices("SMTP_HOST"))
+    smtp_port: int = Field(default=1025, ge=1, le=65535, validation_alias=AliasChoices("SMTP_PORT"))
+    mail_from: str = Field(
+        default="ML Research Copilot <no-reply@localhost>",
+        validation_alias=AliasChoices("MAIL_FROM"),
+    )
+
     @field_validator(
         "openai_api_key",
         "deepseek_api_key",
         "llm_daily_spend_cap_usd",
         "llm_rerank_model",
+        "smtp_host",
         mode="before",
     )
     @classmethod

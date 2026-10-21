@@ -1,5 +1,6 @@
-"""Accounts (spec §10): created by the operator's CLI, since signup is closed, and
-authenticated by email and an Argon2id hash in the local database."""
+"""Accounts (spec §10). Since the sign-up plan (2026-10-21) anyone can make one with a code
+sent to their email (``identity/codes.py``); the operator's CLI still can. Accounts made
+before then keep an Argon2id password hash, read until the sign-in page stops asking."""
 
 from __future__ import annotations
 
@@ -36,10 +37,10 @@ class UserStore:
         self._engine = engine
         self._clock = clock
 
-    def create(self, email: str, password: str) -> UUID:
+    def create(self, email: str, password: str | None = None) -> UUID:
         address = normalize_email(email)
         try:
-            stored = hash_password(password)
+            stored = None if password is None else hash_password(password)
         except ValueError as error:
             raise AccountError("password_length") from error
         user_id = uuid4()
@@ -86,6 +87,37 @@ class UserStore:
                     {"hash": hash_password(password), "id": row.id},
                 )
         return UUID(str(row.id))
+
+    def for_code(self, email: str) -> UUID | None:
+        """The enabled account a verified code signs in to, made now if the email has none;
+        None when the account is disabled."""
+
+        address = normalize_email(email)
+        with self._engine.begin() as connection:
+            connection.execute(
+                text(
+                    "insert into users (id, email, password_hash, created_at)"
+                    " values (:id, :email, null, :now) on conflict (email) do nothing"
+                ),
+                {"id": uuid4(), "email": address, "now": self._clock()},
+            )
+            row = connection.execute(
+                text("select id, disabled_at from users where email = :email"),
+                {"email": address},
+            ).one()
+        return None if row.disabled_at is not None else UUID(str(row.id))
+
+    def disabled(self, email: str) -> bool:
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    text(
+                        "select 1 from users where email = :email and disabled_at is not null"
+                    ),
+                    {"email": normalize_email(email)},
+                ).first()
+                is not None
+            )
 
     def active(self, user_id: UUID) -> bool:
         with self._engine.connect() as connection:

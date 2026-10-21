@@ -6,6 +6,7 @@ import logging
 import tempfile
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -25,6 +26,8 @@ from .db.models import CorpusRelease
 from .db.session import get_active_release, make_engine
 from .identity.api import Identity
 from .identity.api import router as identity_router
+from .identity.codes import CodeStore
+from .identity.mail import MailSender, SmtpSender
 from .identity.tokens import TokenIssuer
 from .identity.users import UserStore
 from .observability import (
@@ -154,8 +157,19 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
     app.include_router(corpus_router(engine, str(artifacts)))
     app.include_router(search_router())
     app.include_router(identity_router())
+    # Tests set the identity clock (code expiry) and record mail instead of sending it.
+    identity_clock = cast(
+        Callable[[], datetime],
+        app_overrides.get("identity_clock") or (lambda: datetime.now(UTC)),
+    )
+    mail = cast(MailSender | None, app_overrides.get("mail_sender"))
+    if mail is None and settings.smtp_host:
+        mail = SmtpSender(settings.smtp_host, settings.smtp_port, settings.mail_from)
     app.state.identity = Identity(
-        UserStore(engine), TokenIssuer(settings.secret_key, settings.access_token_ttl_seconds)
+        UserStore(engine, identity_clock),
+        TokenIssuer(settings.secret_key, settings.access_token_ttl_seconds),
+        codes=CodeStore(engine, settings.secret_key, identity_clock),
+        mail=mail,
     )
     app.include_router(chat_router())
     app.state.chat_store = ChatStore(engine)

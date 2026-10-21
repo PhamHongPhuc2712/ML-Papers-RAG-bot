@@ -77,6 +77,8 @@ class ErrorBody(ContractModel):
     code: str
     message: str
     retryable: bool
+    # Seconds to wait before trying again; sent only by a rate limit (sign-up plan, A1).
+    retry_after: int | None = None
 
 
 class ErrorResponse(ContractModel):
@@ -87,11 +89,20 @@ class ErrorResponse(ContractModel):
 class ApiError(Exception):
     """A typed failure the handler turns into the spec's error shape."""
 
-    def __init__(self, status: int, code: str, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        status: int,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        retry_after: int | None = None,
+    ) -> None:
         self.status = status
         self.code = code
         self.message = message
         self.retryable = retryable
+        self.retry_after = retry_after
         super().__init__(code)
 
 
@@ -106,13 +117,26 @@ def request_id(request: Request) -> UUID:
 
 
 def error_response(
-    request: Request, status: int, code: str, message: str, *, retryable: bool
+    request: Request,
+    status: int,
+    code: str,
+    message: str,
+    *,
+    retryable: bool,
+    retry_after: int | None = None,
 ) -> JSONResponse:
     body = ErrorResponse(
-        error=ErrorBody(code=code, message=message, retryable=retryable),
+        error=ErrorBody(code=code, message=message, retryable=retryable, retry_after=retry_after),
         request_id=request_id(request),
     )
-    return JSONResponse(status_code=status, content=body.model_dump(mode="json"))
+    content = body.model_dump(mode="json")
+    if retry_after is None:
+        # Every other error keeps the shape it had before the field existed.
+        del content["error"]["retry_after"]
+        return JSONResponse(status_code=status, content=content)
+    return JSONResponse(
+        status_code=status, content=content, headers={"Retry-After": str(retry_after)}
+    )
 
 
 def _describe(errors: Sequence[Mapping[str, Any]]) -> str:
@@ -129,7 +153,12 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def api_error(request: Request, error: ApiError) -> JSONResponse:
         return error_response(
-            request, error.status, error.code, error.message, retryable=error.retryable
+            request,
+            error.status,
+            error.code,
+            error.message,
+            retryable=error.retryable,
+            retry_after=error.retry_after,
         )
 
     @app.exception_handler(RequestValidationError)

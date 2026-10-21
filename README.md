@@ -31,7 +31,7 @@ docker compose --profile core up -d postgres qdrant
 uv sync --project backend --frozen --group dev --group models
 uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head
 uv run --env-file .env --project backend python -m copilot.cli search fetch-model
-uv run --env-file .env --project backend python -m copilot.cli users create --email you@example.org   # password on stdin; signup is closed
+uv run --env-file .env --project backend python -m copilot.cli users create --email you@example.org   # signs in by emailed code (Mailpit inbox: http://127.0.0.1:8025)
 uv run --env-file .env --project backend uvicorn --factory copilot.app:create_default_app --port 8000
 cd frontend && npm ci && npm run build && BACKEND_URL=http://127.0.0.1:8000 npm run start   # http://localhost:3000
 ```

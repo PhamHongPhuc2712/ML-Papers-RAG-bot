@@ -77,6 +77,22 @@ services:
         bind:
           create_host_path: true
 
+  # Mail catcher for sign-in codes (sign-up plan, A1): SMTP in, a local web inbox out, nothing
+  # sent onward. It keeps nothing worth keeping, so it has no state under DATA_DIR.
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    profiles: [core]
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
+  mailpit-test:
+    image: axllent/mailpit:v1.31.3
+    profiles: [test]
+    ports:
+      - "127.0.0.1:${TEST_MAILPIT_SMTP_PORT:-51025}:1025"
+      - "127.0.0.1:${TEST_MAILPIT_UI_PORT:-58025}:8025"
+
   backend:
     build:
       context: .
@@ -92,6 +108,8 @@ services:
       QDRANT_COLLECTION_PREFIX: ${QDRANT_COLLECTION_PREFIX:-dev_}
       MODEL_MODE: ${MODEL_MODE:-real}
       SECRET_KEY: ${SECRET_KEY:-replace-this-secret}
+      SMTP_HOST: ${SMTP_HOST_IN_COMPOSE:-mailpit}
+      SMTP_PORT: ${SMTP_PORT_IN_COMPOSE:-1025}
     volumes:
       - type: bind
         source: *data-root
@@ -100,6 +118,8 @@ services:
       postgres:
         condition: service_healthy
       qdrant:
+        condition: service_started
+      mailpit:
         condition: service_started
     ports:
       - "${BACKEND_PORT:-8000}:8000"

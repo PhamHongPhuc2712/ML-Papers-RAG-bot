@@ -1413,8 +1413,11 @@ def run_chat_stats(*, database_url: str, day: str | None) -> dict[str, Any]:
         engine.dispose()
 
 
-def run_users_create(*, database_url: str, email: str, password: str) -> dict[str, Any]:
-    """Create an account. Signup is closed (spec §10): the operator makes accounts here."""
+def run_users_create(
+    *, database_url: str, email: str, password: str | None = None
+) -> dict[str, Any]:
+    """Create an account, signed in to by emailed code (sign-up plan, A1); a password only
+    when one is given."""
 
     from .identity.users import UserStore, normalize_email
 
@@ -1736,9 +1739,14 @@ def _parser() -> argparse.ArgumentParser:
     users = subparsers.add_parser("users")
     user_commands = users.add_subparsers(dest="users_command", required=True)
     create_user = user_commands.add_parser(
-        "create", help="create an account; the password is read from stdin, never an argument"
+        "create", help="create an account that signs in by emailed code"
     )
     create_user.add_argument("--email", required=True)
+    create_user.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="also set a password, read from stdin (never an argument)",
+    )
     create_user.add_argument("--database-url", default=None, help="defaults to DATABASE_URL")
     disable_user = user_commands.add_parser(
         "disable", help="disable an account; its tokens stop working at once"
@@ -2408,11 +2416,13 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "users" and args.users_command == "create":
         import getpass
 
-        password = (
-            getpass.getpass("Password: ")
-            if sys.stdin.isatty()
-            else sys.stdin.readline().rstrip("\n")
-        )
+        password = None
+        if args.password_stdin:
+            password = (
+                getpass.getpass("Password: ")
+                if sys.stdin.isatty()
+                else sys.stdin.readline().rstrip("\n")
+            )
         result = run_users_create(
             database_url=_database_url(args.database_url), email=args.email, password=password
         )

@@ -4,6 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
+**Sign-up plan (2026-10-21, `docs/superpowers/plans/2026-10-21-sign-up.md`, A1–A6, gate G8):** sign-in and
+sign-up by a 6-digit code emailed to **Mailpit**, a local mail catcher (`docker compose --profile core up -d
+mailpit`, inbox http://127.0.0.1:8025; test profile `mailpit-test` on 51025/58025), `SMTP_HOST`/`SMTP_PORT`/
+`MAIL_FROM` in `.env`; codes only, no passwords (A2 removes them); 20 answers a day. **A1 done**.
+
 **Decided 2026-10-15: RAG only, like Consensus. No separate search mode.** Every request,
 including "find me papers about X", becomes one cited-answer turn that shows the papers it read as
 References; one retrieval configuration (the chat's). **Since 2026-10-21 the reranker reads title +

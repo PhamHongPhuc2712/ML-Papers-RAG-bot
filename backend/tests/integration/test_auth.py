@@ -88,12 +88,37 @@ def test_a_client_supplied_user_id_is_never_identity(api_client, make_user, auth
     assert login.status_code == 422
 
 
+def test_the_cli_creates_an_account_without_a_password(test_settings, migrated_database, capsys):
+    """Accounts sign in by emailed code since the sign-up plan (A1); stdin is not read."""
+
+    from sqlalchemy import text
+
+    email = "erin-cli@example.org"
+    argv = ["users", "create", "--email", email, "--database-url", test_settings.database_url]
+    assert main(argv) == 0
+    assert '"email": "erin-cli@example.org"' in capsys.readouterr().out
+    with migrated_database.begin() as connection:
+        stored = connection.execute(
+            text("delete from users where email = :email returning password_hash"),
+            {"email": email},
+        ).scalar_one()
+    assert stored is None
+
+
 def test_the_cli_creates_an_account_reading_the_password_from_stdin(
     test_settings, migrated_database, monkeypatch, capsys
 ):
     email = "dana-cli@example.org"
     monkeypatch.setattr("sys.stdin", io.StringIO(PASSWORD + "\n"))
-    argv = ["users", "create", "--email", email, "--database-url", test_settings.database_url]
+    argv = [
+        "users",
+        "create",
+        "--email",
+        email,
+        "--password-stdin",
+        "--database-url",
+        test_settings.database_url,
+    ]
     assert main(argv) == 0
     assert '"email": "dana-cli@example.org"' in capsys.readouterr().out
     store = UserStore(migrated_database)

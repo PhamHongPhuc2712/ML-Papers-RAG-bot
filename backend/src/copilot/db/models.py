@@ -572,9 +572,28 @@ class User(Base):
 
     id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Null for an account made by emailed code (sign-up plan, 2026-10-21); dropped later.
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LoginCode(Base):
+    """A sign-in code sent to an email, kept only as an HMAC (sign-up plan, A1)."""
+
+    __tablename__ = "login_codes"
+    __table_args__ = (
+        CheckConstraint("email = lower(email)", name="ck_login_codes_email_lower"),
+        Index("ix_login_codes_email_created", "email", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(SAUUID(as_uuid=True), primary_key=True, default=uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    code_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Chat(Base):

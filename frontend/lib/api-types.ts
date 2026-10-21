@@ -38,6 +38,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Code
+         * @description Email a sign-in code. The answer is the same whether or not the email has an
+         *     account, and whether or not the hourly limit let a code go out.
+         */
+        post: operations["code_v1_auth_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/token": {
         parameters: {
             query?: never;
@@ -301,6 +322,21 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** CodeRequest */
+        CodeRequest: {
+            /** Email */
+            email: string;
+        };
+        /** CodeResponse */
+        CodeResponse: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Resend After */
+            resend_after: number;
+        };
         /** DeleteAccountRequest */
         DeleteAccountRequest: {
             /** Password */
@@ -312,6 +348,8 @@ export interface components {
             code: string;
             /** Message */
             message: string;
+            /** Retry After */
+            retry_after?: number | null;
             /** Retryable */
             retryable: boolean;
         };
@@ -531,12 +569,18 @@ export interface components {
             /** Year */
             year?: number | null;
         };
-        /** TokenRequest */
+        /**
+         * TokenRequest
+         * @description An email with the code sent to it, or (until the sign-in page stops asking, A2) with
+         *     the account's password.
+         */
         TokenRequest: {
+            /** Code */
+            code?: string | null;
             /** Email */
             email: string;
             /** Password */
-            password: string;
+            password?: string | null;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -612,6 +656,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    code_v1_auth_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

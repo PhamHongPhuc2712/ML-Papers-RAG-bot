@@ -253,6 +253,42 @@
         "title": "Claim",
         "type": "object"
       },
+      "CodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "CodeRequest",
+        "type": "object"
+      },
+      "CodeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "resend_after": {
+            "title": "Resend After",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resend_after",
+          "request_id"
+        ],
+        "title": "CodeResponse",
+        "type": "object"
+      },
       "DeleteAccountRequest": {
         "additionalProperties": false,
         "properties": {
@@ -279,6 +315,17 @@
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
           },
           "retryable": {
             "title": "Retryable",
@@ -865,7 +912,20 @@
       },
       "TokenRequest": {
         "additionalProperties": false,
+        "description": "An email with the code sent to it, or (until the sign-in page stops asking, A2) with\nthe account's password.",
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
           "email": {
             "maxLength": 320,
             "minLength": 3,
@@ -873,15 +933,21 @@
             "type": "string"
           },
           "password": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Password",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
           }
         },
         "required": [
-          "email",
-          "password"
+          "email"
         ],
         "title": "TokenRequest",
         "type": "object"
@@ -1001,6 +1067,45 @@
           }
         },
         "summary": "Ready"
+      }
+    },
+    "/v1/auth/code": {
+      "post": {
+        "description": "Email a sign-in code. The answer is the same whether or not the email has an\naccount, and whether or not the hourly limit let a code go out.",
+        "operationId": "code_v1_auth_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code"
       }
     },
     "/v1/auth/token": {
