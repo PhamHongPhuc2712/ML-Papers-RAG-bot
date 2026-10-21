@@ -1,0 +1,843 @@
+{
+  "comparisons": {
+    "abstract_reranker_vs_shipped": {
+      "baseline": "shipped",
+      "candidate": "abstract_reranker",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.5223723109109929,
+          "candidate": 0.6298653749943148,
+          "difference": 0.10749306408332196,
+          "high": 0.141773889116296,
+          "losses": 32,
+          "low": 0.07072932300905083,
+          "metric": "mrr@10",
+          "ties": 219,
+          "wins": 98
+        },
+        "ndcg@10": {
+          "baseline": 0.5669200157350085,
+          "candidate": 0.6631318126760578,
+          "difference": 0.09621179694104928,
+          "high": 0.12472206061533657,
+          "losses": 32,
+          "low": 0.06573536956835573,
+          "metric": "ndcg@10",
+          "ties": 219,
+          "wins": 98
+        },
+        "recall@10": {
+          "baseline": 0.7077363896848138,
+          "candidate": 0.7650429799426934,
+          "difference": 0.05730659025787966,
+          "high": 0.08316618911174779,
+          "losses": 4,
+          "low": 0.031446991404011526,
+          "metric": "recall@10",
+          "ties": 321,
+          "wins": 24
+        },
+        "recall@50": {
+          "baseline": 0.8108882521489972,
+          "candidate": 0.8108882521489972,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 349,
+          "wins": 0
+        }
+      }
+    },
+    "title_abstract_chunk_1536_vs_shipped": {
+      "baseline": "shipped",
+      "candidate": "title_abstract_chunk_1536",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.5223723109109929,
+          "candidate": 0.5327193341519989,
+          "difference": 0.010347023241006047,
+          "high": 0.03604439555191704,
+          "losses": 62,
+          "low": -0.019033150270614446,
+          "metric": "mrr@10",
+          "ties": 227,
+          "wins": 60
+        },
+        "ndcg@10": {
+          "baseline": 0.5669200157350085,
+          "candidate": 0.5811167043286014,
+          "difference": 0.014196688593592926,
+          "high": 0.03732487984871008,
+          "losses": 62,
+          "low": -0.010885134432706728,
+          "metric": "ndcg@10",
+          "ties": 227,
+          "wins": 60
+        },
+        "recall@10": {
+          "baseline": 0.7077363896848138,
+          "candidate": 0.7335243553008596,
+          "difference": 0.025787965616045846,
+          "high": 0.054441260744985676,
+          "losses": 10,
+          "low": -0.0057306590257879654,
+          "metric": "recall@10",
+          "ties": 320,
+          "wins": 19
+        },
+        "recall@50": {
+          "baseline": 0.8108882521489972,
+          "candidate": 0.8108882521489972,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 349,
+          "wins": 0
+        }
+      }
+    },
+    "title_abstract_chunk_vs_shipped": {
+      "baseline": "shipped",
+      "candidate": "title_abstract_chunk",
+      "metrics": {
+        "mrr@10": {
+          "baseline": 0.5223723109109929,
+          "candidate": 0.5335652885796153,
+          "difference": 0.011192977668622367,
+          "high": 0.038044554736889974,
+          "losses": 62,
+          "low": -0.016299773729931324,
+          "metric": "mrr@10",
+          "ties": 226,
+          "wins": 61
+        },
+        "ndcg@10": {
+          "baseline": 0.5669200157350085,
+          "candidate": 0.5820154265804925,
+          "difference": 0.015095410845484072,
+          "high": 0.03975547349752423,
+          "losses": 62,
+          "low": -0.009057680257674967,
+          "metric": "ndcg@10",
+          "ties": 226,
+          "wins": 61
+        },
+        "recall@10": {
+          "baseline": 0.7077363896848138,
+          "candidate": 0.7335243553008596,
+          "difference": 0.025787965616045846,
+          "high": 0.054441260744985676,
+          "losses": 10,
+          "low": -0.0057306590257879654,
+          "metric": "recall@10",
+          "ties": 320,
+          "wins": 19
+        },
+        "recall@50": {
+          "baseline": 0.8108882521489972,
+          "candidate": 0.8108882521489972,
+          "difference": 0.0,
+          "high": 0.0,
+          "losses": 0,
+          "low": 0.0,
+          "metric": "recall@50",
+          "ties": 349,
+          "wins": 0
+        }
+      }
+    }
+  },
+  "decision": {
+    "ablations": [
+      {
+        "adopt": true,
+        "applies": true,
+        "baseline": "shipped",
+        "changes": "the former search page's reranker, title + abstract at a 1.5 s rerank deadline",
+        "clean": true,
+        "comparison": {
+          "baseline": 0.5669200157350085,
+          "candidate": 0.6631318126760578,
+          "difference": 0.09621179694104928,
+          "high": 0.12472206061533657,
+          "losses": 32,
+          "low": 0.06573536956835573,
+          "metric": "ndcg@10",
+          "ties": 219,
+          "wins": 98
+        },
+        "noninferior": true,
+        "p95_seconds": 0.6321,
+        "variant": "abstract_reranker"
+      },
+      {
+        "adopt": false,
+        "applies": true,
+        "baseline": "shipped",
+        "changes": "the reranker reads title + abstract + the chunk that found the paper, 1,024-token pairs",
+        "clean": false,
+        "comparison": {
+          "baseline": 0.5669200157350085,
+          "candidate": 0.5820154265804925,
+          "difference": 0.015095410845484072,
+          "high": 0.03975547349752423,
+          "losses": 62,
+          "low": -0.009057680257674967,
+          "metric": "ndcg@10",
+          "ties": 226,
+          "wins": 61
+        },
+        "noninferior": true,
+        "p95_seconds": 1.4454,
+        "variant": "title_abstract_chunk"
+      },
+      {
+        "adopt": true,
+        "applies": true,
+        "baseline": "shipped",
+        "changes": "title + abstract + chunk with 1,536-token pairs, so less of the chunk is cut",
+        "clean": true,
+        "comparison": {
+          "baseline": 0.5669200157350085,
+          "candidate": 0.5811167043286014,
+          "difference": 0.014196688593592926,
+          "high": 0.03732487984871008,
+          "losses": 62,
+          "low": -0.010885134432706728,
+          "metric": "ndcg@10",
+          "ties": 227,
+          "wins": 60
+        },
+        "noninferior": true,
+        "p95_seconds": 1.8157,
+        "variant": "title_abstract_chunk_1536"
+      }
+    ],
+    "chosen": {
+      "adopted_ablations": [
+        "abstract_reranker",
+        "title_abstract_chunk_1536"
+      ],
+      "mode": "hybrid_rerank",
+      "variant": "shipped"
+    },
+    "primary": "ndcg@10",
+    "rules": {
+      "latency_p95_seconds": 3.0,
+      "max_drop": 0.03,
+      "order": [
+        "shipped"
+      ],
+      "primary": "ndcg@10",
+      "require_undegraded": true
+    },
+    "split": "validation",
+    "steps": []
+  },
+  "manifest": {
+    "bootstrap": {
+      "confidence": 0.95,
+      "resamples": 1000,
+      "seed": 42,
+      "unit": "query family"
+    },
+    "code": {
+      "diff_sha256": "01dbd605647376076c0b719d21e5cc256601a73019667e85666d63250769406a",
+      "dirty": true,
+      "git_sha": "2b90f370dc67b08263a7dfa9d8d81d3c6e367bb0"
+    },
+    "corpus": {
+      "chunker_version": "paragraph-pack-v1",
+      "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+      "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+      "papers": "database",
+      "parser_version": "pypdf-text-v2",
+      "release_id": "m2-20260924T095724Z",
+      "releases": {
+        "m2-20260924T095724Z": {
+          "bm25_vocabulary_sha256": "499a7ffb0dbb12da4d192047a8bf9992809c01c0dfa48101b908c30e69a726b2",
+          "dense_dimensions": 1024,
+          "dense_vector_bytes": 351145984,
+          "manifest_sha256": "20c26513eb26c2b0f479ec1e6eff6e545acc34211de3434d2db47ded19312ad4",
+          "model_revision": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+          "paper_collection": "dev_paper_abstracts_m2-20260924T095724Z",
+          "points": 85729
+        }
+      }
+    },
+    "cost": {
+      "metered_usd": 0.0,
+      "note": "self-hosted models and services; no priced model call is made"
+    },
+    "created_at": "2026-10-21T07:47:04.252594+00:00",
+    "dataset": {
+      "digest": "1a24aa151aa543eb30085d6ea9cfcd891f912a69a1283a73881f9a124ca7000c",
+      "labels": "paper_id",
+      "limited_to": null,
+      "path": "data/fixtures/retrieval-topics",
+      "queries": 349,
+      "slice": "all",
+      "sources": [
+        "copilot_v2@m2-20260924T095724Z"
+      ],
+      "split": "validation"
+    },
+    "experiment": {
+      "config_sha256": "f48edd3e8e6895899b18f96f5139b571b5c2568fd55c1cffd3570124de4b6541",
+      "name": "rerank-title-abstract-chunk-topics",
+      "path": "configs/experiments/rerank-title-abstract-chunk-topics.yaml"
+    },
+    "hardware": {
+      "cores": 12,
+      "cpu": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cuda": "13.0",
+      "gpu": "NVIDIA GeForce RTX 3080 Laptop GPU",
+      "ram_gb": 25.2,
+      "torch": "2.14.0+cu130"
+    },
+    "locked_test": false,
+    "run_id": "rerank-title-abstract-chunk-topics-validation-20261021T074704Z",
+    "search": {
+      "config_sha256": "cb069996f1ade87bb29a8e3543b060366dd4b8d3d315e6682724597064699085",
+      "path": "configs/search.yaml",
+      "values": {
+        "branch_seconds": 1.0,
+        "cache_depth": 200,
+        "cache_ttl_seconds": 600,
+        "candidates_per_branch": 100,
+        "rerank_depth": 50,
+        "rerank_pair_max_tokens": null,
+        "rerank_retries": 1,
+        "rerank_seconds": 2.5,
+        "rerank_text": "title_abstract_chunk",
+        "rrf_k": 60,
+        "total_seconds": 3.0
+      }
+    },
+    "seed": 42,
+    "timing": {
+      "gpu": {
+        "available": true,
+        "before_run": {
+          "available": true,
+          "busy": true,
+          "memory_mib": 893,
+          "samples": 5,
+          "utilization_percent_p50": 57.0
+        },
+        "compute_processes_seen": [
+          "403418"
+        ],
+        "memory_mib": {
+          "max": 6413,
+          "min": 3230
+        },
+        "samples": 1712,
+        "utilization_percent": {
+          "max": 100,
+          "p50": 98.0
+        }
+      },
+      "methodology": "Queries run one at a time through SearchService.rank with the production deadlines of configs/search.yaml; seconds are wall-clock around rank(), which includes both candidate branches, fusion, the reranked head's metadata read and the reranker, and excludes HTTP and page hydration. Before its first timed query each variant is warmed with the service's own warm-up and then 10 queries from another split (never the test split), whose results are discarded: GPU kernels warm per input shape, and without this the first variant to use a model would pay for every later one. p50/p95 interpolate linearly over every query of the split, failed ones included. GPU utilization and memory are sampled every second for the whole run, and other processes on the GPU are listed."
+    },
+    "variants": {
+      "abstract_reranker": {
+        "baseline": "shipped",
+        "candidates": "chunks",
+        "changes": "the former search page's reranker, title + abstract at a 1.5 s rerank deadline",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 1.5,
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_seconds": 1.5,
+          "rerank_text": "abstract"
+        },
+        "search_sha256": "ae8de0521687836b0f15b62e07ce0ffcb5f6feb60547bd297214b9d24c7a3a8e",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 15.437
+      },
+      "shipped": {
+        "baseline": null,
+        "candidates": "chunks",
+        "changes": null,
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_text": "title_chunk"
+        },
+        "search_sha256": "c904fa8cdfb4bb60bfc4b2bb555da7b41e8e310c8815be15099e7c6141e97b18",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 20.055
+      },
+      "title_abstract_chunk": {
+        "baseline": "shipped",
+        "candidates": "chunks",
+        "changes": "the reranker reads title + abstract + the chunk that found the paper, 1,024-token pairs",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1024",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_abstract_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_text": "title_abstract_chunk"
+        },
+        "search_sha256": "d5939fbb27f3e7ba87a545b4874bfdd9e61f6f4e47b73a3a801d4589e7151f0b",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 22.218
+      },
+      "title_abstract_chunk_1536": {
+        "baseline": "shipped",
+        "candidates": "chunks",
+        "changes": "title + abstract + chunk with 1,536-token pairs, so less of the chunk is cut",
+        "embedding": "BAAI/bge-m3@5617a9f61b028005a4858fdac845db406aefb181#cls-l2-v1",
+        "embedding_precision": "float16",
+        "mode": "hybrid_rerank",
+        "release_id": "m2-20260924T095724Z",
+        "reranker": "BAAI/bge-reranker-v2-m3@953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e#pair1536",
+        "reranker_precision": "float16",
+        "search": {
+          "branch_seconds": 1.0,
+          "cache_depth": 200,
+          "cache_ttl_seconds": 600,
+          "candidates_per_branch": 100,
+          "candidates_source": "chunks",
+          "rerank_depth": 50,
+          "rerank_pair_max_tokens": null,
+          "rerank_retries": 1,
+          "rerank_seconds": 2.5,
+          "rerank_text": "title_abstract_chunk",
+          "rrf_k": 60,
+          "total_seconds": 3.0
+        },
+        "search_overrides": {
+          "rerank_text": "title_abstract_chunk"
+        },
+        "search_sha256": "d5939fbb27f3e7ba87a545b4874bfdd9e61f6f4e47b73a3a801d4589e7151f0b",
+        "warmup_queries": {
+          "count": 10,
+          "split": "development"
+        },
+        "warmup_seconds": 25.943
+      }
+    }
+  },
+  "variants": {
+    "abstract_reranker": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.6298653749943148,
+            "ndcg@10": 0.6631318126760578,
+            "queries": 349,
+            "recall@10": 0.7650429799426934,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.6298653749943148,
+            "ndcg@10": 0.6631318126760578,
+            "queries": 349,
+            "recall@10": 0.7650429799426934,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "candidate_recall": 0.8939828080229226,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07650429799426933,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016217765042979945,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1331.1,
+          "p50_ms": 562.9,
+          "p95_ms": 632.1
+        },
+        "mrr@10": {
+          "high": 0.6756438463637604,
+          "low": 0.5804711590940101,
+          "mean": 0.6298653749943148
+        },
+        "ndcg@10": {
+          "high": 0.7062086532202816,
+          "low": 0.6150175910528503,
+          "mean": 0.6631318126760578
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.8051575931232091,
+          "low": 0.7163323782234957,
+          "mean": 0.7650429799426934
+        },
+        "recall@50": {
+          "high": 0.8481375358166189,
+          "low": 0.7679083094555874,
+          "mean": 0.8108882521489972
+        },
+        "rerank_pool_recall": 0.8108882521489972,
+        "stages": {
+          "dense": {
+            "max_ms": 846.7,
+            "p50_ms": 48.0,
+            "p95_ms": 81.7
+          },
+          "hydrate": {
+            "max_ms": 39.6,
+            "p50_ms": 7.9,
+            "p95_ms": 13.6
+          },
+          "lexical": {
+            "max_ms": 846.6,
+            "p50_ms": 28.7,
+            "p95_ms": 50.8
+          },
+          "rerank": {
+            "max_ms": 609.0,
+            "p50_ms": 501.5,
+            "p95_ms": 555.3
+          }
+        }
+      }
+    },
+    "shipped": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.5223723109109929,
+            "ndcg@10": 0.5669200157350085,
+            "queries": 349,
+            "recall@10": 0.7077363896848138,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.5223723109109929,
+            "ndcg@10": 0.5669200157350085,
+            "queries": 349,
+            "recall@10": 0.7077363896848138,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "candidate_recall": 0.8939828080229226,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07077363896848136,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016217765042979945,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 1958.2,
+          "p50_ms": 1141.8,
+          "p95_ms": 1351.2
+        },
+        "mrr@10": {
+          "high": 0.5719096511575021,
+          "low": 0.4755247703188248,
+          "mean": 0.5223723109109929
+        },
+        "ndcg@10": {
+          "high": 0.6135493734409131,
+          "low": 0.5211627828067774,
+          "mean": 0.5669200157350085
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.7535816618911175,
+          "low": 0.6561604584527221,
+          "mean": 0.7077363896848138
+        },
+        "recall@50": {
+          "high": 0.8481375358166189,
+          "low": 0.7679083094555874,
+          "mean": 0.8108882521489972
+        },
+        "rerank_pool_recall": 0.8108882521489972,
+        "stages": {
+          "dense": {
+            "max_ms": 813.9,
+            "p50_ms": 86.4,
+            "p95_ms": 170.1
+          },
+          "hydrate": {
+            "max_ms": 874.2,
+            "p50_ms": 37.6,
+            "p95_ms": 80.7
+          },
+          "lexical": {
+            "max_ms": 813.2,
+            "p50_ms": 62.6,
+            "p95_ms": 127.7
+          },
+          "rerank": {
+            "max_ms": 1281.5,
+            "p50_ms": 999.4,
+            "p95_ms": 1160.6
+          }
+        }
+      }
+    },
+    "title_abstract_chunk": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.5335652885796153,
+            "ndcg@10": 0.5820154265804925,
+            "queries": 349,
+            "recall@10": 0.7335243553008596,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.5335652885796153,
+            "ndcg@10": 0.5820154265804925,
+            "queries": 349,
+            "recall@10": 0.7335243553008596,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "candidate_recall": 0.8939828080229226,
+        "degraded": {
+          "count": 1,
+          "warnings": {
+            "dense_timeout": 1,
+            "rerank_timeout": 1
+          }
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07335243553008594,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016217765042979945,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 3000.5,
+          "p50_ms": 1361.4,
+          "p95_ms": 1445.4
+        },
+        "mrr@10": {
+          "high": 0.5774600047755492,
+          "low": 0.48782217901487246,
+          "mean": 0.5335652885796153
+        },
+        "ndcg@10": {
+          "high": 0.6254075041517176,
+          "low": 0.5365709239677984,
+          "mean": 0.5820154265804925
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.7793696275071633,
+          "low": 0.6848137535816619,
+          "mean": 0.7335243553008596
+        },
+        "recall@50": {
+          "high": 0.8481375358166189,
+          "low": 0.7679083094555874,
+          "mean": 0.8108882521489972
+        },
+        "rerank_pool_recall": 0.8132183908045977,
+        "stages": {
+          "dense": {
+            "max_ms": 1000.0,
+            "p50_ms": 45.6,
+            "p95_ms": 61.3
+          },
+          "hydrate": {
+            "max_ms": 37.5,
+            "p50_ms": 14.4,
+            "p95_ms": 28.1
+          },
+          "lexical": {
+            "max_ms": 2095.3,
+            "p50_ms": 24.7,
+            "p95_ms": 33.2
+          },
+          "rerank": {
+            "max_ms": 1512.2,
+            "p50_ms": 1296.7,
+            "p95_ms": 1381.5
+          }
+        }
+      }
+    },
+    "title_abstract_chunk_1536": {
+      "summary": {
+        "by_query_set": {
+          "topics_v1": {
+            "mrr@10": 0.5327193341519989,
+            "ndcg@10": 0.5811167043286014,
+            "queries": 349,
+            "recall@10": 0.7335243553008596,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "by_specificity": {
+          "0": {
+            "mrr@10": 0.5327193341519989,
+            "ndcg@10": 0.5811167043286014,
+            "queries": 349,
+            "recall@10": 0.7335243553008596,
+            "recall@50": 0.8108882521489972
+          }
+        },
+        "candidate_recall": 0.8939828080229226,
+        "degraded": {
+          "count": 0,
+          "warnings": {}
+        },
+        "failures": {
+          "codes": {},
+          "count": 0
+        },
+        "judged@10": {
+          "mean": 0.07335243553008594,
+          "unknown": 0
+        },
+        "judged@50": {
+          "mean": 0.016217765042979945,
+          "unknown": 0
+        },
+        "latency": {
+          "max_ms": 2166.5,
+          "p50_ms": 1578.2,
+          "p95_ms": 1815.7
+        },
+        "mrr@10": {
+          "high": 0.5774748999408742,
+          "low": 0.4845705132578341,
+          "mean": 0.5327193341519989
+        },
+        "ndcg@10": {
+          "high": 0.6235035701619387,
+          "low": 0.534892836265136,
+          "mean": 0.5811167043286014
+        },
+        "queries": 349,
+        "recall@10": {
+          "high": 0.7793696275071633,
+          "low": 0.6848137535816619,
+          "mean": 0.7335243553008596
+        },
+        "recall@50": {
+          "high": 0.8481375358166189,
+          "low": 0.7679083094555874,
+          "mean": 0.8108882521489972
+        },
+        "rerank_pool_recall": 0.8108882521489972,
+        "stages": {
+          "dense": {
+            "max_ms": 182.3,
+            "p50_ms": 45.1,
+            "p95_ms": 62.6
+          },
+          "hydrate": {
+            "max_ms": 30.8,
+            "p50_ms": 13.4,
+            "p95_ms": 18.4
+          },
+          "lexical": {
+            "max_ms": 182.3,
+            "p50_ms": 24.8,
+            "p95_ms": 32.8
+          },
+          "rerank": {
+            "max_ms": 2082.5,
+            "p50_ms": 1517.2,
+            "p95_ms": 1743.5
+          }
+        }
+      }
+    }
+  }
+}

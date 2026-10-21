@@ -9,7 +9,8 @@
   - **S1**, passage questions, our corpus: +0.024 [−0.001, +0.051] on development, +0.023
     [+0.000, +0.047] on validation. Not worse, perhaps slightly better.
   - **S3**, "find papers about X", our corpus: +0.056 [+0.031, +0.082] on development (0.583 against
-    0.527). The old title + abstract reranker still leads there (0.616).
+    0.527), but only +0.015 [−0.009, +0.040] on validation (0.582 against 0.567). The old title +
+    abstract reranker still leads there (0.616 and 0.663).
   - **Open RAG Bench**, 1,914 passage questions, another corpus: −0.002 [−0.006, +0.003].
     No difference.
 - Cost: about 0.15 s more per search (ORB p95 1.46 s against 1.33 s), inside the 2.5 s rerank
@@ -41,6 +42,7 @@ partial run outside `reports/`.
 | S1 development | 190 | 0.374 | 0.682 | **0.705** | 0.694 | — |
 | S1 validation | 190 | 0.350 | 0.698 | **0.721** | 0.719 | — |
 | S3 development | 349 | 0.616 | 0.527 | **0.583** | 0.583 | — |
+| S3 validation | 349 | 0.663 | 0.567 | **0.582** | 0.581 | — |
 | ORB retrieval | 1,914 | (0.785, O3) | 0.968 | **0.966** | — | 0.948 |
 
 Folders: `reports/retrieval/rerank-title-abstract-chunk-{sections,topics}/`,
@@ -51,18 +53,22 @@ ORB's title + passage and no-reranker rows reproduce `orb-rerank-text` (0.968, 0
 Degraded queries: none in S1; one per new variant in S3 development (a `dense_timeout`, a
 `rerank_timeout`); one of 1,914 in ORB's new variant. Every recorded run had the GPU at 0% before it.
 
-### S3 validation: not recorded
+### S3 validation
 
-Two attempts were set aside, both under the GPU policy:
-1. 2026-10-20 ~15:16 local: the laptop was unplugged during the run; the GPU was power-capped at about
-   40 W and 930–1,140 MHz. The title + passage variant ran first and degraded 348 of 349 queries. The
-   other three ran at normal speed with no degraded query: title + abstract 0.663, title + abstract +
-   passage 0.582, 1,536-token pairs 0.581.
-2. Rerun on mains power with the battery at 16% and charging: every variant except the 1,536-token one
-   ran slow (title + abstract median 1.93 s against 0.54 s); 259 and 349 queries degraded.
+Recorded 2026-10-21 (`rerank-title-abstract-chunk-topics-validation-*`, after the configs pinned
+`shipped` to `title_chunk`, commit `586aaf9`). The harness marked it **contended**: its 5 s sample
+before the run saw the GPU 57% busy. Its timings are not read. Its rankings are: one query in 1,396
+degraded (a new-variant query), and the three variants that also ran undegraded in the first
+attempt below reproduce that attempt's nDCG@10 exactly (0.663, 0.582, 0.581).
 
-Both are kept outside the repository. A clean S3 validation run of all four variants is still owed for
-the record; U4 measured title + passage there at 0.563 before the relabel.
+Three attempts were set aside:
+1. 2026-10-20, laptop unplugged: the GPU was power-capped (about 40 W, 930–1,140 MHz) and
+   title + passage degraded 348 of 349 queries; the other three variants were undegraded.
+2. 2026-10-20, rerun while the battery charged at 16%: most variants ran slow, 259 and 349 degraded.
+3. 2026-10-21, before the pin: `shipped` read `configs/search.yaml`, by then title + abstract +
+   passage, so it measured the new reranker twice; a test suite also overlapped it (14 degraded).
+
+All three are kept outside the repository.
 
 ### Latency of `rank()` on ORB (ms)
 
