@@ -7,11 +7,17 @@ import json
 import os
 import socket
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .corpus.dedupe import IdentityConflictError, QuarantineError, resolve_paper
 from .db.session import make_engine, migrate_database, session_factory
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+
+    from .corpus.relabel import Relabel
 
 DEFAULT_FIXTURE_PATH = Path("data/fixtures/metadata.jsonl")
 DEFAULT_MANIFEST_PATH = Path("configs/corpus.yaml")
@@ -712,6 +718,98 @@ def run_activate(
             ),
         )
         return {"active": release, "previous": previous.id if previous else None}
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def run_relabel_references(
+    *, database_url: str, qdrant_url: str | None, data_dir: Path, apply: bool
+) -> dict[str, object]:
+    """Relabel bibliography chunks stored as body text, in PostgreSQL and the active
+    release's chunk collection; counts only unless ``apply``."""
+
+    from .corpus.relabel import REFERENCES, find_misread_references
+
+    return _repair_chunks(
+        "relabel-references",
+        find_misread_references,
+        kind=REFERENCES,
+        database_url=database_url,
+        qdrant_url=qdrant_url,
+        data_dir=data_dir,
+        apply=apply,
+    )
+
+
+def run_exclude_volumes(
+    *, database_url: str, qdrant_url: str | None, data_dir: Path, apply: bool
+) -> dict[str, object]:
+    """Take whole proceedings volumes' chunks out of search and evidence, kind unchanged;
+    counts only unless ``apply``."""
+
+    from .corpus.relabel import find_proceedings_volumes
+
+    return _repair_chunks(
+        "exclude-volumes",
+        find_proceedings_volumes,
+        kind=None,
+        database_url=database_url,
+        qdrant_url=qdrant_url,
+        data_dir=data_dir,
+        apply=apply,
+    )
+
+
+def _repair_chunks(
+    name: str,
+    find: Callable[[Engine], list[Relabel]],
+    *,
+    kind: str | None,
+    database_url: str,
+    qdrant_url: str | None,
+    data_dir: Path,
+    apply: bool,
+) -> dict[str, object]:
+    import sys
+    from datetime import UTC, datetime
+
+    from .corpus.relabel import apply_relabel, summarize
+    from .corpus.releases import capture_release
+    from .search.client import qdrant_client
+
+    engine = make_engine(database_url)
+    client = qdrant_client(qdrant_url or _service_settings()[0], timeout=300)
+    try:
+        release = capture_release(engine)
+        if release is None:
+            raise SystemExit("no active release")
+        chunks = find(engine)
+        result: dict[str, object] = {
+            "release": release.id,
+            "collection": release.chunk_collection,
+            "chunks": len(chunks),
+            "chunks_by_venue_year": summarize(chunks),
+            "applied": False,
+        }
+        if apply and chunks:
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            undo = data_dir / "runs" / f"{name}-{stamp}.jsonl"
+
+            def report(done: int) -> None:
+                print(json.dumps({"points_relabelled": done}), file=sys.stderr)
+
+            apply_relabel(
+                engine,
+                client,
+                release.chunk_collection,
+                chunks,
+                undo_log=undo,
+                kind=kind,
+                progress=report,
+            )
+            result.update(applied=True, undo_log=str(undo))
+        return result
     finally:
         client.close()
         engine.dispose()
@@ -1496,6 +1594,24 @@ def _parser() -> argparse.ArgumentParser:
     rechunk.add_argument("--shards", type=int, default=1)
     rechunk.add_argument("--shard", type=int, default=0)
 
+    relabel = corpus_commands.add_parser(
+        "relabel-references",
+        help="label bibliography chunks stored as body text as references (counts unless --apply)",
+    )
+    relabel.add_argument("--database-url", default=None)
+    relabel.add_argument("--qdrant-url", default=None)
+    relabel.add_argument("--data-dir", type=Path, default=None)
+    relabel.add_argument("--apply", action="store_true")
+
+    volumes = corpus_commands.add_parser(
+        "exclude-volumes",
+        help="take whole proceedings volumes out of search and evidence (counts unless --apply)",
+    )
+    volumes.add_argument("--database-url", default=None)
+    volumes.add_argument("--qdrant-url", default=None)
+    volumes.add_argument("--data-dir", type=Path, default=None)
+    volumes.add_argument("--apply", action="store_true")
+
     activate = corpus_commands.add_parser(
         "activate", help="switch the serving pointer to a validated release"
     )
@@ -2170,6 +2286,20 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             shards=args.shards,
             shard=args.shard,
+        )
+    elif args.command == "corpus" and args.corpus_command == "relabel-references":
+        result = run_relabel_references(
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+            data_dir=_data_dir(args.data_dir, parser),
+            apply=args.apply,
+        )
+    elif args.command == "corpus" and args.corpus_command == "exclude-volumes":
+        result = run_exclude_volumes(
+            database_url=_database_url(args.database_url),
+            qdrant_url=args.qdrant_url,
+            data_dir=_data_dir(args.data_dir, parser),
+            apply=args.apply,
         )
     elif args.command == "corpus" and args.corpus_command == "activate":
         result = run_activate(

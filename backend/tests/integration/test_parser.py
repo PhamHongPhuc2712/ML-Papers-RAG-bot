@@ -259,6 +259,43 @@ def test_numbered_table_rows_do_not_open_sections():
     assert not any(name.startswith(("Accuracy", "Recall")) for name in names)
 
 
+def test_numbered_references_heading_is_a_references_section():
+    """Interspeech numbers it ("6. References"); found 2026-10-20 labelled body in 3,314 papers."""
+
+    result = _parse_pages(
+        _pages(
+            "5. Conclusions\n"
+            "The conclusion is long enough that the small-section merge leaves it alone.\n"
+            "6. References\n"
+            "[1] Y. Jia, Y. Zhang, and R. Weiss, “Transfer learning from speaker verification,”\n"
+            "in Proc. NeurIPS, 2018, pp. 4485–4495.\n"
+        )
+    )
+    kinds = {section.name: section.kind for section in result.sections}
+    assert kinds.get("References") == "references", kinds
+
+
+def test_numbered_citations_do_not_open_sections():
+    """LNCS (ECCV) numbers each entry; found 2026-10-20 opening a body section per entry in
+    2,212 ECCV 2024 papers, which put the bibliography back into search."""
+
+    result = _parse_pages(
+        _pages(
+            "6 Conclusion\n"
+            "The conclusion is long enough that the small-section merge leaves it alone.\n"
+            "References\n"
+            "1. Barron, J.T., Mildenhall, B., Tancik, M., Hedman, P.: Mip-nerf: A multiscale\n"
+            "representation for anti-aliasing neural radiance fields. In: ICCV (2021)\n"
+            "2. Barron, J.T., Mildenhall, B., Verbin, D., Srinivasan, P.P., Hedman, P.: Mip-nerf\n"
+            "360: Unbounded anti-aliased neural radiance fields. In: CVPR (2022)\n"
+            "3. Wu,T.,Yang,G.,Li,Z.,Zhang,K.,Liu,Z.,Guibas,L.,Lin,D.: Gpt-4v(ision) is a\n"
+            "human-aligned evaluator for text-to-3d generation. arXiv preprint (2024)\n"
+        )
+    )
+    sections = [(section.name, section.kind) for section in result.sections]
+    assert sections == [("Conclusion", "body"), ("References", "references")], sections
+
+
 def test_fixture_chunks_under_the_versioned_policy_exclude_references_by_default():
     config = load_parsing_config(CONFIG)
     sections = parse_pdf(FIXTURE_PDF)

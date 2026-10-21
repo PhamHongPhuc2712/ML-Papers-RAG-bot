@@ -117,6 +117,9 @@ _PAGE_NUMBER = re.compile(r"^\d{1,3}$")
 # A section title carrying a free-standing number is a table row or list item,
 # not a heading. Digits bound to a letter ("GPT-4") stay acceptable.
 _LOOSE_NUMBER = re.compile(r"(?<![A-Za-z-])\d")
+# A numbered bibliography entry in LNCS style ("2. Barron, J.T., Mildenhall, B.") is not a
+# heading: a surname, a comma, then initials (found 2026-10-20 in 2,212 ECCV 2024 papers).
+_CITATION = re.compile(r"^[^\W\d_][\w'’-]*(?: [^\W\d_][\w'’-]*)?,\s?[A-Z]\.")
 
 
 def _normalise_small_caps(line: str) -> str:
@@ -140,6 +143,11 @@ def _classify_heading(line: str) -> tuple[str, str] | None:
     numbered = _NUMBERED.match(line)
     if numbered is not None:
         title = numbered.group("title").strip()
+        named = _NAMED.get(title.rstrip(".:").lower())
+        if named is not None:
+            return named
+        if _CITATION.match(title):
+            return None
         if not title.endswith(".") and len(title) >= 3 and not _LOOSE_NUMBER.search(title):
             return title, "body"
     return None
