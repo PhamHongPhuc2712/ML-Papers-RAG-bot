@@ -135,8 +135,10 @@ CANDIDATE_SOURCES = ("papers", "chunks", "both")
 # `abstract`: the title and abstract, spec §7's canonical paper text. `chunk`: the
 # evidence chunk the first stage found the paper by (the better-ranked branch's when
 # the two disagree). `title_chunk`: that chunk with the title in front of it.
+# `title_abstract_chunk` (2026-10-20, measured, not shipped): the title and abstract, then that
+# chunk, which the pair budget truncates first.
 ABSTRACT_TEXT = "abstract"
-RERANK_TEXTS = (ABSTRACT_TEXT, "chunk", "title_chunk")
+RERANK_TEXTS = (ABSTRACT_TEXT, "chunk", "title_chunk", "title_abstract_chunk")
 
 
 def load_search_config(path: str | Path) -> SearchConfig:
@@ -983,6 +985,8 @@ class SearchService:
             scored[paper_id] = chunk.chunk_id
             if mode == "title_chunk":
                 texts.append(f"{rows[paper_id].title}\n{chunk.text}")
+            elif mode == "title_abstract_chunk":
+                texts.append(f"{rows[paper_id].text}\n{chunk.text}")
             else:
                 texts.append(chunk.text)
         return texts, {"text": mode, "chunks": scored, "abstract_fallbacks": fallbacks}

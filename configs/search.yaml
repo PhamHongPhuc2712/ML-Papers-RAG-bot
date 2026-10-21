@@ -33,7 +33,11 @@ rerank:
   # developer's decision): the chat's measured first stage, under which ORB's frozen
   # answering scored flat 0.880 [0.844, 0.908] (orb-text-qa-v2), became the one first
   # stage. Until then the search page read `abstract` (S2's rule) and the chat overrode it.
-  text: title_chunk
+  # `title_abstract_chunk` since 2026-10-21 (the developer's decision): the title and abstract,
+  # then that chunk. Against `title_chunk`, nDCG@10 +0.023 on S1 validation, +0.056 on S3
+  # development, -0.002 [-0.006, +0.003] on ORB's 1,914 queries; p95 about 0.15 s slower
+  # (reports/rerank-title-abstract-chunk.md).
+  text: title_abstract_chunk
 
 cache:
   # Spec §7: an ordering's top 200 (hybrid_rerank: its reranked head) is kept this
@@ -45,7 +49,8 @@ cache:
 deadlines_seconds:
   # Candidate branches run concurrently, each within its own budget.
   branch: 1.0
-  # 2.5 s with `title_chunk` (U1, 2026-10-15), the chat's measured value: chunk text
+  # 2.5 s with `title_chunk` (U1, 2026-10-15), kept for `title_abstract_chunk` (ORB p95
+  # 1.46 s), the chat's measured value: chunk text
   # reranks slower than abstracts (ORB p95 1.3-1.5 s against 0.60 s). The stage gets what
   # is left of the total, as it did when ORB's frozen answering was measured.
   rerank: 2.5

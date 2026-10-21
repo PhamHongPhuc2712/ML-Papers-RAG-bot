@@ -168,14 +168,14 @@ def test_the_shipped_chat_condenses_follow_ups():
 
 def test_search_and_chat_share_one_first_stage():
     """RAG only (plan U1, 2026-10-15): the chat's measured first stage is the shipped search
-    file itself, the reranker reading title and chunk at a 2.5 s deadline; the chat has no
-    overrides of its own."""
+    file itself, the reranker reading title, abstract and chunk (since 2026-10-21) at a 2.5 s
+    deadline; the chat has no overrides of its own."""
 
     from copilot.chat.config import chat_search_config, load_chat_config
     from copilot.search.service import load_search_config
 
     shipped = load_search_config("configs/search.yaml")
-    assert shipped.rerank_text == "title_chunk" and shipped.rerank_seconds == 2.5
+    assert shipped.rerank_text == "title_abstract_chunk" and shipped.rerank_seconds == 2.5
     chat = load_chat_config("configs/chat.yaml")
     assert not hasattr(chat, "search_overrides")
     assert chat_search_config(chat) == shipped

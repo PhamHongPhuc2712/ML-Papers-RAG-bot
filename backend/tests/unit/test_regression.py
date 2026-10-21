@@ -774,9 +774,9 @@ def test_the_shipped_rerank_text_leaves_every_recorded_digest_unchanged():
             "hybrid_rerank",
             "chunks",
         )
-        for text in ("abstract", "chunk", "title_chunk")
+        for text in ("abstract", "chunk", "title_chunk", "title_abstract_chunk")
     }
-    assert len(digests) == 3
+    assert len(digests) == 4
 
 
 def test_the_search_file_names_its_rerank_text_and_refuses_an_unknown_one(tmp_path):
@@ -784,7 +784,7 @@ def test_the_search_file_names_its_rerank_text_and_refuses_an_unknown_one(tmp_pa
 
     # One first stage since the RAG-only plan's U1 (2026-10-15): the chat's measured one.
     shipped = load_search_config("configs/search.yaml")
-    assert shipped.rerank_text == "title_chunk"
+    assert shipped.rerank_text == "title_abstract_chunk"
     path = tmp_path / "search.yaml"
     path.write_text("candidates:\n  source: chunks\nrerank:\n  text: section\n", encoding="utf-8")
     with pytest.raises(ValueError, match="rerank.text"):
@@ -805,7 +805,7 @@ def test_the_reranker_pair_budget_is_optional_and_validated(tmp_path):
     assert shipped.rerank_pair_max_tokens is None
     text = Path("configs/search.yaml").read_text(encoding="utf-8")
     path = tmp_path / "search.yaml"
-    shipped_text = "  text: title_chunk"
+    shipped_text = "  text: title_abstract_chunk"
     path.write_text(text.replace(shipped_text, f"{shipped_text}\n  pair_max_tokens: 512"))
     assert load_search_config(path).rerank_pair_max_tokens == 512
     path.write_text(text.replace(shipped_text, f"{shipped_text}\n  pair_max_tokens: 0"))
@@ -872,7 +872,7 @@ def test_a_paper_level_variant_reads_abstracts_unless_it_asks_for_chunk_text():
     papers = Variant(name="papers", mode="hybrid_rerank", candidates="papers")
     assert search_config_for(papers, shipped, "papers").rerank_text == "abstract"
     assert search_config_for(papers, shipped, "both").rerank_text == "abstract"
-    assert search_config_for(papers, shipped, "chunks").rerank_text == "title_chunk"
+    assert search_config_for(papers, shipped, "chunks").rerank_text == "title_abstract_chunk"
     asked = Variant(
         name="asked",
         mode="hybrid_rerank",

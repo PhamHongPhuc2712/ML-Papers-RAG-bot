@@ -1,0 +1,73 @@
+# 2026-10-20, the developer's request after U4: the cross-encoder reading title + abstract + the
+# chunk that found the paper, measured on S1's passage questions (571 model-written questions about one passage each),
+# data/fixtures/retrieval-sections/, text under ${DATA_DIR}/benchmarks/sections-v1/. A measurement, not a decision:
+# configs/search.yaml is unchanged. The harness's validation `decision` is not read.
+#
+# `shipped` and `abstract_reranker` are U4's variants run again: U4 ran before 69,019
+# bibliography chunks were relabelled out of search (reports/references-relabel.md).
+# The new text puts title and abstract first, so the 1,024-token pair budget truncates the chunk;
+# `title_abstract_chunk_1536` reads more of it. Development and validation only; test stays unread.
+#
+#   eval retrieval --config configs/experiments/rerank-title-abstract-chunk-sections.yaml --split development --out reports/retrieval/rerank-title-abstract-chunk-sections
+#   eval retrieval --config configs/experiments/rerank-title-abstract-chunk-sections.yaml --split validation --out reports/retrieval/rerank-title-abstract-chunk-sections
+schema_version: 1
+name: rerank-title-abstract-chunk-sections
+
+dataset:
+  path: data/fixtures/retrieval-sections
+  query_text: benchmarks/sections-v1/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: m2-20260924T095724Z
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: shipped
+    mode: hybrid_rerank
+    candidates: chunks
+  - name: abstract_reranker
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: shipped
+    changes: the former search page's reranker, title + abstract at a 1.5 s rerank deadline
+    search:
+      rerank: {text: abstract}
+      deadlines_seconds: {rerank: 1.5}
+  - name: title_abstract_chunk
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: shipped
+    changes: the reranker reads title + abstract + the chunk that found the paper, 1,024-token pairs
+    search:
+      rerank: {text: title_abstract_chunk}
+  - name: title_abstract_chunk_1536
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: shipped
+    changes: title + abstract + chunk with 1,536-token pairs, so less of the chunk is cut
+    pair_max_tokens: 1536
+    search:
+      rerank: {text: title_abstract_chunk}
+
+decision:
+  primary: ndcg@10
+  order: [shipped]
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
+  require_undegraded: true

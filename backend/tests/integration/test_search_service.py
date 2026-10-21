@@ -658,6 +658,20 @@ def test_title_chunk_reranking_prepends_the_title_to_the_chunk(corpus, body_chun
     assert texts == [f"{rows[pid].title}\n{body_chunks[chosen[pid]]}" for pid in head]
 
 
+def test_title_abstract_chunk_reranking_reads_the_abstract_before_the_chunk(corpus, body_chunks):
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "title_abstract_chunk")
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    head = [paper_id for paper_id, _ in trace.stages["fusion"]["candidates"]][:50]
+    rows = PaperStore(corpus.engine).load(head)
+    stage = trace.stages["rerank"]
+    assert stage["text"] == "title_abstract_chunk"
+    chosen = stage["chunks"]
+    (texts,) = reranker.texts
+    # The pair budget truncates from the end, so the chunk is what gets cut, never the abstract.
+    assert texts == [f"{rows[pid].text}\n{body_chunks[chosen[pid]]}" for pid in head]
+
+
 def test_the_chunk_a_paper_ranked_higher_by_is_the_one_reranked(corpus, body_chunks):
     """When the branches disagree, the chunk from the branch that ranked the paper better wins."""
 

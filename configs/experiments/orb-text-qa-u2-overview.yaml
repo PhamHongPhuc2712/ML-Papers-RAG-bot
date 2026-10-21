@@ -34,6 +34,10 @@ corpus:
   release: orb-v1
 
 search: configs/search.yaml
+# Pinned 2026-10-21, when configs/search.yaml moved to title_abstract_chunk: the stage U2 ran.
+search_overrides:
+  rerank: {text: title_chunk}
+  deadlines_seconds: {rerank: 2.5}
 models: configs/models.yaml
 evidence: configs/evidence.yaml
 
