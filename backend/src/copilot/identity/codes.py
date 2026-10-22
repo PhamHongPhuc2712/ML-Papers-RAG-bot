@@ -2,8 +2,9 @@
 
 A code is 6 random digits, stored only as an HMAC of (email, code) under a key derived from
 SECRET_KEY. It lives 10 minutes, works once and dies on the 5th wrong try; a new code ends
-every earlier one. An email may ask once a minute (refused, with the wait) and 5 times an
-hour (beyond that nothing is sent, and the caller is not told). Only the newest code for an
+every earlier one. An email may ask once a minute while its newest code is unused (refused,
+with the wait; a code already signed in with does not hold the next one back, A6) and 5 times
+an hour (beyond that nothing is sent, and the caller is not told). Only the newest code for an
 email is ever checked. Requests for one email are serialized by a transaction-scoped
 advisory lock, so two at once cannot both pass a limit.
 """
@@ -76,17 +77,27 @@ class CodeStore:
         now = self._clock()
         with self._engine.begin() as connection:
             _lock(connection, email)
-            recent = connection.execute(
+            newest = connection.execute(
                 text(
-                    "select max(created_at) as last, count(*) as hour from login_codes"
-                    " where email = :email and created_at > :since"
+                    "select created_at, consumed_at from login_codes where email = :email"
+                    " order by created_at desc limit 1"
+                ),
+                {"email": email},
+            ).first()
+            if (
+                newest is not None
+                and newest.consumed_at is None
+                and now - newest.created_at < RESEND_AFTER
+            ):
+                wait = (RESEND_AFTER - (now - newest.created_at)).total_seconds()
+                raise CodeRateLimited(math.ceil(wait))
+            hour = connection.execute(
+                text(
+                    "select count(*) from login_codes where email = :email and created_at > :since"
                 ),
                 {"email": email, "since": now - timedelta(hours=1)},
-            ).one()
-            if recent.last is not None and now - recent.last < RESEND_AFTER:
-                wait = (RESEND_AFTER - (now - recent.last)).total_seconds()
-                raise CodeRateLimited(math.ceil(wait))
-            if recent.hour >= PER_HOUR:
+            ).scalar_one()
+            if hour >= PER_HOUR:
                 return Issued(None, None)
             connection.execute(
                 text(

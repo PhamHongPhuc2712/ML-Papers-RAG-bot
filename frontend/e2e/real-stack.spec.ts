@@ -1,7 +1,8 @@
-// Run by hand against the real local stack (REAL_STACK=1). It signs in as REAL_EMAIL with the
+// Run by hand against the real local stack (REAL_STACK=1). It signs up (or in) as REAL_EMAIL with the
 // code the API emails to Mailpit (MAILPIT_URL, default http://127.0.0.1:8025), asks for papers on a topic and a follow-up, opens a citation, the cited paper's page,
-// History and Settings, and saves screenshots in light and dark (UI redesign, D4). Two turns: about
-// $0.01 on the hosted model. Needs an idle GPU.
+// History and Settings, and saves screenshots in light and dark (UI redesign, D4). With REAL_DELETE=1 it
+// also rates the answer, checks usage, deletes all chats and then the account, each by emailed code
+// (sign-up plan, A6): use a throwaway email. Two turns: about $0.01 on the hosted model. Needs an idle GPU.
 import { expect, test, type Page } from "@playwright/test";
 
 const MAILPIT = (process.env.MAILPIT_URL ?? "http://127.0.0.1:8025").replace(/\/+$/, "");
@@ -31,7 +32,7 @@ const shot = async (page: Page, name: string) => {
 };
 
 test("an answer, its panel, a follow-up, the paper, History and Settings on the real stack", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(420_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/login?next=%2F");
   const email = process.env.REAL_EMAIL ?? "";
@@ -48,6 +49,9 @@ test("an answer, its panel, a follow-up, the paper, History and Settings on the 
   await box.fill("Find papers on contrastive learning of sentence embeddings");
   await box.press("Enter");
   await expect(answers).toHaveCount(1, { timeout: 90_000 });
+  const helpful = answers.first().getByRole("button", { name: "Helpful", exact: true });
+  await helpful.click();
+  await expect(helpful).toHaveAttribute("aria-pressed", "true");
   await answers.first().getByRole("button", { name: /^References/ }).click();
   await expect(page.getByRole("complementary", { name: "References" })).toBeVisible();
   await shot(page, "references");
@@ -73,5 +77,35 @@ test("an answer, its panel, a follow-up, the paper, History and Settings on the 
 
   await page.goto("/account");
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(page.getByText(/2 of 20 answers used today, 2 this month\./)).toBeVisible();
   await shot(page, "settings");
+  if (!process.env.REAL_DELETE) return;
+
+  // The rating was kept: reopen the chat from the sidebar.
+  await page.getByRole("navigation", { name: "Chats" }).getByRole("link").first().click();
+  await expect(page.getByRole("article", { name: "Answer" }).first().getByRole("button", { name: "Helpful", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+  await shot(page, "rated");
+
+  // Each delete asks for a fresh code; codes are 60 s apart per email.
+  await page.goto("/account");
+  let sent = Date.now() - 1000;
+  await page.getByRole("button", { name: "Delete all chats" }).click();
+  await page.getByLabel("Code").fill(await codeFor(email, sent));
+  await shot(page, "delete-chats");
+  await page.getByRole("button", { name: "Delete all chats" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "All of your chats are deleted." })).toBeVisible();
+  await page.goto("/history");
+  await expect(page.getByText("Your chats appear here after your first question.")).toBeVisible();
+  await page.goto("/account");
+  await expect(page.getByText(/2 of 20 answers used today/)).toBeVisible();
+
+  await page.waitForTimeout(61_000);
+  sent = Date.now() - 1000;
+  await page.getByRole("button", { name: "Delete account" }).click();
+  await page.getByLabel("Code").fill(await codeFor(email, sent));
+  await page.getByRole("button", { name: "Delete my account" }).click();
+  await page.waitForURL((url) => url.pathname === "/");
+  await expect(page.getByRole("link", { name: "Sign up" })).toBeVisible();
+  await shot(page, "deleted");
 });

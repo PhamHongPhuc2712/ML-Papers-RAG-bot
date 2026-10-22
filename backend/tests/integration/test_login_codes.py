@@ -198,6 +198,22 @@ def test_asking_again_within_a_minute_is_refused_with_its_wait(codes):
     assert len(sender.sent) == 1
 
 
+def test_a_used_code_does_not_make_the_next_one_wait(codes):
+    # Found by A6's walk: Settings asked for a delete code 24 s after sign-in, was refused, and
+    # pointed at the sign-in code, already used. The wait is for a code still waiting to be used.
+    make, sender, clock = codes
+    email = _email()
+    with make() as client:
+        _ask(client, email)
+        assert _sign_in(client, email, _code_in(sender.sent[-1].body)).status_code == 200
+        clock.advance(seconds=20)
+        again = _ask(client, email)
+        clock.advance(seconds=5)
+        unused = _ask(client, email)
+    assert again.status_code == 202 and len(sender.sent) == 2
+    assert unused.status_code == 429 and unused.json()["error"]["retry_after"] == 55
+
+
 def test_the_sixth_code_in_an_hour_is_silently_not_sent(codes):
     make, sender, clock = codes
     email = _email()

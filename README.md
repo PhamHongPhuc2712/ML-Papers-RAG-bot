@@ -27,7 +27,7 @@ The corpus and the indexes are built by the pipeline in `CLAUDE.md` (`corpus run
 build-index`, `corpus activate`).
 
 ```bash
-docker compose --profile core up -d postgres qdrant
+docker compose --profile core up -d postgres qdrant mailpit   # sign-in codes land in http://127.0.0.1:8025
 uv sync --project backend --frozen --group dev --group models
 uv run --env-file .env --project backend alembic -c backend/alembic.ini upgrade head
 uv run --env-file .env --project backend python -m copilot.cli search fetch-model

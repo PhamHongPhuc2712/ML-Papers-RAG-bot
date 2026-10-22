@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Sign-up plan (2026-10-21, `docs/superpowers/plans/2026-10-21-sign-up.md`, A1–A6, gate G8):** sign-in and
 sign-up by a 6-digit code emailed to **Mailpit**, a local mail catcher (`docker compose --profile core up -d
 mailpit`, inbox http://127.0.0.1:8025; test profile `mailpit-test` on 51025/58025), `SMTP_HOST`/`SMTP_PORT`/
-`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1–A5 done** (Helpful / Not helpful under each answer, `PUT /v1/chats/{chat}/messages/{message}/feedback`, counted by `chat stats`; Settings: usage, delete all chats / the account by a code from `POST /v1/me/code`;
+`MAIL_FROM` in `.env`; codes only, no passwords; 20 answers a day. **A1–A6 done** (the real-stack walk passed 2026-10-22, `reports/sign-up.md`; a used code no longer makes the next one wait a minute; Helpful / Not helpful under each answer, `PUT /v1/chats/{chat}/messages/{message}/feedback`, counted by `chat stats`; Settings: usage, delete all chats / the account by a code from `POST /v1/me/code`;
 the count lives in `answer_usage`, so deleting chats does not reset it; no password code is left. The daily limit: `limits.daily_answers` in `configs/chat.yaml`, a `429 daily_limit`;
 the sign-in page; `/v1/auth/token` takes
 `{email, code}` only).
@@ -272,6 +272,7 @@ npm run dev                               # http://localhost:3000, BACKEND_URL d
 npm run lint && npm run typecheck && npm test && npm run e2e   # checks; e2e uses the scripted backend
 npm run api-types                         # after re-exporting frontend/openapi.json
 REAL_STACK=1 REAL_EMAIL=... npx playwright test real-stack.spec.ts   # against a running API + `npm run start` + Mailpit (reads the code from it); spends
+REAL_STACK=1 REAL_DELETE=1 REAL_EMAIL=walk-...@example.org npx playwright test real-stack.spec.ts   # + rating, usage, both deletes by code (a throwaway email)
 ```
 
 `mypy` **must** be given `--config-file`: run from the repository root it finds no
