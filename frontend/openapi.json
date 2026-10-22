@@ -95,6 +95,21 @@
             "title": "Evidence",
             "type": "array"
           },
+          "feedback": {
+            "anyOf": [
+              {
+                "enum": [
+                  "helpful",
+                  "not_helpful"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -357,6 +372,32 @@
           "request_id"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "FeedbackRequest": {
+        "additionalProperties": false,
+        "description": "A rating for an answer; null clears it (sign-up plan, A5).",
+        "properties": {
+          "rating": {
+            "anyOf": [
+              {
+                "enum": [
+                  "helpful",
+                  "not_helpful"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "FeedbackRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1368,6 +1409,65 @@
           }
         ],
         "summary": "Chat"
+      }
+    },
+    "/v1/chats/{chat_id}/messages/{message_id}/feedback": {
+      "put": {
+        "description": "Helpful / Not helpful on an answer of the caller's chat; null clears it (A5).",
+        "operationId": "feedback_v1_chats__chat_id__messages__message_id__feedback_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Chat Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Feedback"
       }
     },
     "/v1/corpus/coverage": {

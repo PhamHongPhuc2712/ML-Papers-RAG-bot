@@ -12,14 +12,14 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from ..config import Settings
-from ..contracts import ChatDetail, ChatList, ChatRequest
+from ..contracts import ChatDetail, ChatList, ChatRequest, FeedbackRequest
 from ..identity.api import ConfirmRequest, CurrentPrincipal, confirm_code
 from ..search.api import ApiError, request_id
 from .config import load_chat_config
 from .graph import ChatGraph, build_default_chat_graph
 from .limits import DailyLimitReached
 from .service import ChatService
-from .store import ChatNotFound, ChatStore, TurnConflict
+from .store import ChatNotFound, ChatStore, MessageNotRatable, TurnConflict
 
 logger = logging.getLogger(__name__)
 _CONFLICTS = {
@@ -122,6 +122,30 @@ def router() -> APIRouter:
             _store(request).delete_chat(principal, chat_id)
         except ChatNotFound as error:
             raise _not_found() from error
+        return Response(status_code=204)
+
+    @api.put(
+        "/v1/chats/{chat_id}/messages/{message_id}/feedback",
+        status_code=204,
+        response_class=Response,
+    )
+    def feedback(
+        chat_id: UUID,
+        message_id: UUID,
+        body: FeedbackRequest,
+        principal: CurrentPrincipal,
+        request: Request,
+    ) -> Response:
+        """Helpful / Not helpful on an answer of the caller's chat; null clears it (A5)."""
+
+        try:
+            _store(request).set_feedback(principal, chat_id, message_id, body.rating)
+        except ChatNotFound as error:
+            raise _not_found() from error
+        except MessageNotRatable as error:
+            raise ApiError(
+                409, "message_not_ratable", "only a finished answer in this chat can be rated"
+            ) from error
         return Response(status_code=204)
 
     @api.post(

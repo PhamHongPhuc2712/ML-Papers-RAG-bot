@@ -24,6 +24,7 @@ from ..contracts import (
     ChatRequest,
     ChatSummary,
     Claim,
+    Feedback,
     Principal,
     Reference,
     StoredEvidence,
@@ -36,6 +37,10 @@ ANSWERED = ("complete", "insufficient")
 
 class ChatNotFound(Exception):
     pass
+
+
+class MessageNotRatable(Exception):
+    """Not an answer in this chat, or one still pending, failed or interrupted."""
 
 
 class TurnConflict(Exception):
@@ -55,7 +60,7 @@ class Turn:
 
 _MESSAGE_COLUMNS = (
     "id, ordinal, role, status, text, claims, standalone_query, warnings, error_code,"
-    " corpus_release_id, created_at, paper_references"
+    " corpus_release_id, created_at, paper_references, feedback"
 )
 
 
@@ -147,6 +152,34 @@ class ChatStore:
                     text("delete from chats where user_id = :user"), {"user": principal.user_id}
                 ).rowcount
             )
+
+    def set_feedback(
+        self, principal: Principal, chat_id: UUID, message_id: UUID, rating: Feedback | None
+    ) -> None:
+        """Rate an answered assistant message of the principal's chat; ``None`` clears it."""
+
+        with self._engine.begin() as connection:
+            owned = connection.execute(
+                text("select 1 from chats where id = :chat and user_id = :user"),
+                {"chat": chat_id, "user": principal.user_id},
+            ).first()
+            if owned is None:
+                raise ChatNotFound()
+            updated = connection.execute(
+                text(
+                    "update chat_messages set feedback = :rating, feedback_at = :at"
+                    " where id = :id and chat_id = :chat and role = 'assistant'"
+                    " and status in ('complete', 'insufficient')"
+                ),
+                {
+                    "rating": rating,
+                    "at": None if rating is None else self._clock(),
+                    "id": message_id,
+                    "chat": chat_id,
+                },
+            ).rowcount
+        if not updated:
+            raise MessageNotRatable()
 
     def interrupt_stale(self, *, stale_after: timedelta) -> int:
         now = self._clock()
@@ -387,7 +420,7 @@ class ChatStore:
 
 
 def chat_stats(engine: Engine, *, day: date) -> dict[str, Any]:
-    """One UTC day of assistant turns: counts by status and error, stage timings, cost.
+    """One UTC day of assistant turns: counts by status, error and rating, stage timings, cost.
 
     Reads only status, error code, trace and cost: never a message's text or its user.
     """
@@ -435,6 +468,15 @@ def chat_stats(engine: Engine, *, day: date) -> dict[str, Any]:
         cost = connection.execute(
             text(f"select coalesce(sum(cost_usd), 0) from chat_messages where {window}"), params
         ).scalar_one()
+        ratings = connection.execute(
+            text(
+                "select count(*) filter (where feedback = 'helpful') as helpful,"
+                " count(*) filter (where feedback = 'not_helpful') as not_helpful,"
+                " count(*) filter (where feedback is null) as unrated"
+                f" from chat_messages where {window} and status in ('complete', 'insufficient')"
+            ),
+            params,
+        ).one()
     return {
         "day": day.isoformat(),
         "turns": sum(statuses.values()),
@@ -442,6 +484,12 @@ def chat_stats(engine: Engine, *, day: date) -> dict[str, Any]:
         "error_codes": error_codes,
         "stages": stages,
         "cost_usd": round(float(cost), 6),
+        # Answered turns of the day by their owner's rating (sign-up plan, A5).
+        "feedback": {
+            "helpful": int(ratings.helpful),
+            "not_helpful": int(ratings.not_helpful),
+            "unrated": int(ratings.unrated),
+        },
     }
 
 
@@ -544,6 +592,7 @@ def _message(
         error_code=row.error_code,
         corpus_release_id=row.corpus_release_id,
         created_at=row.created_at,
+        feedback=row.feedback,
     )
 
 

@@ -528,9 +528,7 @@ class LlmCall(Base):
 
     __tablename__ = "llm_calls"
     __table_args__ = (
-        CheckConstraint(
-            "purpose in ('search', 'evaluation', 'chat')", name="ck_llm_calls_purpose"
-        ),
+        CheckConstraint("purpose in ('search', 'evaluation', 'chat')", name="ck_llm_calls_purpose"),
         CheckConstraint(
             "status in ('reserved', 'succeeded', 'failed')", name="ck_llm_calls_status"
         ),
@@ -644,6 +642,10 @@ class ChatMessageRow(Base):
             "status in ('pending', 'complete', 'insufficient', 'failed', 'interrupted')",
             name="ck_chat_messages_status",
         ),
+        CheckConstraint("feedback in ('helpful', 'not_helpful')", name="ck_chat_messages_feedback"),
+        CheckConstraint(
+            "(feedback is null) = (feedback_at is null)", name="ck_chat_messages_feedback_at"
+        ),
         UniqueConstraint("chat_id", "ordinal", name="uq_chat_messages_ordinal"),
         UniqueConstraint(
             "user_id", "request_id", "role", name="uq_chat_messages_user_request_role"
@@ -682,6 +684,9 @@ class ChatMessageRow(Base):
     paper_references: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list
     )
+    # Helpful / Not helpful from the chat's owner (sign-up plan, A5); null until rated.
+    feedback: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class MessageEvidence(Base):

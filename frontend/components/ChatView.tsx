@@ -232,7 +232,7 @@ export function ChatView({ chatId, initialDraft = null, autoSend = false, corpus
                 <li key={message.id} className="question" data-message={message.id}><p className="bubble">{message.text}</p></li>
               ) : message.status === "complete" || message.status === "insufficient" ? (
                 <li key={message.id}>
-                  <Answer message={message} selected={panel?.messageId === message.id ? panel.evidenceId : null}
+                  <Answer message={message} chatId={id} selected={panel?.messageId === message.id ? panel.evidenceId : null}
                     onCite={(evidenceId) => cite(message, evidenceId)}
                     onReferences={() => setPanel({ messageId: message.id, paperId: null, evidenceId: null })} />
                 </li>

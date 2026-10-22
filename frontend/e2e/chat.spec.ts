@@ -215,3 +215,38 @@ test("a database outage is said, with a retry, never shown as an empty history",
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
   await expect(page.getByText("could not be loaded")).toHaveCount(0);
 });
+
+test("Helpful / Not helpful rates an answer, changes it, clears it and comes back after a reload", async ({ page }) => {
+  await page.getByLabel("Ask about ML papers").fill("How are sentence pairs formed?");
+  await page.keyboard.press("Enter");
+  const answer = page.getByRole("article", { name: "Answer" });
+  const helpful = answer.getByRole("button", { name: "Helpful", exact: true });
+  const notHelpful = answer.getByRole("button", { name: "Not helpful" });
+  await expect(helpful).toHaveAttribute("aria-pressed", "false");
+  await helpful.click();
+  await expect(helpful).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(page.getByRole("article", { name: "Answer" }).getByRole("button", { name: "Helpful", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+  await notHelpful.click();
+  await expect(notHelpful).toHaveAttribute("aria-pressed", "true");
+  await expect(helpful).toHaveAttribute("aria-pressed", "false");
+  // Choosing the same rating again clears it.
+  await notHelpful.click();
+  await expect(notHelpful).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(page.getByRole("article", { name: "Answer" }).getByRole("button", { name: "Not helpful" }))
+    .toHaveAttribute("aria-pressed", "false");
+  await noSeriousViolationsInBothThemes(page);
+});
+
+test("a rating that cannot be saved goes back and says so", async ({ page, request }) => {
+  await page.getByLabel("Ask about ML papers").fill("How are sentence pairs formed?");
+  await page.keyboard.press("Enter");
+  const answer = page.getByRole("article", { name: "Answer" });
+  await expect(answer).toContainText("Sentence pairs are formed");
+  await request.post(`${MOCK}/__control/database?down=1`);
+  await answer.getByRole("button", { name: "Helpful", exact: true }).click();
+  await expect(answer.getByRole("alert")).toHaveText("Your rating could not be saved. Try again in a moment.");
+  await expect(answer.getByRole("button", { name: "Helpful", exact: true })).toHaveAttribute("aria-pressed", "false");
+});

@@ -22,6 +22,8 @@ const PATHS = {
   check: "M5 12l5 5L19 7",
   back: "M15 6l-6 6l6 6",
   copy: "M9 9h10v10H9zM5 15V5h10",
+  thumbUp: "M7 11v9H4v-9zM7 11l4-7c1.5 0 2.5 1 2 3l-1 3h6a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 16.8 20H7",
+  thumbDown: "M7 13V4H4v9zM7 13l4 7c1.5 0 2.5-1 2-3l-1-3h6a2 2 0 0 0 2-2.3l-1.2-6A2 2 0 0 0 16.8 4H7",
   books: "M5 4h4v16H5zM10 4h4v16h-4zM15.5 4.5l3.8 1l-3.9 15l-3.8-1",
   external: "M14 5h5v5M19 5l-8 8M18 14v5H5V6h5",
   history: "M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4M12 8v4l3 2",

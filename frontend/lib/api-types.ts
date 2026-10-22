@@ -133,6 +133,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chats/{chat_id}/messages/{message_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Feedback
+         * @description Helpful / Not helpful on an answer of the caller's chat; null clears it (A5).
+         */
+        put: operations["feedback_v1_chats__chat_id__messages__message_id__feedback_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/corpus/coverage": {
         parameters: {
             query?: never;
@@ -279,6 +299,8 @@ export interface components {
             error_code?: string | null;
             /** Evidence */
             evidence?: components["schemas"]["StoredEvidence"][];
+            /** Feedback */
+            feedback?: ("helpful" | "not_helpful") | null;
             /**
              * Id
              * Format: uuid
@@ -389,6 +411,14 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+        };
+        /**
+         * FeedbackRequest
+         * @description A rating for an answer; null clears it (sign-up plan, A5).
+         */
+        FeedbackRequest: {
+            /** Rating */
+            rating: ("helpful" | "not_helpful") | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -905,6 +935,40 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_v1_chats__chat_id__messages__message_id__feedback_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {

@@ -143,6 +143,7 @@ class ChatRequest(ContractModel):
 
 
 ChatStatus = Literal["pending", "complete", "insufficient", "failed", "interrupted"]
+Feedback = Literal["helpful", "not_helpful"]
 
 
 class StoredEvidence(ContractModel):
@@ -190,6 +191,13 @@ class ChatMessage(ContractModel):
     error_code: str | None = None
     corpus_release_id: str | None = None
     created_at: datetime
+    feedback: Feedback | None = None
+
+
+class FeedbackRequest(ContractModel):
+    """A rating for an answer; null clears it (sign-up plan, A5)."""
+
+    rating: Feedback | None
 
 
 class ChatSummary(ContractModel):

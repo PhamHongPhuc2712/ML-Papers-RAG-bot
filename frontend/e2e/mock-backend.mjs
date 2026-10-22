@@ -196,6 +196,22 @@ createServer(async (req, res) => {
     return json(res, 200, { request_id: randomUUID(), items });
   }
   if (path === "/v1/chats/stream" && req.method === "POST") return stream(req, res, await body(req));
+  // Helpful / Not helpful (sign-up plan, A5): a finished answer of the caller's chat; null clears.
+  const rated = path.match(/^\/v1\/chats\/([^/]+)\/messages\/([^/]+)\/feedback$/);
+  if (rated && req.method === "PUT") {
+    if (state.databaseDown) return error(res, 503, "database_unavailable", "database is unavailable", true);
+    const found = state.chats.get(rated[1]);
+    if (!found) return error(res, 404, "chat_not_found", "no such chat");
+    const message = found.messages.find((m) => m.id === rated[2]);
+    if (!message || message.role !== "assistant" || !["complete", "insufficient"].includes(message.status)) {
+      return error(res, 409, "message_not_ratable", "only a finished answer in this chat can be rated");
+    }
+    const { rating } = await body(req);
+    if (![null, "helpful", "not_helpful"].includes(rating)) return error(res, 422, "validation_error", "rating: invalid");
+    message.feedback = rating;
+    res.writeHead(204);
+    return res.end();
+  }
   const chat = path.match(/^\/v1\/chats\/([^/]+)$/);
   if (chat) {
     const found = state.chats.get(chat[1]);

@@ -422,6 +422,8 @@ mark { background: var(--mark); color: var(--ink); border-radius: 3px; padding: 
 .chip.static { margin-left: 0; vertical-align: 0; }
 .answer-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
 .answer-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.875rem; }
+.answer-actions .rating { display: inline-flex; gap: 8px; margin-left: auto; }
+.answer-actions .rating button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
 .turn-note { display: flex; align-items: center; gap: 12px; color: var(--ink-soft); }
 .turn-note button { padding: 6px 12px; font-size: 0.875rem; color: var(--ink); }
 
