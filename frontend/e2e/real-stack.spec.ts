@@ -50,7 +50,9 @@ test("an answer, its panel, a follow-up, the paper, History and Settings on the 
   await box.press("Enter");
   await expect(answers).toHaveCount(1, { timeout: 90_000 });
   const helpful = answers.first().getByRole("button", { name: "Helpful", exact: true });
+  const saved = page.waitForResponse((r) => r.url().endsWith("/feedback") && r.request().method() === "PUT");
   await helpful.click();
+  expect((await saved).status()).toBe(204);
   await expect(helpful).toHaveAttribute("aria-pressed", "true");
   await answers.first().getByRole("button", { name: /^References/ }).click();
   await expect(page.getByRole("complementary", { name: "References" })).toBeVisible();

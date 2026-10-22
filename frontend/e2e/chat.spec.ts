@@ -222,17 +222,24 @@ test("Helpful / Not helpful rates an answer, changes it, clears it and comes bac
   const answer = page.getByRole("article", { name: "Answer" });
   const helpful = answer.getByRole("button", { name: "Helpful", exact: true });
   const notHelpful = answer.getByRole("button", { name: "Not helpful" });
+  // The button shows the choice at once; wait for the server to keep it before the next step,
+  // or a reload (or the next click) can overtake the save.
+  const rate = async (button: typeof helpful) => {
+    const saved = page.waitForResponse((r) => r.url().endsWith("/feedback") && r.request().method() === "PUT");
+    await button.click();
+    expect((await saved).status()).toBe(204);
+  };
   await expect(helpful).toHaveAttribute("aria-pressed", "false");
-  await helpful.click();
+  await rate(helpful);
   await expect(helpful).toHaveAttribute("aria-pressed", "true");
   await page.reload();
   await expect(page.getByRole("article", { name: "Answer" }).getByRole("button", { name: "Helpful", exact: true }))
     .toHaveAttribute("aria-pressed", "true");
-  await notHelpful.click();
+  await rate(notHelpful);
   await expect(notHelpful).toHaveAttribute("aria-pressed", "true");
   await expect(helpful).toHaveAttribute("aria-pressed", "false");
   // Choosing the same rating again clears it.
-  await notHelpful.click();
+  await rate(notHelpful);
   await expect(notHelpful).toHaveAttribute("aria-pressed", "false");
   await page.reload();
   await expect(page.getByRole("article", { name: "Answer" }).getByRole("button", { name: "Not helpful" }))
