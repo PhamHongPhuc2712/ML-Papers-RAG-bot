@@ -73,5 +73,6 @@ paper, History) match `reports/ui-redesign/`'s and are not copied again.
 ## Checks
 
 Backend full suite 804 passed (`.env.test`; a first run had 804 passed and 1 setup error in the offline `test_vectors.py::test_both_branches_share_one_filter_and_never_serve_deleted_points`, which passed alone, in the unit directory (499) and in a full re-run, under 8 GB of swap: not reproduced), offline set, Ruff, mypy strict; frontend lint,
-typecheck, vitest 35, Playwright 50 with axe in both themes, `next build`. CI on the pushed
-commit: see the progress board.
+typecheck, vitest 35, Playwright 50 with axe in both themes, `next build`. CI `checks` green on `69976a6`
+(run 39724190289). The A6 commit's own CI run failed: the A5 rating test reloaded before the
+rating's save had answered; fixed in `69976a6` (the test waits for the 204). **G8 met.**
