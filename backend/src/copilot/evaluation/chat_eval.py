@@ -49,42 +49,32 @@ def condition_inputs(
     raise ValueError(f"unknown condition: {condition}")
 
 
-def _invoke(graph: Any, message: str, history: list[HistoryItem], run_id: str) -> dict[str, Any]:
-    return dict(
-        graph.invoke(
-            {
-                "message": message,
-                "history": history,
-                "run_id": run_id,
-                "warnings": [],
-                "timings": {},
-                "cost_usd": 0.0,
-            }
-        )
-    )
+def _invoke(pipeline: Any, message: str, history: list[HistoryItem], run_id: str) -> Any:
+    return pipeline.run(message, history, run_id=run_id)
 
 
 def run_conversation(
     conversation: Conversation,
     *,
-    graphs: Mapping[bool, Any],
+    pipelines: Mapping[bool, Any],
     judge: Any,
     run_id: str,
 ) -> dict[str, dict[str, Any]]:
     """Turn 1 once, then turn 2 under each condition, each judged against B's reference.
 
-    ``graphs[True]`` condenses follow-ups and ``graphs[False]`` does not; both are the chat's
-    graph over the same retriever and generator.
+    ``pipelines[True]`` condenses follow-ups and ``pipelines[False]`` does not.
     """
 
-    first = _invoke(graphs[False], conversation.first, [], run_id)
-    first_answer = answer_text(first["outcome"].answer) or INSUFFICIENT_TEXT
+    first = _invoke(pipelines[False], conversation.first, [], run_id)
+    assert first.outcome is not None
+    first_answer = answer_text(first.outcome.answer) or INSUFFICIENT_TEXT
     rows: dict[str, dict[str, Any]] = {}
     for condition in CONDITIONS:
         message, history, condense = condition_inputs(conversation, condition, first_answer)
-        state = _invoke(graphs[condense], message, history, run_id)
-        outcome = state["outcome"]
-        evidence = {item.id: item for item in state.get("evidence", [])}
+        state = _invoke(pipelines[condense], message, history, run_id)
+        outcome = state.outcome
+        assert outcome is not None
+        evidence = {item.id: item for item in state.evidence}
         cited = sorted(
             {
                 str(evidence[label].source_id)
@@ -116,16 +106,16 @@ def run_conversation(
             "family_id": conversation.paper_id,
             "type": "followup",
             "condition": condition,
-            "query": state["standalone"],
-            "gold_in_papers": conversation.paper_id in state.get("paper_ids", []),
+            "query": state.standalone,
+            "gold_in_papers": conversation.paper_id in state.paper_ids,
             "cited_map": cited_map(cited, conversation.paper_id),
             "provenance_valid": outcome.provenance_valid,
             "abstained": abstained,
             # The QA runner's column and rule: an abstention is wrong (B has an answer).
             "equivalent": False if abstained else verdict,
             "judge_error": judge_error,
-            "warnings": list(state.get("warnings", [])),
-            "generation_cost_usd": float(state.get("cost_usd", 0.0)),
+            "warnings": list(state.warnings),
+            "generation_cost_usd": state.cost_usd,
             "judge_cost_usd": judge_cost,
             # Text, for the copy under DATA_DIR only.
             "answer": answer_text(outcome.answer),
@@ -242,12 +232,12 @@ def _scorings(out: Path) -> dict[str, list[str]]:
 def _build_live(
     experiment: ChatExperiment, chat: Any, settings: Any, engine: Any, data_dir: Path
 ) -> tuple[dict[bool, Any], Any, Any, dict[str, Any], list[Any]]:
-    """Both graphs over the experiment's release, as ``build_default_chat_graph`` builds the
+    """Both pipelines over the experiment's release, as ``build_default_turn_pipeline`` builds the
     served one, but with purpose ``evaluation``; then the judge, the ledger and identities."""
 
     from ..chat.condense import Condenser, load_condense_prompt
     from ..chat.config import chat_search_config
-    from ..chat.graph import build_chat_graph
+    from ..chat.pipeline import TurnPipeline
     from ..chat.retriever import CorpusRetriever, ServicePaperSearch
     from ..corpus.releases import load_release
     from ..db.session import make_engine
@@ -321,9 +311,9 @@ def _build_live(
             timeout=chat.generate_timeout,
             purpose="evaluation",
         )
-    graphs = {
-        flag: build_chat_graph(
-            condenser=condenser, retriever=retriever, generator=generator, condense_enabled=flag
+    pipelines = {
+        flag: TurnPipeline(
+            condenser=condenser, retriever=retriever, generator=generator, condense=flag
         )
         for flag in (True, False)
     }
@@ -343,7 +333,7 @@ def _build_live(
         "generator": generator.identity,
         "condense_prompt": f"{condense_prompt.name}:{condense_prompt.sha256[:12]}",
     }
-    return graphs, judge, ledger, identity, [generator, judge, service, client]
+    return pipelines, judge, ledger, identity, [generator, judge, service, client]
 
 
 def run_chat_eval(
@@ -357,7 +347,7 @@ def run_chat_eval(
     database_url: str | None = None,
     data_dir: Path | None = None,
     text_dir: Path | None = None,
-    graphs: Mapping[bool, Any] | None = None,
+    pipelines: Mapping[bool, Any] | None = None,
     judge: Any = None,
     ledger: Any = None,
 ) -> dict[str, Any]:
@@ -365,8 +355,8 @@ def run_chat_eval(
 
     Refuses the frozen split without ``frozen``, a second frozen scoring of the same
     configuration, and a worst case over ``max_spend_usd``; stops once the run's ledger spend
-    passes it. ``graphs``, ``judge`` and ``ledger`` are injected by tests; otherwise the
-    chat's graph is built over the experiment's release.
+    passes it. ``pipelines``, ``judge`` and ``ledger`` are injected by tests; otherwise the
+    chat's pipeline is built over the experiment's release.
     """
 
     from ..chat.config import load_chat_config
@@ -428,7 +418,7 @@ def run_chat_eval(
     before: dict[str, Any] = {}
     identity: dict[str, Any] = {}
     closing: list[Any] = []
-    if graphs is None or judge is None or ledger is None:
+    if pipelines is None or judge is None or ledger is None:
         from ..db.session import make_engine
 
         if settings is None:
@@ -437,7 +427,7 @@ def run_chat_eval(
             settings = Settings()  # type: ignore[call-arg]
         before = gpu_before_run()
         engine = make_engine(database_url or settings.database_url)
-        graphs, judge, ledger, identity, closing = _build_live(
+        pipelines, judge, ledger, identity, closing = _build_live(
             experiment, chat, settings, engine, data_dir
         )
 
@@ -448,7 +438,7 @@ def run_chat_eval(
         for conversation in conversations:
             try:
                 by_condition = run_conversation(
-                    conversation, graphs=graphs, judge=judge, run_id=ledger_run
+                    conversation, pipelines=pipelines, judge=judge, run_id=ledger_run
                 )
             except LlmError as error:
                 if error.code == "llm_spend_cap":

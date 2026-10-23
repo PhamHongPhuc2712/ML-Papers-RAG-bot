@@ -43,12 +43,12 @@ for U4.
 haiku.rag). Recommendations, the library, uploads, the general chat mode, the agent and M6
 are removed; spec §1 records the developer's answers. The roadmap is three plans:
 `docs/superpowers/plans/2026-10-11-chat-backend.md` (M3: C1–C7 accounts, chat history,
-`ChatOpenAI` structured output behind the ledger, a LangGraph turn over a LangChain
-retriever, SSE, follow-up evaluation), `2026-10-11-web-app.md` (M4: W1–W4, Next.js) and
+`ChatOpenAI` structured output behind the ledger, a turn pipeline, SSE, follow-up
+evaluation), `2026-10-11-web-app.md` (M4: W1–W4, Next.js) and
 `2026-10-11-search-upgrade-and-release.md` (M5: S1–S2 the search reranker's text on our
 corpus, R1–R4). The 2026-09-05 M3–M6 plans carry superseded banners. C1–C7 are done and **G3 passes**
 (2026-10-11): accounts, chat history, `ChatOpenAI` structured output behind the ledger
-(`StructuredGenerator`, adopted on ORB's frozen 400: 0.884 vs 0.880), the LangGraph turn, `POST
+(`StructuredGenerator`, adopted on ORB's frozen 400: 0.884 vs 0.880), the turn pipeline, `POST
 /v1/chats/stream` (SSE) and the follow-up evaluation, whose rule turned condensing off on 43
 underpowered conversations (`reports/chat-followups.md`); **condensing is on again since 2026-10-14**,
 the developer's recorded decision (`configs/chat.yaml`).
@@ -460,7 +460,7 @@ never runs in the ASGI event loop.
   no private collections: uploads were removed on 2026-10-11.
 - **Search** (§7): 100 BM25 + 100 dense candidates → RRF `sum(1/(60+rank))` in
   application code → cross-encoder rerank of at most 50 → 20 results. Degrades explicitly.
-- **Chat** (§9, revised 2026-10-11, built in C1–C7): a LangGraph turn — condense a follow-up into
+- **Chat** (§9, revised 2026-10-22, built in C1–C7): a three-step Python turn — condense a follow-up into
   one standalone query, one search for 10 papers, evidence chunks inside them, structured
   claims whose evidence ids are validated before the answer is stored and sent whole over
   SSE. History in PostgreSQL; every model call under the spend ledger (purpose `chat`).

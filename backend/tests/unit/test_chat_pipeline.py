@@ -1,4 +1,4 @@
-"""The chat turn as a graph: condense once, search once, answer once, degrade honestly."""
+"""The chat pipeline: condense once, search once, answer once, degrade honestly."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from uuid import uuid4
 import pytest
 
 from copilot.chat.condense import Condenser, clean_query, format_history, load_condense_prompt
-from copilot.chat.graph import build_chat_graph
-from copilot.chat.retriever import CorpusRetriever, PaperHits, from_document, to_document
+from copilot.chat.pipeline import TurnPipeline
+from copilot.chat.retriever import CorpusRetriever, PaperHits
 from copilot.chat.turns import HistoryItem
 from copilot.contracts import Evidence, Reference
 from copilot.models.generation import FakeGenerator
@@ -60,83 +60,91 @@ class Searches:
         return list(self.evidence)
 
 
-def _graph(model: ScriptedModel, evidence: list[Evidence], *, condense: bool = True):
+def _pipeline(model: ScriptedModel, evidence: list[Evidence], *, condense: bool = True):
     searches = Searches(evidence)
     retriever = CorpusRetriever(search=searches.search, evidence=searches.retrieve)
-    graph = build_chat_graph(
+    pipeline = TurnPipeline(
         condenser=Condenser(model, PROMPT, max_chars=6000),
         retriever=retriever,
         generator=FakeGenerator(),
-        condense_enabled=condense,
+        condense=condense,
     )
-    return graph, searches
+    return pipeline, searches
 
 
-def _run(graph, message: str, history: list[HistoryItem]):
-    return graph.invoke(
-        {"message": message, "history": history, "warnings": [], "timings": {}, "cost_usd": 0.0}
-    )
+def _run(pipeline, message: str, history: list[HistoryItem]):
+    return pipeline.run(message, history)
 
 
 def test_a_first_turn_skips_the_condenser():
     model = ScriptedModel([])
-    graph, searches = _graph(model, [_evidence("E1")])
-    state = _run(graph, "What does SimCSE train with?", [])
+    pipeline, searches = _pipeline(model, [_evidence("E1")])
+    state = _run(pipeline, "What does SimCSE train with?", [])
     assert model.calls == [] and searches.queries == ["What does SimCSE train with?"]
-    assert state["standalone"] == "What does SimCSE train with?"
-    assert not state["outcome"].answer.insufficient_evidence
+    assert state.standalone == "What does SimCSE train with?"
+    assert state.outcome and not state.outcome.answer.insufficient_evidence
 
 
 def test_a_follow_up_is_condensed_and_the_condensed_query_is_searched():
     model = ScriptedModel(["How large is SimCSE's training batch?"])
-    graph, searches = _graph(model, [_evidence("E1")])
-    state = _run(graph, "How large is its batch?", HISTORY)
+    pipeline, searches = _pipeline(model, [_evidence("E1")])
+    state = _run(pipeline, "How large is its batch?", HISTORY)
     assert searches.queries == ["How large is SimCSE's training batch?"]
     assert "SimCSE trains sentence embeddings" in model.calls[0][1]["content"]
-    assert state["cost_usd"] == pytest.approx(0.0001)
+    assert state.cost_usd == pytest.approx(0.0001)
 
 
 @pytest.mark.parametrize(
     "reply", ["", "   ", '{"query": "x"}', "x" * 2001, LlmError("llm_timeout", retryable=True)]
 )
 def test_a_failed_condense_falls_back_to_the_message(reply):
-    graph, searches = _graph(ScriptedModel([reply]), [_evidence("E1")])
-    state = _run(graph, "How large is its batch?", HISTORY)
+    pipeline, searches = _pipeline(ScriptedModel([reply]), [_evidence("E1")])
+    state = _run(pipeline, "How large is its batch?", HISTORY)
     assert searches.queries == ["How large is its batch?"]
-    assert "condense_failed" in state["warnings"]
-    assert state["outcome"].answer.claims
+    assert "condense_failed" in state.warnings
+    assert state.outcome and state.outcome.answer.claims
+    assert state.cost_usd == (0.0 if isinstance(reply, LlmError) else pytest.approx(0.0001))
 
 
 def test_the_spend_cap_stops_the_turn():
-    graph, searches = _graph(ScriptedModel([LlmError("llm_spend_cap")]), [_evidence("E1")])
+    pipeline, searches = _pipeline(ScriptedModel([LlmError("llm_spend_cap")]), [_evidence("E1")])
     with pytest.raises(LlmError) as caught:
-        _run(graph, "How large is its batch?", HISTORY)
+        _run(pipeline, "How large is its batch?", HISTORY)
     assert caught.value.code == "llm_spend_cap" and searches.queries == []
 
 
 def test_no_evidence_is_insufficient_without_a_generation_call():
-    graph, _ = _graph(ScriptedModel([]), [])
-    state = _run(graph, "Anything about protein folding?", [])
-    assert state["outcome"].answer.insufficient_evidence and state["outcome"].calls == 0
+    pipeline, _ = _pipeline(ScriptedModel([]), [])
+    state = _run(pipeline, "Anything about protein folding?", [])
+    assert state.outcome and state.outcome.answer.insufficient_evidence and state.outcome.calls == 0
 
 
 def test_disabled_condensing_sends_the_raw_message():
     model = ScriptedModel([])
-    graph, searches = _graph(model, [_evidence("E1")], condense=False)
-    _run(graph, "How large is its batch?", HISTORY)
+    pipeline, searches = _pipeline(model, [_evidence("E1")], condense=False)
+    _run(pipeline, "How large is its batch?", HISTORY)
     assert model.calls == [] and searches.queries == ["How large is its batch?"]
 
 
-def test_updates_stream_in_node_order():
-    graph, _ = _graph(ScriptedModel(["standalone?"]), [_evidence("E1")])
-    nodes = [
-        next(iter(update))
-        for update in graph.stream(
-            {"message": "it?", "history": HISTORY, "warnings": [], "timings": {}, "cost_usd": 0.0},
-            stream_mode="updates",
-        )
-    ]
-    assert nodes == ["condense", "retrieve", "generate"]
+def test_updates_stream_in_step_order():
+    pipeline, searches = _pipeline(ScriptedModel(["standalone?"]), [_evidence("E1")])
+    updates = list(pipeline.iter_steps("it?", HISTORY))
+    assert [update.stage for update in updates] == ["condense", "retrieve", "generate"]
+    assert updates[0].state.evidence == [] and updates[0].state.outcome is None
+    assert updates[1].state.evidence and updates[1].state.outcome is None
+    assert searches.queries == ["standalone?"]
+    assert set(updates[-1].state.timings) == {"condense", "retrieve", "generate"}
+
+
+def test_retrieval_preserves_the_evidence_and_generation_warning():
+    evidence = [_evidence("E1")]
+    pipeline, searches = _pipeline(ScriptedModel([]), evidence)
+    updates = list(pipeline.iter_steps("FABRICATE TWICE", []))
+    assert updates[1].state.evidence == evidence
+    assert searches.queries == ["FABRICATE TWICE"]
+    assert updates[-1].warnings == ["answer_failed_validation"]
+    assert updates[-1].state.warnings == ["answer_failed_validation"]
+    assert updates[-1].state.outcome and updates[-1].state.outcome.answer.insufficient_evidence
 
 
 def test_history_keeps_the_newest_text_within_its_budget():
@@ -149,11 +157,6 @@ def test_history_keeps_the_newest_text_within_its_budget():
 def test_clean_query_takes_one_line_and_refuses_garbage():
     assert clean_query('  "How big is the batch?"\nextra') == "How big is the batch?"
     assert clean_query("") is None and clean_query("{}") is None and clean_query("a" * 2001) is None
-
-
-def test_documents_round_trip_to_evidence():
-    item = _evidence("E3")
-    assert from_document(to_document(item)) == item
 
 
 def test_the_shipped_chat_condenses_follow_ups():
@@ -206,11 +209,11 @@ def test_the_turn_carries_the_references_its_search_ranked():
         search=lambda query: PaperHits("rel-1", [str(evidence[0].source_id)], [], references),
         evidence=lambda query, papers, release: list(evidence),
     )
-    graph = build_chat_graph(
+    pipeline = TurnPipeline(
         condenser=Condenser(ScriptedModel([]), PROMPT, max_chars=6000),
         retriever=retriever,
         generator=FakeGenerator(),
-        condense_enabled=True,
+        condense=True,
     )
-    state = _run(graph, "What does SimCSE train with?", [])
-    assert state["references"] == references
+    state = _run(pipeline, "What does SimCSE train with?", [])
+    assert state.references == references

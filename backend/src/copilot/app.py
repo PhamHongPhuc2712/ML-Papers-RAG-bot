@@ -20,8 +20,8 @@ from sqlalchemy.orm import Session
 from .chat.api import ChatApi
 from .chat.api import router as chat_router
 from .chat.config import load_chat_config
-from .chat.graph import ChatGraph
 from .chat.limits import usage as answer_usage
+from .chat.pipeline import TurnPipeline
 from .chat.store import ChatStore
 from .config import Settings
 from .corpus.api import router as corpus_router
@@ -135,7 +135,7 @@ def create_app(settings: Settings, overrides: dict[str, object] | None = None) -
         settings=settings,
         engine=engine,
         search=search_api,
-        graph=cast(ChatGraph | None, app_overrides.get("chat_graph")),
+        pipeline=cast(TurnPipeline | None, app_overrides.get("chat_pipeline")),
     )
 
     @asynccontextmanager

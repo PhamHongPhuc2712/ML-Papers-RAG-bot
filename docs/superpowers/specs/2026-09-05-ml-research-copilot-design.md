@@ -8,6 +8,8 @@ Date: 2026-09-05; revised 2026-10-11 (scope narrowed to paper search and grounde
 
 **Revision 2026-10-11.** The developer narrowed the product to two things, modelled on Consensus and haiku.rag: **paper search** over the corpus, and **a chatbot that answers questions about ML papers from their text**, every claim citing the passages it rests on, in multi-turn conversations kept as history for signed-in users. Recommendations (§8), the library and preferences, private uploads, the general-knowledge chat mode, the research agent, paper comparison and all of M6 (§13) are removed. Text below that described only them now says so; text that still governs something stays. The developer's answers that shape the revision: haiku.rag-style multi-turn chat citing passages; accounts with chat history; the existing corpus only; a Next.js web app; one search per turn; local only, deployment decided later; LangChain where it fits (LangGraph for the chat turn, a LangChain retriever adapter, `ChatOpenAI` structured output in the generator); the live-search reranker decision as a plan task; evaluation at the current standard; chat backend first.
 
+**Revision 2026-10-22.** The linear LangGraph turn and LangChain `BaseRetriever` adapter were removed. The same three steps run in a typed Python pipeline; `ChatOpenAI` structured generation and the spend ledger remain. This amends the orchestration choice above without changing the one-search turn or its stored and streamed contract.
+
 Confirmed intentions: land a machine learning engineer role specializing in retrieval and recommendation; learn how the system works; attract researchers as real users. Support topic exploration, related-work discovery, and keeping up with research. The developer is the first test user. Confirmed budget constraints: the infrastructure budget is zero and permanent — PostgreSQL, Qdrant and file storage are self-hosted via Docker on the developer's own Windows machine — with the hosted LLM/multimodal generation API as the single named exception, funded personally by the developer. The project is portfolio-scoped, not production-scoped, for now. No time budget, GPU availability, research specialty, or launch date has been supplied.
 
 This specification translates the [original proposal](C:/Users/hongp/Documents/Phuc/Projects/ml_rag_bot_recommender/ml_research_copilot_project_proposal.md) into a staged product. Unconfirmed choices below are design defaults, not requirements attributed to the user. The accompanying plans are drafts requested by the user; writing them does not authorize implementation or cloud spending.
@@ -28,7 +30,7 @@ The product loop (revised 2026-10-15) is: ask, whether a question or a request f
 |---|---|---|
 | M1 Corpus foundation | Inspect a reproducible paper dataset | Normalize, deduplicate, parse, track provenance, export snapshots |
 | M2 Search laboratory | Find papers and measure ranking quality | BM25, dense, hybrid, reranking, benchmark harness, search API |
-| M3 Grounded chat backend (revised 2026-10-11) | Sign in and hold a multi-turn conversation answered from the corpus, every claim citing passages | Self-hosted accounts, chat history, a LangGraph turn (condense → one search → evidence → validated claims), SSE streaming; answering measured on ORB single-turn and follow-up conversations |
+| M3 Grounded chat backend (revised 2026-10-22) | Sign in and hold a multi-turn conversation answered from the corpus, every claim citing passages | Self-hosted accounts, chat history, a three-step turn pipeline (condense → one search → evidence → validated claims), SSE streaming; answering measured on ORB single-turn and follow-up conversations |
 | M4 Web app (revised) | Search, read papers and chat in a browser | Next.js search, paper, login and chat pages; cookie session behind a server-side proxy; browser and accessibility tests |
 | M5 Search upgrade and portfolio release (revised; partially deferred) | Trust the product running locally | The search reranker's text decided on our corpus; request logs and cost reports; account deletion; backup and restore; failure drills; case study. Staged deployment, recovery drills, public rate limits and per-user quotas deferred |
 | M6 Research expansion | Removed 2026-10-11 | — |
@@ -63,7 +65,7 @@ flowchart TD
   BFF --> API[FastAPI application]
   API --> AUTH[Accounts and tokens]
   API --> SEARCH[Search service]
-  API --> CHAT[Chat service: LangGraph turn]
+  API --> CHAT[Chat service: three-step turn pipeline]
   API --> PG[(PostgreSQL)]
   SEARCH --> Q[(Qdrant public indexes)]
   CHAT --> SEARCH
@@ -122,8 +124,8 @@ backend/src/copilot/
   evidence/retrieve.py, citations.py    evidence selection and validation
   models/lc_chat.py                    ChatOpenAI behind the spend ledger
   chat/store.py, turns.py              chats, messages, evidence snapshots
-  chat/condense.py, retriever.py       follow-up condensing, LangChain corpus retriever
-  chat/graph.py, service.py, api.py    the LangGraph turn, its SSE stream, endpoints
+  chat/condense.py, retriever.py       follow-up condensing, corpus evidence retrieval
+  chat/pipeline.py, service.py, api.py the turn pipeline, its SSE stream, endpoints
   evaluation/                          datasets, metrics, runners, reports
   cli.py                               offline administration and evaluation CLI
 backend/migrations/versions/           Alembic migrations
@@ -272,13 +274,13 @@ Removed with the scope revision in §1: no feed, profile, impressions, feedback 
 
 Research mode retrieves 10 papers then searches chunks inside those papers, reranks up to 40 chunk candidates, and selects up to 12 pieces of evidence with a maximum of three per paper. Evidence budget is 6,000 tokens counted in the pinned BGE-M3 tokenizer, reserving room for instructions, conversation and answer. Abstract evidence is labeled abstract-only. If paper selection misses evidence, compare against global chunk retrieval and a union fallback; hierarchical retrieval must win by measurement, not assumption. (Delivered by the ORB plan's O4: `evidence/retrieve.py`, `configs/evidence.yaml`.)
 
-A chat turn is one LangGraph state graph of three steps (chat plan C5):
+A chat turn runs through three typed Python steps (replaced the C5 LangGraph implementation on 2026-10-22):
 
 - **Condense.** On a follow-up, the last three answered exchanges (newest kept, within 6,000 characters) and the new message go to the configured chat model, which rewrites the message as one standalone search question. Any failure except the spend cap falls back to the user's own message with the warning `condense_failed`. A first turn is not condensed. Whether condensing stays on was decided by a pre-registered follow-up evaluation (chat plan C7), whose underpowered rule turned it off; since 2026-10-14 it is on again by the developer's recorded decision.
-- **Retrieve.** One search per turn: `hybrid_rerank` over the active release for the top 10 papers, then evidence inside them as above. The chat's first stage is `configs/search.yaml` unchanged (since 2026-10-15; `configs/chat.yaml` refuses overrides): the reranker reads title and chunk at a 2.5 s rerank deadline, the configuration ORB's frozen answering result was measured under. The search's top 20, with metadata, are the answer's References, the first 10 read. The retriever is exposed as a LangChain `BaseRetriever`.
+- **Retrieve.** One search per turn: `hybrid_rerank` over the active release for the top 10 papers, then evidence inside them as above. The chat's first stage is `configs/search.yaml` unchanged (since 2026-10-15; `configs/chat.yaml` refuses overrides): the reranker reads title, abstract and chunk at a 2.5 s rerank deadline (since 2026-10-21; ORB's frozen answering result was measured under title and chunk). The search's top 20, with metadata, are the answer's References, the first 10 read. The retriever returns domain `Evidence` directly.
 - **Generate.** Structured claims with evidence ids, from `ChatOpenAI` with the answer's JSON schema enforced (or the earlier HTTP client, by chat plan C4's rule); either way the text is parsed and validated by the same code, below.
 
-There is no general-knowledge mode, no document mode, no routing and no agent: a question the corpus cannot answer gets insufficient evidence, never an unsupported answer. Chat history lives in PostgreSQL (§5), not in a LangGraph checkpointer.
+There is no general-knowledge mode, no document mode, no routing and no agent: a question the corpus cannot answer gets insufficient evidence, never an unsupported answer. Chat history lives in PostgreSQL (§5).
 
 Generate structured claims with evidence IDs. Validate that IDs exist in the selected evidence and belong to the release. Validate any quoted spans against stored source text. Structural validation proves provenance, not semantic entailment. Claim support is judged in the evaluation pipeline. One repair attempt is allowed; then return a clear insufficient-evidence response.
 

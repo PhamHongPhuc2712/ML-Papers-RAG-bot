@@ -86,11 +86,12 @@ condensing does not help. Every secondary measure favoured it (`reports/chat-fol
 evidence"; with it on, the same follow-up was searched as "How large was SimCSE's batch size?"
 and answered with a citation.
 
-### LangGraph for the turn
+### The turn pipeline
 
-The developer asked for LangChain where it fits. The turn is a LangGraph graph over a
-LangChain retriever: condense → retrieve → generate. Each node's timing is stored with the
-message, which showed retrieval dominating turns at 2.6–8.8 s (`reports/m3-chat.md`). Turning
+The developer asked for LangChain where it fits. On 2026-10-22, the linear LangGraph turn
+and LangChain retriever adapter were replaced with three explicit Python steps: condense →
+retrieve → generate. Structured `ChatOpenAI` generation remains. Each step's timing is stored with the
+message; earlier turns showed retrieval dominating at 2.6–8.8 s (`reports/m3-chat.md`). Turning
 condensing off, and on again, was a configuration change, not a code change. Generation stays a single
 structured call. There is no agent loop: one search per turn was the developer's answer, and
 `reports/orb-text.md` found that given the right paper, our pipeline answers at haiku.rag's

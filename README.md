@@ -60,8 +60,8 @@ cd frontend && npm run lint && npm run typecheck && npm test && npm run e2e
   each paper is scored by its best chunk. The two lists are fused by reciprocal rank, and
   `bge-reranker-v2-m3` reranks the top 50. Every stage has a deadline; when one is missed, the
   results are marked degraded or the search fails with a typed, retryable error.
-- **Answer turn.** Each turn is a LangGraph graph: condense a follow-up into a standalone
-  question, search once (the reranker reads each paper's title and the passage that found it),
+- **Answer turn.** Each turn runs through three Python steps: condense a follow-up into a standalone
+  question, search once (the reranker reads each paper's title, abstract and the passage that found it),
   read evidence passages inside the top 10 papers, and generate structured claims. Each claim's
   evidence ids are validated before the answer is stored and sent whole over SSE, after a
   `references` event with the 20 ranked papers.
@@ -78,7 +78,7 @@ flowchart TD
   BFF --> API[FastAPI application]
   API --> AUTH[Accounts and tokens]
   API --> SEARCH[Search service]
-  API --> CHAT[Chat service: LangGraph turn]
+  API --> CHAT[Chat service: three-step turn pipeline]
   API --> PG[(PostgreSQL)]
   SEARCH --> Q[(Qdrant public indexes)]
   CHAT --> SEARCH

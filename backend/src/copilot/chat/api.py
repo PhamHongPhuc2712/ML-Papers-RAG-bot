@@ -16,8 +16,8 @@ from ..contracts import ChatDetail, ChatList, ChatRequest, FeedbackRequest
 from ..identity.api import ConfirmRequest, CurrentPrincipal, confirm_code
 from ..search.api import ApiError, request_id
 from .config import load_chat_config
-from .graph import ChatGraph, build_default_chat_graph
 from .limits import DailyLimitReached
+from .pipeline import TurnPipeline, build_default_turn_pipeline
 from .service import ChatService
 from .store import ChatNotFound, ChatStore, MessageNotRatable, TurnConflict
 
@@ -33,12 +33,12 @@ class ChatApi:
     """The chat turn's dependencies, built at startup once search has loaded its models."""
 
     def __init__(
-        self, *, settings: Settings, engine: Any, search: Any, graph: ChatGraph | None = None
+        self, *, settings: Settings, engine: Any, search: Any, pipeline: TurnPipeline | None = None
     ) -> None:
         self._settings = settings
         self._engine = engine
         self._search = search
-        self._graph = graph
+        self._pipeline = pipeline
         self._store = ChatStore(engine)
         config = load_chat_config()
         self._stale_after = timedelta(seconds=2 * config.turn_timeout)
@@ -53,7 +53,7 @@ class ChatApi:
             interrupted = self._store.interrupt_stale(stale_after=self._stale_after)
             if interrupted:
                 logger.info("interrupted %d chat turns left pending", interrupted)
-            graph = self._graph or build_default_chat_graph(
+            pipeline = self._pipeline or build_default_turn_pipeline(
                 self._settings, self._engine, self._search
             )
         except Exception as error:  # noqa: BLE001 - chat failing to build must not stop search
@@ -64,7 +64,7 @@ class ChatApi:
             logger.warning("chat unavailable: %s", self._unavailable, exc_info=error)
             return
         self._service = ChatService(
-            self._store, graph, stale_after=self._stale_after, daily_answers=self._daily_answers
+            self._store, pipeline, stale_after=self._stale_after, daily_answers=self._daily_answers
         )
 
     def close(self) -> None:

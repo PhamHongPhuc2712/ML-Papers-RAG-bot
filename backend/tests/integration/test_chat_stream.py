@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from copilot.app import create_app
 from copilot.chat.condense import Condenser, load_condense_prompt
-from copilot.chat.graph import ChatGraph, build_chat_graph
+from copilot.chat.pipeline import TurnPipeline
 from copilot.chat.retriever import CorpusRetriever, PaperHits
 from copilot.chat.service import ChatService
 from copilot.chat.store import ChatStore
@@ -41,7 +41,7 @@ class CountingGenerator(FakeGenerator):
         return super().generate(question, evidence, request_id=request_id, run_id=run_id)
 
 
-def _graph(paper_id: str, calls: Calls, fail: Exception | None = None) -> ChatGraph:
+def _pipeline(paper_id: str, calls: Calls, fail: Exception | None = None) -> TurnPipeline:
     evidence = [
         Evidence(
             id="E1",
@@ -67,23 +67,28 @@ def _graph(paper_id: str, calls: Calls, fail: Exception | None = None) -> ChatGr
         ),
         evidence=lambda query, papers, release: list(evidence),
     )
-    graph = build_chat_graph(
+    return TurnPipeline(
         condenser=Condenser(
             None, load_condense_prompt("prompts/chat/condense-v1.yaml"), max_chars=6000
         ),
         retriever=retriever,
         generator=CountingGenerator(calls, fail),
-        condense_enabled=True,
+        condense=True,
+        identity={"chat_config": "test"},
+        history_turns=3,
     )
-    return ChatGraph(graph=graph, identity={"chat_config": "test"}, condense=True, history_turns=3)
 
 
 @pytest.fixture
 def chat_client(test_settings, search_corpus, test_qdrant):
-    def make(graph: ChatGraph) -> TestClient:
+    def make(pipeline: TurnPipeline) -> TestClient:
         app = create_app(
             test_settings,
-            {"db_engine": search_corpus.engine, "qdrant_client": test_qdrant, "chat_graph": graph},
+            {
+                "db_engine": search_corpus.engine,
+                "qdrant_client": test_qdrant,
+                "chat_pipeline": pipeline,
+            },
         )
         return TestClient(app)
 
@@ -106,7 +111,7 @@ def _post(client, headers, **body):
 def test_a_turn_streams_then_is_in_the_history(chat_client, search_corpus, make_user, auth_headers):
     calls = Calls()
     alice, _ = make_user()
-    with chat_client(_graph(search_corpus.ids[TITLE], calls)) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], calls)) as client:
         response, _ = _post(client, auth_headers(alice))
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
@@ -140,12 +145,40 @@ def test_a_turn_streams_then_is_in_the_history(chat_client, search_corpus, make_
         assert stored[0]["paper_id"] == search_corpus.ids[TITLE] and stored[0]["read"]
 
 
+def test_follow_up_streams_condense_status_before_search(
+    chat_client, search_corpus, make_user, auth_headers
+):
+    alice, _ = make_user()
+    calls = Calls()
+    with chat_client(_pipeline(search_corpus.ids[TITLE], calls)) as client:
+        first, _ = _post(client, auth_headers(alice))
+        chat_id = _frames(first)[0][1]["chat_id"]
+        second, _ = _post(
+            client, auth_headers(alice), chat_id=chat_id, message="What about those pairs?"
+        )
+        frames = _frames(second)
+        assert [name for name, _ in frames] == [
+            "chat",
+            "status",
+            "status",
+            "references",
+            "evidence",
+            "status",
+            "final",
+        ]
+        assert frames[1][1] == {"stage": "condensing"}
+        assert frames[2][1] == {"stage": "searching", "query": "What about those pairs?"}
+        assert frames[3][1]["query"] == "What about those pairs?"
+        assert frames[-1][1]["warnings"] == []
+        assert calls.generations == 2
+
+
 def test_the_same_request_replays_without_running_again(
     chat_client, search_corpus, make_user, auth_headers
 ):
     calls = Calls()
     alice, _ = make_user()
-    with chat_client(_graph(search_corpus.ids[TITLE], calls)) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], calls)) as client:
         first, payload = _post(client, auth_headers(alice))
         again = client.post("/v1/chats/stream", json=payload, headers=auth_headers(alice))
         assert [n for n, _ in _frames(again)] == ["chat", "final"]
@@ -159,7 +192,7 @@ def test_the_spend_cap_is_a_typed_error_and_the_turn_can_run_again(
     alice, _ = make_user()
     calls = Calls()
     with chat_client(
-        _graph(search_corpus.ids[TITLE], calls, fail=LlmError("llm_spend_cap"))
+        _pipeline(search_corpus.ids[TITLE], calls, fail=LlmError("llm_spend_cap"))
     ) as client:
         response, payload = _post(client, auth_headers(alice))
         name, data = _frames(response)[-1]
@@ -170,7 +203,7 @@ def test_the_spend_cap_is_a_typed_error_and_the_turn_can_run_again(
             "messages"
         ]
         assert messages[-1]["status"] == "failed" and messages[-1]["claims"] == []
-    with chat_client(_graph(search_corpus.ids[TITLE], calls)) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], calls)) as client:
         retry = client.post("/v1/chats/stream", json=payload, headers=auth_headers(alice))
         assert _frames(retry)[-1][0] == "final"
 
@@ -179,7 +212,7 @@ def test_a_closed_stream_leaves_the_turn_interrupted(search_corpus, make_user):
     alice = Principal(user_id=make_user()[0])
     store = ChatStore(search_corpus.engine)
     service = ChatService(
-        store, _graph(search_corpus.ids[TITLE], Calls()), stale_after=timedelta(minutes=4)
+        store, _pipeline(search_corpus.ids[TITLE], Calls()), stale_after=timedelta(minutes=4)
     )
     events = service.stream(alice, ChatRequest(request_id=uuid4(), message="Hello?"))
     chat_id = json.loads(next(events).split("data: ", 1)[1])["chat_id"]
@@ -193,7 +226,7 @@ def test_another_users_chat_is_404_and_a_running_request_is_409(
 ):
     alice, _ = make_user()
     bob, _ = make_user()
-    with chat_client(_graph(search_corpus.ids[TITLE], Calls())) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], Calls())) as client:
         response, _ = _post(client, auth_headers(alice))
         chat_id = _frames(response)[0][1]["chat_id"]
         stolen, _ = _post(client, auth_headers(bob), chat_id=chat_id)
@@ -201,7 +234,7 @@ def test_another_users_chat_is_404_and_a_running_request_is_409(
     store = ChatStore(search_corpus.engine)
     request = ChatRequest(request_id=uuid4(), message="Pending one")
     store.begin_turn(Principal(user_id=alice), request, stale_after=timedelta(minutes=4))
-    with chat_client(_graph(search_corpus.ids[TITLE], Calls())) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], Calls())) as client:
         busy = client.post(
             "/v1/chats/stream",
             json={"request_id": str(request.request_id), "message": "Pending one"},
@@ -215,7 +248,7 @@ def test_bad_input_is_rejected_before_anything_runs(
 ):
     alice, _ = make_user()
     calls = Calls()
-    with chat_client(_graph(search_corpus.ids[TITLE], calls)) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], calls)) as client:
         too_long, _ = _post(client, auth_headers(alice), message="x" * 2001)
         assert too_long.status_code == 422
         blank, _ = _post(client, auth_headers(alice), message="   ")
@@ -242,7 +275,7 @@ def test_the_daily_limit_is_a_429_before_anything_runs(
             text("insert into answer_usage (user_id, day, answers) values (:user, :day, 20)"),
             {"user": alice, "day": now.date()},
         )
-    with chat_client(_graph(search_corpus.ids[TITLE], calls)) as client:
+    with chat_client(_pipeline(search_corpus.ids[TITLE], calls)) as client:
         response, _ = _post(client, auth_headers(alice))
     assert response.status_code == 429
     error = response.json()["error"]

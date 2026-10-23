@@ -66,20 +66,20 @@ class _Judge:
 
 
 class _Counting:
-    def __init__(self, graph) -> None:
-        self.graph = graph
+    def __init__(self, pipeline) -> None:
+        self.pipeline = pipeline
         self.messages: list[str] = []
 
-    def invoke(self, state):
-        self.messages.append(state["message"])
-        return self.graph.invoke(state)
+    def run(self, message, history, *, run_id=None):
+        self.messages.append(message)
+        return self.pipeline.run(message, history, run_id=run_id)
 
 
-def _graphs(paper: str = "p1", *, abstain_on: str | None = None):
+def _pipelines(paper: str = "p1", *, abstain_on: str | None = None):
     from uuid import uuid4
 
     from copilot.chat.condense import Condenser, load_condense_prompt
-    from copilot.chat.graph import build_chat_graph
+    from copilot.chat.pipeline import TurnPipeline
     from copilot.chat.retriever import CorpusRetriever, PaperHits
     from copilot.contracts import Evidence
     from copilot.models.generation import FakeGenerator
@@ -109,30 +109,30 @@ def _graphs(paper: str = "p1", *, abstain_on: str | None = None):
         model, load_condense_prompt("prompts/chat/condense-v1.yaml"), max_chars=6000
     )
     generator = FakeGenerator()
-    graphs = {
+    pipelines = {
         flag: _Counting(
-            build_chat_graph(
+            TurnPipeline(
                 condenser=condenser,
                 retriever=retriever,
                 generator=generator,
-                condense_enabled=flag,
+                condense=flag,
             )
         )
         for flag in (True, False)
     }
-    return graphs, model
+    return pipelines, model
 
 
 def test_run_conversation_answers_turn_one_once_and_each_condition():
     from copilot.evaluation.chat_eval import run_conversation
 
-    graphs, model = _graphs(abstain_on="it use")
+    pipelines, model = _pipelines(abstain_on="it use")
     judge = _Judge()
-    rows = run_conversation(_conversation(), graphs=graphs, judge=judge, run_id="r")
+    rows = run_conversation(_conversation(), pipelines=pipelines, judge=judge, run_id="r")
     assert set(rows) == set(CONDITIONS)
-    # turn 1 and the two uncondensed turn 2s go through graphs[False]
-    assert graphs[False].messages.count("What does SimCSE train with?") == 1
-    assert graphs[True].messages == ["What batch size does it use?"]
+    # turn 1 and the two uncondensed turn 2s go through pipelines[False]
+    assert pipelines[False].messages.count("What does SimCSE train with?") == 1
+    assert pipelines[True].messages == ["What batch size does it use?"]
     assert rows["raw"]["query"] == "What batch size does it use?"
     assert rows["condensed"]["query"] == "SimCSE batch size" and model.calls == 1
     assert rows["standalone"]["query"] == "What batch size does SimCSE use?"
@@ -194,18 +194,18 @@ def test_the_run_writes_three_paired_conditions(tmp_path):
 
     fixture = _write_conversations(tmp_path, ["c1", "c2", "c3"])
     config = _experiment(tmp_path, fixture)
-    graphs, _ = _graphs()
+    pipelines, _ = _pipelines()
     result = run_chat_eval(
         config,
         "development",
         tmp_path / "reports",
         max_spend_usd=1.0,
         data_dir=tmp_path / "data",
-        graphs=graphs,
+        pipelines=pipelines,
         judge=_Judge(),
         ledger=MemoryLedger(Decimal("1")),
     )
-    assert graphs[False].messages.count("What does SimCSE train with?") == 3
+    assert pipelines[False].messages.count("What does SimCSE train with?") == 3
     ids = []
     for condition in CONDITIONS:
         directory = tmp_path / "reports" / "development" / f"{result['run_id']}.{condition}"
@@ -236,5 +236,10 @@ def test_the_run_refuses_what_it_must(tmp_path):
         run_chat_eval(config, "frozen", tmp_path, max_spend_usd=1.0, **common)
     with pytest.raises(ChatEvalError, match="run_budget_exceeded"):
         run_chat_eval(
-            config, "development", tmp_path, max_spend_usd=0.0001, graphs=_graphs()[0], **common
+            config,
+            "development",
+            tmp_path,
+            max_spend_usd=0.0001,
+            pipelines=_pipelines()[0],
+            **common,
         )

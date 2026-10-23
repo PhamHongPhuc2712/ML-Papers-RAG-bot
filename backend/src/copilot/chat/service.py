@@ -1,7 +1,7 @@
 """One chat turn as server-sent events, persisted before its answer is sent.
 
 The turn is begun (and refused with an HTTP status) before streaming starts. Then frames
-follow the graph: ``chat``, ``status`` as each step starts, ``references`` (the query searched
+follow the pipeline: ``chat``, ``status`` as each step starts, ``references`` (the query searched
 and the papers it ranked) and ``evidence`` once passages are found, and ``final`` with the
 stored, validated message — or ``error``. The answer is stored before the ``final`` frame is
 yielded, so a client that disconnects after the answer exists
@@ -21,11 +21,10 @@ from sqlalchemy.exc import OperationalError
 
 from ..contracts import ChatRequest, Evidence, Principal
 from ..evidence.retrieve import EvidenceError
-from ..models.generation import GenerationOutcome
 from ..models.llm import LlmError
 from ..search.api import ApiError
 from ..search.service import SearchUnavailable
-from .graph import ChatGraph
+from .pipeline import TurnPipeline
 from .store import ChatStore, Turn
 from .turns import TurnResult
 
@@ -69,13 +68,13 @@ class ChatService:
     def __init__(
         self,
         store: ChatStore,
-        graph: ChatGraph,
+        pipeline: TurnPipeline,
         *,
         stale_after: timedelta,
         daily_answers: int | None = None,
     ) -> None:
         self._store = store
-        self._graph = graph
+        self._pipeline = pipeline
         self._stale_after = stale_after
         self._daily_answers = daily_answers
 
@@ -99,62 +98,50 @@ class ChatService:
                 yield frame("final", turn.replay.model_dump(mode="json"))
                 return
             history = self._store.history(
-                turn.chat_id, before_ordinal=turn.ordinal - 1, turns=self._graph.history_turns
+                turn.chat_id, before_ordinal=turn.ordinal - 1, turns=self._pipeline.history_turns
             )
-            first = "condensing" if history and self._graph.condense else "searching"
+            first = "condensing" if history and self._pipeline.condense else "searching"
             yield frame("status", {"stage": first})
-            initial = {
-                "request_id": body.request_id,
-                "message": body.message,
-                "history": history,
-                "warnings": [],
-                "timings": {},
-                "cost_usd": 0.0,
-            }
-            state: dict[str, Any] = {}
+            state = None
             query = body.message
-            for mode, chunk in self._graph.graph.stream(initial, stream_mode=["updates", "values"]):
-                if mode == "values":
-                    state = chunk
-                    continue
-                for node, update in chunk.items():
-                    if node == "condense":
-                        query = update["standalone"]
-                        if first == "condensing":
-                            yield frame("status", {"stage": "searching", "query": query})
-                    elif node == "retrieve":
-                        # What was searched and the papers it ranked, before the answer exists.
-                        yield frame(
-                            "references",
-                            {
-                                "query": query,
-                                "items": [
-                                    item.model_dump(mode="json")
-                                    for item in update.get("references", [])
-                                ],
-                            },
-                        )
-                        yield frame(
-                            "evidence",
-                            {
-                                "items": [_preview(item) for item in update["evidence"]],
-                                "warnings": update.get("warnings", []),
-                            },
-                        )
-                        yield frame("status", {"stage": "writing"})
-            outcome: GenerationOutcome = state["outcome"]
+            for update in self._pipeline.iter_steps(
+                body.message, history, request_id=body.request_id
+            ):
+                state = update.state
+                if update.stage == "condense":
+                    query = state.standalone
+                    if first == "condensing":
+                        yield frame("status", {"stage": "searching", "query": query})
+                elif update.stage == "retrieve":
+                    yield frame(
+                        "references",
+                        {
+                            "query": query,
+                            "items": [item.model_dump(mode="json") for item in state.references],
+                        },
+                    )
+                    yield frame(
+                        "evidence",
+                        {
+                            "items": [_preview(item) for item in state.evidence],
+                            "warnings": update.warnings,
+                        },
+                    )
+                    yield frame("status", {"stage": "writing"})
+            assert state is not None and state.outcome is not None
+            outcome = state.outcome
             message = self._store.complete_turn(
                 turn,
                 TurnResult(
                     answer=outcome.answer,
-                    evidence=state.get("evidence", []),
-                    standalone_query=state["standalone"],
-                    corpus_release_id=state.get("release_id"),
-                    warnings=state.get("warnings", []),
-                    identity=self._graph.identity,
-                    trace=state.get("timings", {}),
-                    cost_usd=float(state.get("cost_usd", 0.0)),
-                    references=state.get("references", []),
+                    evidence=state.evidence,
+                    standalone_query=state.standalone,
+                    corpus_release_id=state.release_id,
+                    warnings=state.warnings,
+                    identity=self._pipeline.identity,
+                    trace=state.timings,
+                    cost_usd=state.cost_usd,
+                    references=state.references,
                 ),
             )
             settled = True
