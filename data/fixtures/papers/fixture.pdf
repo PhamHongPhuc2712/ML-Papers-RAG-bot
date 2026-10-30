@@ -1,0 +1,103 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Length 606 >>
+stream
+BT /F1 11 Tf 14 TL 72 720 Td
+(Reliable Retrieval for Research Copilots) Tj
+T*
+(Ada Lovelace and Grace Hopper) Tj
+T*
+(Abstract) Tj
+T*
+(We study how a research copilot can retrieve papers reliably and cite only) Tj
+T*
+(evidence that exists. This fixture text is original, written for this) Tj
+T*
+(repository, and released under CC0 so the parser suite can run offline.) Tj
+T*
+(1 Introduction) Tj
+T*
+(Research assistants must cite evidence that exists. We describe a small) Tj
+T*
+(pipeline that parses documents into sections and splits sections into) Tj
+T*
+(chunks that never cross a heading boundary.) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 3 0 R /Resources << /Font << /F1 1 0 R >> >> >>
+endobj
+5 0 obj
+<< /Length 400 >>
+stream
+BT /F1 11 Tf 14 TL 72 720 Td
+(2 Method) Tj
+T*
+(The parser splits each page into lines, detects headings, and assigns every) Tj
+T*
+(line to the most recent heading. Page spans are recorded from the pages a) Tj
+T*
+(section actually touches. Unknown pages remain null rather than invented.) Tj
+T*
+(Table 1: Chunk policy) Tj
+T*
+(target 450 cap 600 overlap 60) Tj
+T*
+(policy fixed-window version v1) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 1 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 409 >>
+stream
+BT /F1 11 Tf 14 TL 72 720 Td
+(3 Results) Tj
+T*
+(The fixture parses into an abstract, three numbered sections, one table and) Tj
+T*
+(one reference list. Rerunning the parser on identical bytes reproduces the) Tj
+T*
+(same sections, checksums and chunk identifiers.) Tj
+T*
+(References) Tj
+T*
+([1] A. Lovelace. Notes on the Analytical Engine. 1843.) Tj
+T*
+([2] G. Hopper. The Education of a Computer. 1952.) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 1 0 R >> >> >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000154 00000 n 
+0000000811 00000 n 
+0000000937 00000 n 
+0000001388 00000 n 
+0000001514 00000 n 
+0000001974 00000 n 
+0000002100 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+2149
+%%EOF

@@ -1,0 +1,26 @@
+# research-v3 tuned on all of MTRAG ClapNQ (agent follow-ups, plan
+# docs/results.md). Every ClapNQ conversation is
+# development since the 2026-10-27 test scoring spent the test split: `--split all`, never frozen,
+# deciding nothing. Systems: the pipeline, the agent as scored on 2026-10-27 (research-v2) and the
+# agent with the stricter skip rule (research-v3); the same first stage, evidence, generator and
+# judge as configs/experiments/mtrag-agent.yaml.
+#
+#   LLM_DAILY_SPEND_CAP_USD=100 uv run --env-file .env --project backend python -m copilot.cli \
+#     eval mtrag --config configs/experiments/mtrag-agent-v3-dev.yaml --split all \
+#     --database-url ...copilot_mtrag --out reports/mtrag --max-spend-usd <budget>
+schema_version: 1
+name: mtrag-agent-v3-dev
+corpus: {release: mtrag-clapnq-v1}
+chat: configs/chat.yaml
+judge: openai-gpt-6-luna-low
+prompts: {judge: prompts/judge/answer-equivalence-haiku-v1.yaml}
+modes: [live, gold_prefix]
+systems:
+  - name: pipeline
+  - name: agent-v2
+    agent: {prompt: prompts/agent/research-v2.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true}
+  - name: agent-v3
+    agent: {prompt: prompts/agent/research-v3.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true}
+bootstrap: {resamples: 1000, seed: 42, confidence: 0.95}
+decision: {mode: live, treated: agent-v3, baseline: pipeline, secondary: {treated: agent-v3, baseline: agent-v2}}
+budget: {max_spend_usd: 6.00}

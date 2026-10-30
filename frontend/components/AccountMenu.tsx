@@ -1,0 +1,62 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useId, useRef, useState } from "react";
+import { Icon } from "./Icon";
+import { SignOutButton } from "./SignOutButton";
+import { ThemeToggle } from "./ThemeToggle";
+
+/** The sidebar's bottom: who is signed in, the settings page, the theme and signing out. */
+export function AccountMenu({ email }: { email: string | null }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const id = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    box.current?.querySelector<HTMLElement>(".menu a, .menu button")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  const name = email ?? "Your account";
+  return (
+    <div className="sidebar-bottom" ref={box}>
+      {open ? (
+        <div className="menu" id={id}>
+          {email ? <p className="menu-section" style={{ margin: 0 }}>{email}</p> : null}
+          <Link className="menu-item" href="/account" onClick={() => setOpen(false)}>
+            <Icon name="user" size={18} /> Settings
+          </Link>
+          <hr />
+          <p className="menu-section" style={{ margin: 0 }}>Theme</p>
+          <ThemeToggle />
+          <hr />
+          <SignOutButton className="menu-item">
+            <Icon name="signout" size={18} /> Sign out
+          </SignOutButton>
+        </div>
+      ) : null}
+      <button ref={button} type="button" className="account-button" aria-expanded={open} aria-controls={id}
+        aria-label={`Account menu for ${name}`} onClick={() => setOpen((value) => !value)}>
+        <span className="avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
+        <span className="account-email">{name}</span>
+        <Icon name="chevrons" size={16} className="label" />
+      </button>
+    </div>
+  );
+}

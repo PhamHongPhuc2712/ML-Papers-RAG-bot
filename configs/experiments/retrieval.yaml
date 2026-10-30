@@ -1,0 +1,85 @@
+# P2.5: the four retrieval baselines and two single-factor ablations, on one
+# frozen snapshot and one frozen split. Every value here is part of the run's
+# identity; the manifest records this file's sha256.
+#
+#   eval retrieval --config configs/experiments/retrieval.yaml --split validation \
+#     --out reports/retrieval/sections
+#
+# Tune on development, choose on validation. The test split runs only for a
+# release decision, with --locked-test, and never feeds a choice.
+schema_version: 1
+name: m2-retrieval-pilot
+
+dataset:
+  # S1's passage questions over our corpus (since LitSearch was retired, 2026-10-14): ids,
+  # labels and splits in git, question text under DATA_DIR. 190 / 190 / 191; S1's test split
+  # is unread and stays reserved for a registered release decision.
+  path: data/fixtures/retrieval-sections
+  query_text: benchmarks/sections-v1/queries.jsonl
+  labels: paper_id
+  slice: all
+
+corpus:
+  # The frozen snapshot every variant reads, unless a variant names its own
+  # release built from the same snapshot.
+  release: m2-20260924T095724Z
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  # Spec §11 and G2: Recall@50, MRR@10, nDCG@10, with judged coverage.
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  # Results scored per query; recall@50 needs the top 50.
+  depth: 50
+
+bootstrap:
+  # Resampled over query families, paired across variants (spec §11).
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: bm25
+    mode: bm25
+  - name: dense
+    mode: dense
+  - name: hybrid
+    mode: hybrid
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+  # One factor at a time, each against the variant it changes.
+  - name: hybrid_rerank_pair512
+    mode: hybrid_rerank
+    baseline: hybrid_rerank
+    changes: reranker pair budget 1,024 -> 512 tokens (spec §7)
+    pair_max_tokens: 512
+  # The BGE-small release holds a paper collection only, so these two search at paper
+  # level whatever configs/search.yaml's candidates.source says (P2.6 step 4).
+  - name: dense_bge_small
+    mode: dense
+    baseline: dense
+    changes: embedding BGE-M3 (1,024-d) -> BGE-small-en-v1.5 (384-d)
+    models: configs/experiments/models-bge-small.yaml
+    release: m2-20260924T095724Z-bge-small
+    candidates: papers
+  - name: hybrid_rerank_bge_small
+    mode: hybrid_rerank
+    baseline: hybrid_rerank
+    changes: embedding BGE-M3 (1,024-d) -> BGE-small-en-v1.5 (384-d)
+    models: configs/experiments/models-bge-small.yaml
+    release: m2-20260924T095724Z-bge-small
+    candidates: papers
+
+decision:
+  # Written before any validation number was seen.
+  primary: ndcg@10
+  # A costlier mode replaces the current choice only if the paired interval of
+  # its primary-metric gain lies wholly above zero, and its p95 fits the budget.
+  order: [bm25, dense, hybrid, hybrid_rerank]
+  latency_p95_seconds: 3.0
+  # A cheaper ablation replaces its baseline only if the paired interval shows
+  # it loses no more than this much (absolute) on the primary metric.
+  max_drop: 0.03

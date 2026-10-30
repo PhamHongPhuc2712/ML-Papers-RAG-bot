@@ -1,0 +1,82 @@
+# The planning ablation on MultiHop-RAG (agent follow-ups, plan
+# docs/results.md), registered by the commit that
+# adds this file, before any MultiHop answer is generated. Data: yixuantt/MultiHopRAG @ 71ac0d0b
+# (ODC-BY), comparison and temporal questions only, 15 + 15 development and 75 + 75 test
+# (`--split frozen` runs the test questions), release multihop-rag-v1 (609 news articles, each
+# chunk led by its source and date). All variants share the shipped first stage, evidence,
+# generator and judge, as in orb-text-qa-agent.yaml.
+#
+#   LLM_DAILY_SPEND_CAP_USD=100 uv run --env-file .env --project backend python -m copilot.cli \
+#     eval qa --config configs/experiments/multihop-plan.yaml --split development \
+#     --database-url ...copilot_multihop --out reports/qa/multihop --max-spend-usd <budget>
+#
+# `agent` and `agent-plan` differ only in the planning step (plan-v1, at most 3 parts); both may
+# search 4 times, so a gain is the plan's, not extra searches'. Registered rule, reported either
+# way: "planning helps" if agent-plan is more accurate than agent over the 150 test questions with
+# exact McNemar p < 0.05 AND the bootstrap 95% interval of the difference above zero; otherwise
+# "no evidence it helps" and the agent keeps no planner. Reported, deciding nothing: flat against
+# both agents, accuracy by question type, evidence articles found, cost and seconds. 150 questions
+# detect only a difference of about 10 points. Most answers are yes/no, so chance is about 0.5.
+# The daily cap is lifted for this command only, as on 2026-10-25.
+schema_version: 1
+name: multihop-plan
+
+dataset:
+  path: data/fixtures/multihop
+  benchmark: multihop
+
+corpus:
+  release: multihop-rag-v1
+
+search: configs/search.yaml
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+generator_client: langchain
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: the shipped pipeline, one search with the question as written
+  - name: agent
+    changes: the research agent (research-v3), 4 searches, no plan
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v3.yaml
+      max_searches: 4
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+  - name: agent-plan
+    changes: the same agent with the planning step before its tool loop
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v3.yaml
+      max_searches: 4
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+      plan: true
+      plan_prompt: prompts/agent/plan-v1.yaml
+      max_subquestions: 3
+
+budget:
+  max_spend_usd: 4.00
+
+decision:
+  primary: agent-plan
+  baseline: agent
+  mcnemar_p: 0.05

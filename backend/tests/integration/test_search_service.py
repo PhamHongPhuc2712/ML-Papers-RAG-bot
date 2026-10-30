@@ -1,0 +1,874 @@
+"""The search service over a real release: fusion, reranking, deadlines and fallbacks."""
+
+from __future__ import annotations
+
+import threading
+from uuid import uuid4
+
+import pytest
+
+from copilot.contracts import ListwiseResult, PaperFilters, SearchRequest
+from copilot.corpus.releases import capture_release
+from copilot.models.embeddings import FixtureEmbedding
+from copilot.models.llm import LlmError
+from copilot.search.dense import DenseRetriever
+from copilot.search.fusion import rrf
+from copilot.search.rerank import FixtureReranker, RerankError
+from copilot.search.service import (
+    TIMEOUT,
+    Outcome,
+    PaperStore,
+    SearchConfig,
+    SearchService,
+    SearchUnavailable,
+    ThreadedStageRunner,
+    WarmupConfig,
+    load_warmup_config,
+)
+from copilot.search.sparse import SparseRetriever
+
+pytestmark = pytest.mark.integration
+
+CONFIG = SearchConfig(candidates_per_branch=100, rrf_k=60, rerank_depth=50)
+QUERY = "graph contrastive learning"
+
+
+@pytest.fixture(scope="module")
+def corpus(search_corpus):
+    return search_corpus
+
+
+class Recording:
+    """A branch that records exactly what it was asked."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.calls: list[tuple] = []
+
+    def search(self, query, filters, limit, release_id):
+        self.calls.append((query, filters, limit, release_id))
+        return self.inner.search(query, filters, limit, release_id)
+
+
+class Failing:
+    def search(self, query, filters, limit, release_id):
+        raise ConnectionError("qdrant went away")
+
+
+class Fixed:
+    def __init__(self, hits) -> None:
+        self.hits = hits
+
+    def search(self, query, filters, limit, release_id):
+        return list(self.hits)
+
+
+class ScriptedRunner:
+    """Deterministic deadlines: the named stages time out without anything waiting."""
+
+    def __init__(self, timeouts=()) -> None:
+        self.timeouts = set(timeouts)
+        self.stages: list[str] = []
+
+    def run(self, stages):
+        outcomes = {}
+        for name, (fn, budget) in stages.items():
+            self.stages.append(name)
+            if name in self.timeouts:
+                outcomes[name] = Outcome(error="timeout", seconds=budget)
+                continue
+            try:
+                outcomes[name] = Outcome(value=fn())
+            except Exception as error:  # noqa: BLE001 - mirrors the threaded runner
+                outcomes[name] = Outcome(error=getattr(error, "code", type(error).__name__))
+        return outcomes
+
+
+class ColdRunner(ScriptedRunner):
+    """The named stages time out on their first run only, as on a cold page cache."""
+
+    def run(self, stages):
+        outcomes = super().run(stages)
+        self.timeouts -= set(stages)
+        return outcomes
+
+
+class Reversing:
+    identity = "fixture/reversing"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def score(self, query, texts):
+        self.calls += 1
+        # Later fused candidates score higher, so reranking reverses the order.
+        return [float(index) for index in range(len(texts))]
+
+
+class Returning:
+    identity = "fixture/returning"
+
+    def __init__(self, make) -> None:
+        self.make = make
+
+    def score(self, query, texts):
+        return self.make(texts)
+
+
+class FailsOnce:
+    identity = "fixture/fails-once"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def score(self, query, texts):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("CUDA error: device-side assert")
+        return FixtureReranker().score(query, texts)
+
+
+def _service(corpus, **overrides) -> SearchService:
+    parts = {
+        "engine": corpus.engine,
+        "lexical": SparseRetriever(corpus.engine, corpus.client),
+        "dense": DenseRetriever(corpus.engine, corpus.client, FixtureEmbedding()),
+        "reranker": FixtureReranker(),
+        "config": CONFIG,
+        "runner": ScriptedRunner(),
+    }
+    parts.update(overrides)
+    return SearchService(**parts)
+
+
+def _request(mode: str, **filters) -> SearchRequest:
+    return SearchRequest(query=QUERY, mode=mode, filters=PaperFilters(**filters), limit=20)
+
+
+def _ids(response) -> list[str]:
+    return [str(item.paper_id) for item in response.items]
+
+
+def test_hybrid_rerank_returns_ranked_papers_with_metadata_and_every_stage_score(corpus):
+    service = _service(corpus, runner=ThreadedStageRunner())
+    response, trace = service.search_with_trace(_request("hybrid_rerank"))
+
+    assert response.corpus_release_id == corpus.release
+    assert not response.degraded and response.warnings == []
+    assert [item.rank for item in response.items] == list(range(1, len(response.items) + 1))
+    scores = [item.score for item in response.items]
+    assert scores == sorted(scores, reverse=True)
+    top = response.items[0]
+    assert set(top.scores) >= {"rrf", "rerank"}
+    assert top.score == top.scores["rerank"]
+    paper = response.papers[str(top.paper_id)]
+    assert paper.authors == ["Ada Lovelace"] and paper.fulltext_indexed
+    assert trace.models == {
+        "embedding": FixtureEmbedding().identity,
+        "reranker": FixtureReranker.identity,
+    }
+    assert set(trace.stages) >= {"lexical", "dense", "fusion", "rerank", "hydrate"}
+
+
+def test_both_branches_receive_the_same_query_filters_and_release(corpus):
+    lexical = Recording(SparseRetriever(corpus.engine, corpus.client))
+    dense = Recording(DenseRetriever(corpus.engine, corpus.client, FixtureEmbedding()))
+    filters = {"venues": ["ACL"], "year_from": 2024}
+    response = _service(corpus, lexical=lexical, dense=dense).search(_request("hybrid", **filters))
+
+    assert lexical.calls == dense.calls
+    ((query, sent, limit, release),) = lexical.calls
+    assert (query, limit, release) == (QUERY, 100, corpus.release)
+    assert sent == PaperFilters(**filters)
+    assert all(paper.venue == "ACL" and paper.year >= 2024 for paper in response.papers.values())
+
+
+def test_single_branch_modes_bypass_fusion_and_the_reranker(corpus):
+    reranker = Reversing()
+    for mode, score_name in (("bm25", "bm25"), ("dense", "dense")):
+        response, trace = _service(corpus, reranker=reranker).search_with_trace(_request(mode))
+        assert "fusion" not in trace.stages and "rerank" not in trace.stages
+        branch = "lexical" if mode == "bm25" else "dense"
+        assert _ids(response) == [pid for pid, _ in trace.stages[branch]["candidates"]][:20]
+        assert all(set(item.scores) == {score_name} for item in response.items)
+    assert reranker.calls == 0
+
+
+def test_hybrid_fuses_by_rrf_and_never_calls_the_reranker(corpus):
+    reranker = Reversing()
+    response, trace = _service(corpus, reranker=reranker).search_with_trace(_request("hybrid"))
+    lexical = [pid for pid, _ in trace.stages["lexical"]["candidates"]]
+    dense = [pid for pid, _ in trace.stages["dense"]["candidates"]]
+    assert _ids(response) == [pid for pid, _ in rrf([lexical, dense], k=60)][:20]
+    assert reranker.calls == 0
+
+
+def test_no_candidates_is_an_empty_page_not_an_error(corpus):
+    empty = Fixed([])
+    response = _service(corpus, lexical=empty, dense=empty).search(_request("hybrid_rerank"))
+    assert response.items == [] and response.papers == {}
+    assert not response.degraded
+
+
+def test_the_reranker_reorders_the_fused_set_without_changing_it(corpus):
+    """Candidate recall is the fused set's: a reranker-only change cannot improve it."""
+
+    service = _service(corpus, reranker=Reversing())
+    reranked, trace = service.search_with_trace(_request("hybrid_rerank"))
+    fused = [pid for pid, _ in trace.stages["fusion"]["candidates"]][: CONFIG.rerank_depth]
+    assert _ids(reranked) == list(reversed(fused))[:20]
+    assert set(_ids(reranked)) <= set(fused)
+    plain = _service(corpus).search(_request("hybrid"))
+    assert set(_ids(reranked)) == set(_ids(plain))
+
+
+@pytest.mark.parametrize(
+    ("make", "warning"),
+    [
+        (lambda texts: [1.0] * (len(texts) - 1), "rerank_invalid_scores"),
+        (lambda texts: [float("nan")] * len(texts), "rerank_invalid_scores"),
+    ],
+)
+def test_unusable_reranker_scores_leave_the_fusion_order_and_say_so(corpus, make, warning):
+    response, trace = _service(corpus, reranker=Returning(make)).search_with_trace(
+        _request("hybrid_rerank")
+    )
+    fused = [pid for pid, _ in trace.stages["fusion"]["candidates"]]
+    assert _ids(response) == fused[:20]
+    assert response.degraded and response.warnings == [warning]
+    assert all("rerank" not in item.scores for item in response.items)
+
+
+def test_one_failed_branch_serves_the_other_with_a_warning(corpus):
+    response, trace = _service(corpus, dense=Failing()).search_with_trace(_request("hybrid"))
+    lexical = [pid for pid, _ in trace.stages["lexical"]["candidates"]]
+    assert _ids(response) == lexical[:20]
+    assert response.degraded and response.warnings == ["dense_unavailable"]
+    assert trace.stages["dense"]["error"] == "ConnectionError"
+
+
+def test_both_branches_failing_is_a_retryable_error_not_an_empty_page(corpus):
+    with pytest.raises(SearchUnavailable) as raised:
+        _service(corpus, lexical=Failing(), dense=Failing()).search(_request("hybrid_rerank"))
+    assert raised.value.code == "candidates_unavailable" and raised.value.retryable
+    with pytest.raises(SearchUnavailable, match="candidates_unavailable"):
+        _service(corpus, lexical=Failing()).search(_request("bm25"))
+
+
+def test_timeouts_fall_back_explicitly(corpus):
+    branch = _service(corpus, runner=ScriptedRunner({"dense"})).search(_request("hybrid"))
+    assert branch.degraded and branch.warnings == ["dense_timeout"]
+    assert branch.items
+
+    service = _service(corpus, runner=ScriptedRunner({"rerank"}))
+    response, trace = service.search_with_trace(_request("hybrid_rerank"))
+    fused = [pid for pid, _ in trace.stages["fusion"]["candidates"]]
+    assert _ids(response) == fused[:20]
+    assert response.degraded and response.warnings == ["rerank_timeout"]
+    # A timeout spent its whole budget, so it is not retried.
+    assert trace.stages["rerank"]["errors"] == ["timeout"]
+
+
+def test_a_model_error_is_retried_once_within_the_deadline(corpus):
+    reranker = FailsOnce()
+    response, trace = _service(corpus, reranker=reranker).search_with_trace(
+        _request("hybrid_rerank")
+    )
+    assert reranker.calls == 2
+    assert not response.degraded
+    assert trace.stages["rerank"]["attempts"] == 2
+
+
+def test_an_exhausted_total_deadline_skips_the_reranker(corpus):
+    # The request starts at 0 and its branches are budgeted at 0; by the time
+    # the reranker is due, the clock reads past the 3-second total.
+    ticks = iter([0.0, 0.0])
+    service = _service(corpus, clock=lambda: next(ticks, 99.0))
+    response = service.search(_request("hybrid_rerank"))
+    assert response.degraded and response.warnings == ["rerank_timeout"]
+
+
+def test_the_release_is_read_once_per_request(corpus):
+    reads: list[int] = []
+
+    def capture():
+        reads.append(1)
+        return capture_release(corpus.engine)
+
+    lexical = Recording(SparseRetriever(corpus.engine, corpus.client))
+    dense = Recording(DenseRetriever(corpus.engine, corpus.client, FixtureEmbedding()))
+    _service(corpus, capture=capture, lexical=lexical, dense=dense).search(
+        _request("hybrid_rerank")
+    )
+    assert len(reads) == 1
+    assert lexical.calls[0][3] == dense.calls[0][3] == corpus.release
+
+
+def test_no_active_release_is_a_retryable_error(corpus):
+    with pytest.raises(SearchUnavailable, match="corpus_not_ready"):
+        _service(corpus, capture=lambda: None).search(_request("hybrid"))
+
+
+def test_the_reranker_error_type_is_what_the_trace_records(corpus):
+    """A typed rerank error keeps its code; anything else is recorded by type."""
+
+    def raise_typed(texts):
+        raise RerankError("score_count_mismatch")
+
+    _, trace = _service(corpus, reranker=Returning(raise_typed)).search_with_trace(
+        _request("hybrid_rerank")
+    )
+    assert trace.stages["rerank"]["errors"] == ["score_count_mismatch"] * 2
+
+
+def test_a_candidate_missing_from_the_database_is_dropped_and_reported(corpus):
+    ghost = str(uuid4())
+    lexical = Fixed([(ghost, 9.0), (corpus.ids["Graph transformers at scale"], 1.0)])
+    for mode in ("hybrid", "hybrid_rerank"):
+        response = _service(corpus, lexical=lexical).search(_request(mode))
+        assert ghost not in _ids(response)
+        assert "metadata_missing" in response.warnings and response.degraded
+
+
+def test_abandoned_model_work_cannot_starve_the_lexical_branch():
+    """Overrunning reranks keep their threads; BM25 must still find one of its own.
+
+    Found by the pilot on a contended GPU: every rerank overran, kept running,
+    and a shared pool would fill with them until even BM25 could not start.
+    """
+
+    held = threading.Event()
+    runner = ThreadedStageRunner()
+    try:
+        for _ in range(12):
+            assert runner.run({"rerank": (held.wait, 0.01)})["rerank"].error == TIMEOUT
+        outcome = runner.run({"lexical": (lambda: ["a"], 5.0)})["lexical"]
+        assert outcome.error is None and outcome.value == ["a"]
+    finally:
+        held.set()
+        runner.close()
+
+
+def test_a_stage_still_queued_at_its_deadline_never_runs():
+    held = threading.Event()
+    ran: list[int] = []
+    runner = ThreadedStageRunner()
+    try:
+        assert runner.run({"dense": (held.wait, 0.01)})["dense"].error == TIMEOUT
+        # Queued behind the overrunning call: its answer would arrive too late to use.
+        assert runner.run({"dense": (lambda: ran.append(1), 0.01)})["dense"].error == TIMEOUT
+        held.set()
+        assert runner.run({"dense": (lambda: "next", 5.0)})["dense"].value == "next"
+        assert ran == []
+    finally:
+        held.set()
+        runner.close()
+
+
+def test_hydrate_time_includes_the_metadata_the_reranker_reads(corpus):
+    """The reranker's texts come from the metadata load; the trace must not lose it."""
+
+    now = [0.0]
+
+    class TimedStore(PaperStore):
+        def load(self, paper_ids):
+            if paper_ids:
+                now[0] += 0.25
+            return super().load(paper_ids)
+
+    for mode in ("hybrid", "hybrid_rerank"):
+        now[0] = 0.0
+        service = _service(corpus, papers=TimedStore(corpus.engine), clock=lambda: now[0])
+        _, trace = service.search_with_trace(_request(mode))
+        # One load each: hybrid_rerank's page is drawn from the head it already read.
+        assert trace.stages["hydrate"]["seconds"] == pytest.approx(0.25)
+
+
+# --- hybrid_rerank_llm (LLM reranking plan, L4) --------------------------------------------
+
+
+class FakeListwise:
+    """A listwise reranker that reverses the head, or fails the way it is told to."""
+
+    identity = "fake/listwise@v1"
+
+    def __init__(self, reverse: bool = False, fail: str | None = None, sleep: float = 0.0) -> None:
+        self.reverse = reverse
+        self.fail = fail
+        self.sleep = sleep
+        self.calls = 0
+        self.budgets: list[float] = []
+        self.texts: list[list[str]] = []
+
+    def order(self, query, texts, *, timeout, purpose, request_id=None, run_id=None):
+        self.calls += 1
+        self.budgets.append(timeout)
+        self.texts.append(list(texts))
+        if self.sleep:
+            threading.Event().wait(self.sleep)
+        if self.fail == "not_a_permutation":
+            return ListwiseResult(
+                order=[0] * len(texts),
+                ranked_by_model=1,
+                cost_usd=0.0,
+                served_model="fake-model",
+                cached=False,
+            )
+        if self.fail == "spend_cap":
+            raise LlmError("llm_spend_cap")
+        if self.fail == "unparseable":
+            raise RerankError("llm_rerank_unparseable")
+        if self.fail == "server_error":
+            raise LlmError("llm_server_error", retryable=True)
+        order = list(range(len(texts)))
+        return ListwiseResult(
+            order=order[::-1] if self.reverse else order,
+            ranked_by_model=len(texts),
+            cost_usd=0.0012,
+            served_model="fake-model",
+            cached=False,
+        )
+
+
+@pytest.fixture
+def service_factory(corpus):
+    def make(listwise):
+        timeouts = {"llm"} if listwise is not None and listwise.fail == "timeout" else set()
+        return _service(corpus, listwise=listwise, runner=ScriptedRunner(timeouts))
+
+    return make
+
+
+def _deep(limit: int = 50) -> SearchRequest:
+    return SearchRequest(query=QUERY, mode="hybrid_rerank_llm", filters=PaperFilters(), limit=limit)
+
+
+def test_the_llm_reorders_the_reranked_head_without_changing_its_members(service_factory):
+    service = service_factory(listwise=FakeListwise(reverse=True))
+    request = _deep()
+    plain = service.rank(request.model_copy(update={"mode": "hybrid_rerank"}))
+    deep = service.rank(request)
+    assert [pid for pid, _ in deep.ordering.items] == [pid for pid, _ in plain.ordering.items][::-1]
+    assert not deep.ordering.warnings
+    assert all("llm_rank" in deep.ordering.scores[pid] for pid, _ in deep.ordering.items)
+    ranks = [deep.ordering.scores[pid]["llm_rank"] for pid, _ in deep.ordering.items]
+    assert ranks == list(range(1, len(ranks) + 1))
+    stage = deep.trace.stages["llm"]
+    assert stage["ranked_by_model"] == len(ranks) and stage["cost_usd"] == 0.0012
+    assert stage["served_model"] == "fake-model" and stage["cached"] is False
+
+
+@pytest.mark.parametrize(
+    "failure, warning",
+    [
+        ("spend_cap", "llm_spend_cap"),
+        ("unparseable", "llm_rerank_unparseable"),
+        ("timeout", "llm_rerank_timeout"),
+        ("server_error", "llm_rerank_failed"),
+    ],
+)
+def test_an_llm_failure_serves_the_cross_encoder_order_and_says_why(
+    service_factory, failure, warning
+):
+    service = service_factory(listwise=FakeListwise(fail=failure))
+    request = _deep()
+    plain = service.rank(request.model_copy(update={"mode": "hybrid_rerank"}))
+    deep = service.rank(request)
+    assert deep.ordering.items == plain.ordering.items
+    assert warning in deep.ordering.warnings
+
+
+def test_without_a_configured_llm_the_mode_degrades_rather_than_failing(service_factory):
+    deep = service_factory(listwise=None).rank(
+        SearchRequest(query="graph", mode="hybrid_rerank_llm", filters=PaperFilters())
+    )
+    assert "llm_rerank_unavailable" in deep.ordering.warnings and deep.ordering.items
+
+
+def test_the_llm_has_its_own_budget_beyond_the_three_second_total(service_factory):
+    listwise = FakeListwise(reverse=True)
+    service_factory(listwise=listwise).rank(_deep())
+    assert CONFIG.total_seconds < listwise.budgets[0] <= CONFIG.llm_rerank_seconds
+
+
+def test_warm_up_never_calls_the_llm(corpus, service_factory):
+    listwise = FakeListwise()
+    service_factory(listwise=listwise).warm(capture_release(corpus.engine))
+    assert listwise.calls == 0
+
+
+def test_the_llm_mode_has_its_own_cache_identity(service_factory):
+    service = service_factory(listwise=FakeListwise())
+    assert service.identity("hybrid_rerank_llm")["listwise"] == "fake/listwise@v1"
+    assert "listwise" not in service.identity("hybrid_rerank")
+    plain = service.identity("hybrid_rerank")
+    assert {key: service.identity("hybrid_rerank_llm")[key] for key in plain} == plain
+
+
+def test_a_head_partly_missing_from_the_database_is_reordered_without_the_ghost(corpus):
+    ghost = str(uuid4())
+    lexical = Fixed([(ghost, 9.0), (corpus.ids["Graph transformers at scale"], 1.0)])
+    listwise = FakeListwise(reverse=True)
+    # No cross-encoder, so the LLM stage is the first to read the head's metadata.
+    deep = _service(corpus, lexical=lexical, reranker=None, listwise=listwise).rank(_deep())
+    ids = [pid for pid, _ in deep.ordering.items]
+    assert ghost not in ids and ids
+    assert len(listwise.texts[0]) == len(ids)
+    assert {"rerank_unavailable", "metadata_missing"} <= set(deep.ordering.warnings)
+
+
+def test_an_empty_head_never_calls_the_llm(corpus):
+    empty = Fixed([])
+    listwise = FakeListwise()
+    deep = _service(corpus, lexical=empty, dense=empty, listwise=listwise).rank(_deep())
+    assert deep.ordering.items == () and not deep.ordering.warnings
+    assert listwise.calls == 0
+
+
+def test_an_answer_that_is_not_a_permutation_keeps_the_cross_encoder_order(service_factory):
+    service = service_factory(listwise=FakeListwise(fail="not_a_permutation"))
+    plain = service.rank(_deep().model_copy(update={"mode": "hybrid_rerank"}))
+    deep = service.rank(_deep())
+    assert deep.ordering.items == plain.ordering.items
+    assert "llm_rerank_failed" in deep.ordering.warnings
+    assert deep.trace.stages["llm"]["error"] == "not_a_permutation"
+
+
+def test_a_real_llm_timeout_falls_back_on_the_threaded_runner(corpus):
+    from dataclasses import replace
+
+    config = replace(CONFIG, llm_rerank_seconds=0.2)
+    listwise = FakeListwise(reverse=True, sleep=1.0)
+    service = _service(corpus, config=config, runner=ThreadedStageRunner(), listwise=listwise)
+    try:
+        plain = service.rank(_deep().model_copy(update={"mode": "hybrid_rerank"}))
+        deep = service.rank(_deep())
+    finally:
+        service.close()
+    assert deep.ordering.items == plain.ordering.items
+    assert deep.ordering.warnings == ("llm_rerank_timeout",)
+
+
+# --- Reranking the chunk that found the paper (rerank.text) --------------------------------
+
+
+class RecordingReranker:
+    """Scores in fused order and keeps every text it was asked to read."""
+
+    identity = "fixture/recording"
+
+    def __init__(self) -> None:
+        self.texts: list[list[str]] = []
+
+    def score(self, query, texts):
+        self.texts.append(list(texts))
+        return [float(len(texts) - index) for index in range(len(texts))]
+
+
+def _chunk_service(corpus, reranker, text: str, **overrides) -> SearchService:
+    from copilot.search.index import CHUNKS
+
+    config = SearchConfig(
+        candidates_per_branch=100,
+        candidates_source="chunks",
+        rerank_depth=50,
+        rerank_text=text,
+    )
+    parts = {
+        "lexical": SparseRetriever(
+            corpus.engine, corpus.client, kind=CHUNKS, group_papers=True, track_best_chunks=True
+        ),
+        "dense": DenseRetriever(
+            corpus.engine,
+            corpus.client,
+            FixtureEmbedding(),
+            kind=CHUNKS,
+            group_papers=True,
+            track_best_chunks=True,
+        ),
+        "reranker": reranker,
+        "config": config,
+    }
+    parts.update(overrides)
+    return _service(corpus, **parts)
+
+
+@pytest.fixture
+def body_chunks(corpus):
+    """Every seeded chunk gets a body text distinct from its paper's abstract, then restored."""
+
+    from sqlalchemy import text as sql
+
+    with corpus.engine.begin() as connection:
+        rows = connection.execute(
+            sql(
+                "select c.id::text as chunk_id, c.text, p.title from chunks c"
+                " join paper_versions pv on pv.id = c.paper_version_id"
+                " join papers p on p.id = pv.paper_id"
+            )
+        ).mappings()
+        originals = {row["chunk_id"]: (row["text"], row["title"]) for row in rows}
+        for chunk_id, (_, title) in originals.items():
+            connection.execute(
+                sql("update chunks set text = :text where id = cast(:id as uuid)"),
+                {"text": f"Body of {title}, as only the paper says.", "id": chunk_id},
+            )
+    try:
+        yield {
+            chunk_id: f"Body of {title}, as only the paper says."
+            for chunk_id, (_, title) in originals.items()
+        }
+    finally:
+        with corpus.engine.begin() as connection:
+            for chunk_id, (original, _) in originals.items():
+                connection.execute(
+                    sql("update chunks set text = :text where id = cast(:id as uuid)"),
+                    {"text": original, "id": chunk_id},
+                )
+
+
+def test_chunk_text_reranking_scores_the_chunk_that_found_each_paper(corpus, body_chunks):
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "chunk")
+    response, trace = service.search_with_trace(_request("hybrid_rerank"))
+    assert not response.degraded
+    head = [paper_id for paper_id, _ in trace.stages["fusion"]["candidates"]][:50]
+    stage = trace.stages["rerank"]
+    assert stage["text"] == "chunk" and stage["abstract_fallbacks"] == 0
+    chosen = stage["chunks"]
+    assert set(chosen) == set(head)
+    # The reranker read each paper's evidence chunk, never its abstract.
+    (texts,) = reranker.texts
+    assert texts == [body_chunks[chosen[paper_id]] for paper_id in head]
+    assert all(text.startswith("Body of ") for text in texts)
+    # The chunk scored is the one a branch found the paper by, and the branches still
+    # expose it for the evaluation harness.
+    found = {**service._branches["dense"].best_chunks, **service._branches["lexical"].best_chunks}
+    assert found and all(chosen[paper_id] in found.values() for paper_id in head)
+
+
+def test_title_chunk_reranking_prepends_the_title_to_the_chunk(corpus, body_chunks):
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "title_chunk")
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    head = [paper_id for paper_id, _ in trace.stages["fusion"]["candidates"]][:50]
+    rows = PaperStore(corpus.engine).load(head)
+    chosen = trace.stages["rerank"]["chunks"]
+    (texts,) = reranker.texts
+    assert texts == [f"{rows[pid].title}\n{body_chunks[chosen[pid]]}" for pid in head]
+
+
+def test_title_abstract_chunk_reranking_reads_the_abstract_before_the_chunk(corpus, body_chunks):
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "title_abstract_chunk")
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    head = [paper_id for paper_id, _ in trace.stages["fusion"]["candidates"]][:50]
+    rows = PaperStore(corpus.engine).load(head)
+    stage = trace.stages["rerank"]
+    assert stage["text"] == "title_abstract_chunk"
+    chosen = stage["chunks"]
+    (texts,) = reranker.texts
+    # The pair budget truncates from the end, so the chunk is what gets cut, never the abstract.
+    assert texts == [f"{rows[pid].text}\n{body_chunks[chosen[pid]]}" for pid in head]
+
+
+def test_the_chunk_a_paper_ranked_higher_by_is_the_one_reranked(corpus, body_chunks):
+    """When the branches disagree, the chunk from the branch that ranked the paper better wins."""
+
+    from sqlalchemy import text as sql
+
+    class Scripted:
+        def __init__(self, hits, chunks) -> None:
+            self.hits, self.chunks = hits, chunks
+
+        def search(self, query, filters, limit, release_id):
+            return list(self.hits)
+
+        def search_with_chunks(self, query, filters, limit, release_id):
+            return list(self.hits), dict(self.chunks)
+
+    with corpus.engine.connect() as connection:
+        pairs = connection.execute(
+            sql(
+                "select pv.paper_id::text as paper_id, c.id::text as chunk_id from chunks c"
+                " join paper_versions pv on pv.id = c.paper_version_id order by c.id"
+            )
+        ).all()
+    own = {paper_id: chunk_id for paper_id, chunk_id in pairs}
+    first, second = list(own)[:2]
+    # Each branch names the other paper's chunk for the paper it ranks lower.
+    lexical = Scripted([(first, 9.0), (second, 8.0)], {first: own[first], second: own[first]})
+    dense = Scripted([(second, 1.0), (first, 0.5)], {second: own[second], first: own[second]})
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "chunk", lexical=lexical, dense=dense)
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    chosen = trace.stages["rerank"]["chunks"]
+    assert chosen[first] == own[first], "lexical ranked `first` higher: its chunk"
+    assert chosen[second] == own[second], "dense ranked `second` higher: its chunk"
+    (texts,) = reranker.texts
+    assert set(texts) == {body_chunks[own[first]], body_chunks[own[second]]}
+
+
+def test_a_branch_without_chunks_falls_back_to_abstracts_and_says_so(corpus):
+    """A head member no branch found through a chunk is scored by its abstract, counted."""
+
+    hits = [(paper_id, 1.0) for paper_id in list(corpus.ids.values())[:3]]
+    reranker = RecordingReranker()
+    service = _chunk_service(corpus, reranker, "chunk", lexical=Fixed(hits), dense=Fixed(hits))
+    response, trace = service.search_with_trace(_request("hybrid_rerank"))
+    rows = PaperStore(corpus.engine).load([paper_id for paper_id, _ in hits])
+    (texts,) = reranker.texts
+    assert sorted(texts) == sorted(rows[paper_id].text for paper_id, _ in hits)
+    assert trace.stages["rerank"]["abstract_fallbacks"] == 3
+    assert trace.stages["rerank"]["chunks"] == {}
+    # Still a full rerank over every candidate: the ordering is not degraded.
+    assert not response.degraded
+
+
+def test_the_rerank_text_is_part_of_the_cache_identity(corpus):
+    abstract = _service(corpus, config=SearchConfig(candidates_source="chunks"))
+    chunk = _chunk_service(corpus, FixtureReranker(), "chunk")
+    assert "rerank_text" not in abstract.identity("hybrid_rerank")
+    assert chunk.identity("hybrid_rerank")["rerank_text"] == "chunk"
+    assert "rerank_text" not in chunk.identity("hybrid")
+
+
+def test_chunk_text_reranking_needs_chunk_candidates_and_a_chunk_source():
+    with pytest.raises(ValueError, match="rerank_text"):
+        SearchConfig(candidates_source="papers", rerank_text="chunk")
+    with pytest.raises(ValueError, match="rerank_text"):
+        SearchConfig(candidates_source="chunks", rerank_text="section")
+    # Without a database the chunk texts must come from the caller.
+    with pytest.raises(ValueError, match="chunk_source_required"):
+        SearchService(
+            engine=None,
+            lexical=Fixed([]),
+            dense=Fixed([]),
+            reranker=FixtureReranker(),
+            config=SearchConfig(candidates_source="chunks", rerank_text="chunk"),
+            papers=PaperStore.__new__(PaperStore),
+            capture=lambda: None,
+        )
+
+
+def test_hydrate_time_includes_the_chunk_texts_the_reranker_reads(corpus, body_chunks):
+    service = _chunk_service(corpus, RecordingReranker(), "chunk")
+    _, trace = service.search_with_trace(_request("hybrid_rerank"))
+    assert trace.stages["hydrate"]["seconds"] >= 0.0
+    assert trace.stages["hydrate"]["chunks"] == len(trace.stages["rerank"]["chunks"])
+
+
+def test_candidates_that_all_time_out_are_retried_once(corpus):
+    """A cold page cache misses the first branch deadline; one retry serves, undegraded."""
+
+    runner = ColdRunner({"lexical", "dense"})
+    response, trace = _service(corpus, runner=runner).search_with_trace(_request("hybrid"))
+    warm = _service(corpus).search(_request("hybrid"))
+    assert _ids(response) == _ids(warm)
+    assert not response.degraded and response.warnings == []
+    assert runner.stages == ["lexical", "dense", "lexical", "dense"]
+    assert trace.stages["lexical"]["retried"] == ["timeout"]
+    assert trace.stages["dense"]["retried"] == ["timeout"]
+
+    single = ColdRunner({"lexical"})
+    assert _service(corpus, runner=single).search(_request("bm25")).items
+    assert single.stages == ["lexical", "lexical"]
+
+
+def test_the_candidate_retry_happens_once_and_only_for_timeouts(corpus):
+    stuck = ScriptedRunner({"lexical", "dense"})
+    with pytest.raises(SearchUnavailable, match="candidates_unavailable"):
+        _service(corpus, runner=stuck).search(_request("hybrid"))
+    assert stuck.stages == ["lexical", "dense", "lexical", "dense"]
+
+    # Failures that are not timeouts (Qdrant down) are not retried.
+    down = ScriptedRunner()
+    with pytest.raises(SearchUnavailable, match="candidates_unavailable"):
+        _service(corpus, lexical=Failing(), dense=Failing(), runner=down).search(_request("hybrid"))
+    assert down.stages == ["lexical", "dense"]
+
+    # One branch answering is served degraded as before; the timed-out one is not retried.
+    partial = ScriptedRunner({"dense"})
+    response = _service(corpus, runner=partial).search(_request("hybrid"))
+    assert response.warnings == ["dense_timeout"] and partial.stages == ["lexical", "dense"]
+
+
+class SlowFor(ScriptedRunner):
+    """The candidate branches time out for the first ``runs`` runs, then answer."""
+
+    def __init__(self, runs: int) -> None:
+        super().__init__({"lexical", "dense"})
+        self.left = runs
+
+    def run(self, stages):
+        outcomes = super().run(stages)
+        self.left -= 1
+        if self.left <= 0:
+            self.timeouts -= {"lexical", "dense"}
+        return outcomes
+
+
+class FakeTime:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+WARMUP = WarmupConfig(queries=("graph neural networks", "contrastive learning"), consecutive=3)
+
+
+def test_warm_up_runs_until_searches_meet_their_deadlines(corpus):
+    """R3: a cold Qdrant failed the first searches; startup waits for consecutive clean ones."""
+
+    time = FakeTime()
+    # Two rank() calls fail: each is a first run plus its one retry.
+    service = _service(corpus, runner=SlowFor(4), clock=time.clock)
+    report = service.warm_until_ready(capture_release(corpus.engine), WARMUP, sleep=time.sleep)
+    assert report["ready"] is True and report["queries"] == 5
+    assert report["failures"] == {"candidates_unavailable": 2}
+    assert time.sleeps == [WARMUP.pause_seconds] * 2
+
+
+def test_warm_up_stops_at_once_when_search_is_down_not_slow(corpus):
+    time = FakeTime()
+    service = _service(corpus, lexical=Failing(), dense=Failing(), clock=time.clock)
+    report = service.warm_until_ready(capture_release(corpus.engine), WARMUP, sleep=time.sleep)
+    assert report["ready"] is False and report["queries"] == 1
+    assert report["stopped"] == "candidates_unavailable" and time.sleeps == []
+
+
+def test_warm_up_gives_up_after_its_budget_and_counts_a_slow_branch_as_cold(corpus):
+    time = FakeTime()
+    # The dense branch never meets its deadline: served, but degraded, so never warm.
+    service = _service(corpus, runner=ScriptedRunner({"dense"}), clock=time.clock)
+    config = WarmupConfig(queries=WARMUP.queries, consecutive=3, max_seconds=10, pause_seconds=1)
+    report = service.warm_until_ready(capture_release(corpus.engine), config, sleep=time.sleep)
+    assert report["ready"] is False and report["stopped"] == "max_seconds"
+    assert report["failures"] == {"dense_timeout": report["queries"]} and report["queries"] == 10
+
+
+def test_warm_up_accepts_a_slow_reranker_and_skips_without_queries(corpus):
+    """Rerank timeouts are GPU contention, not a cold index: they do not hold startup."""
+
+    time = FakeTime()
+    service = _service(corpus, runner=ScriptedRunner({"rerank"}), clock=time.clock)
+    report = service.warm_until_ready(capture_release(corpus.engine), WARMUP, sleep=time.sleep)
+    assert report["ready"] is True and report["queries"] == 3
+    runner = ScriptedRunner()
+    skipped = _service(corpus, runner=runner).warm_until_ready(
+        capture_release(corpus.engine), WarmupConfig()
+    )
+    assert skipped == {"ready": True, "skipped": True} and runner.stages == []
+
+
+def test_the_shipped_warm_up_is_configured():
+    config = load_warmup_config("configs/search.yaml")
+    assert len(config.queries) >= 20 and len(set(config.queries)) == len(config.queries)
+    assert config.consecutive >= 1 and 0 < config.max_seconds <= 300

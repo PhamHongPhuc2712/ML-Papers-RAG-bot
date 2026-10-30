@@ -1,0 +1,19 @@
+{
+  "collection": "mt-rag-govt-elser-512-100-20240611",
+  "commit": "cc5b1d481b391181b89f7ced860308482e785463",
+  "files": {
+    "corpus": "corpora/passage_level/govt.jsonl.zip",
+    "lastturn": "mtrag-human/retrieval_tasks/govt/govt_lastturn.jsonl",
+    "qrels": "mtrag-human/retrieval_tasks/govt/qrels/dev.tsv",
+    "reference": "mtrag-human/generation_tasks/reference.jsonl",
+    "rewrite": "mtrag-human/retrieval_tasks/govt/govt_rewrite.jsonl"
+  },
+  "repository": "IBM/mt-rag-benchmark",
+  "sha256": {
+    "corpus": "09adcc5a1a8d11e362c66d7dbf0ef2ea338df4327d655102bf91ea8e258399f6",
+    "lastturn": "d24b26f4488f3416a84db8bb150b01095d0894b4274e3750f193ab4c38b09a75",
+    "qrels": "46acb9b882297b6ff68978a56fd4ec57ea1c340cd604c62787a9ad69ac880d34",
+    "reference": "b3dde4076f9f692a99513e424a0a39f57591dbe45600a4c1017aaa7a7edcfaac",
+    "rewrite": "d84cf9f1598875a5cd28616a6648155948072c27363a31c85a51050cf4078835"
+  }
+}

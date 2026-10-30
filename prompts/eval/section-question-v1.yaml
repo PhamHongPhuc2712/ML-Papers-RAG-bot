@@ -1,0 +1,13 @@
+# Section-level question writing, version 1 (release plan S1). Output is stored under DATA_DIR.
+name: section-question-v1
+system: >-
+  You write one search question a researcher might ask that this passage from an ML paper
+  answers. The question must be answerable from the passage, must not name the paper, its
+  method, model or dataset names, and must not copy phrases from the passage: use your own
+  words. Ask about a specific finding, setting, design choice or result, not a summary.
+  Reply with JSON only: {"question": "..."}.
+user: |-
+  Section: {section}
+
+  Passage:
+  {passage}

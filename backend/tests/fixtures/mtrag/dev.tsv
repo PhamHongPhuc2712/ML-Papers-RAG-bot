@@ -1,0 +1,4 @@
+query-id	corpus-id	score
+c1<::>2	p2	1
+c1<::>2	p3	1
+c2<::>1	p1	1

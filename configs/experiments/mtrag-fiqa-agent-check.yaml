@@ -1,0 +1,40 @@
+# The agent's self-check scored once on MTRAG FiQA (agent self-check, plan
+# docs/results.md), registered by the commit that adds
+# this file, before any FiQA answer is generated. Data: IBM mt-rag-benchmark @ cc5b1d48, FiQA (27
+# conversations, 199 turns, every one test; never read before), release mtrag-fiqa-v1.
+#
+#   source ~/.zshrc; LLM_DAILY_SPEND_CAP_USD=100 uv run --env-file .env --project backend python -m \
+#     copilot.cli eval mtrag --config configs/experiments/mtrag-fiqa-agent-check.yaml --split test \
+#     --frozen --database-url ...copilot_mtrag_fiqa --out reports/mtrag --max-spend-usd <preflight>
+#
+# Systems share the first stage, evidence, generator (configs/chat.yaml) and judge
+# (openai-gpt-6-luna-low, haiku.rag's answer-equivalence rubric). `agent` is the 2026-10-27
+# configuration (research-v2); `agent-check` adds the self-check (check-v1 on openai-gpt-6-luna,
+# one rewrite with rewrite-v1). Every turn's claims are scored for faithfulness by
+# openai-gpt-6-luna-low under prompts/judge/claim-support-v1.yaml.
+#
+# Registered rule (FiQA half), in `live` mode over all judged turns: holds when both
+#   1. agent-check's supported_rate exceeds agent's, the bootstrap 95% interval over conversations
+#      above zero (pair.json's secondary supported_rate block);
+#   2. agent-check's accuracy is at most 0.03 below agent's (point estimate; McNemar reported).
+# The self-check is adopted into the agent's configuration only if this and the ORB half
+# (configs/experiments/orb-text-qa-agent-check.yaml) both hold. Reported, deciding nothing:
+# gold_prefix, fully_supported, abstention overall and on UNANSWERABLE turns, check outcomes, cost,
+# seconds, pipeline against both agents. The daily cap is lifted for this command only.
+schema_version: 1
+name: mtrag-fiqa-agent-check
+corpus: {release: mtrag-fiqa-v1}
+chat: configs/chat.yaml
+judge: openai-gpt-6-luna-low
+prompts: {judge: prompts/judge/answer-equivalence-haiku-v1.yaml}
+faithfulness: {model: openai-gpt-6-luna-low, prompt: prompts/judge/claim-support-v1.yaml}
+modes: [live, gold_prefix]
+systems:
+  - name: pipeline
+  - name: agent
+    agent: {prompt: prompts/agent/research-v2.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true}
+  - name: agent-check
+    agent: {prompt: prompts/agent/research-v2.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true, check: true, check_prompt: prompts/agent/check-v1.yaml, rewrite_prompt: prompts/agent/rewrite-v1.yaml}
+bootstrap: {resamples: 1000, seed: 42, confidence: 0.95}
+decision: {mode: live, treated: agent-check, baseline: pipeline, mcnemar_p: 0.05, secondary: {treated: agent-check, baseline: agent}, rule: "secondary pair: supported_rate interval above zero and accuracy at most 0.03 below"}
+budget: {max_spend_usd: 40.00}

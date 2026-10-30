@@ -1,0 +1,65 @@
+# ORB plan, O3: the shipped retrieval over Open RAG Bench's 1,914 text-only queries, on
+# a release built from the benchmark's own 1,000 papers through our pipeline (O2).
+#
+#   eval retrieval --config configs/experiments/orb-text-retrieval.yaml --split retrieval \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/retrieval/orb-text
+#   eval orb-sections --run reports/retrieval/orb-text --database-url ...copilot_orb
+#
+# A read of the shipped configuration, never a choice: there is deliberately no
+# `decision` block, and the single `retrieval` split holds every text query. The four
+# modes are each run with the paper collection and with the chunk collection as the
+# candidate source, so the P2.6 decision can be seen on a second corpus. MRR@5 sits
+# beside haiku.rag's published MAP, which for one gold document is 1/rank at depth 5.
+schema_version: 1
+name: orb-text
+
+dataset:
+  path: data/fixtures/orb
+  query_text: benchmarks/orb/dataset/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: orb-v1
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [5, 10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: bm25_papers
+    mode: bm25
+    candidates: papers
+  - name: dense_papers
+    mode: dense
+    candidates: papers
+  - name: hybrid_papers
+    mode: hybrid
+    candidates: papers
+  - name: hybrid_rerank_papers
+    mode: hybrid_rerank
+    candidates: papers
+  - name: bm25
+    mode: bm25
+    candidates: chunks
+  - name: dense
+    mode: dense
+    candidates: chunks
+  - name: hybrid
+    mode: hybrid
+    candidates: chunks
+  # The shipped configuration (configs/search.yaml: candidates.source chunks).
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+    candidates: chunks

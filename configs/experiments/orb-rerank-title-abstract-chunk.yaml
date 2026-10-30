@@ -1,0 +1,56 @@
+# The reranker reading title + abstract + the chunk that found the paper, read on Open RAG
+# Bench (2026-10-21, the developer's request after S1 and S3 favoured it over title + chunk).
+#
+#   eval retrieval --config configs/experiments/orb-rerank-title-abstract-chunk.yaml --split retrieval \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/retrieval/orb-rerank-title-abstract-chunk
+#
+# A read of ORB, never a choice: no `decision` block, the single `retrieval` split holds all
+# 1,914 text queries. `shipped` is configs/search.yaml (title + chunk, 2.5 s rerank deadline),
+# which orb-rerank-text measured at 0.968 nDCG@10 as `hybrid_rerank_title_chunk_2500`; `hybrid`
+# (no reranker, 0.947 there) is the floor. Both must reproduce those runs. ORB's own database
+# and release were not touched by the 2026-10-20 bibliography relabel.
+schema_version: 1
+name: orb-rerank-title-abstract-chunk
+
+dataset:
+  path: data/fixtures/orb
+  query_text: benchmarks/orb/dataset/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: orb-v1
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [5, 10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: hybrid
+    mode: hybrid
+    candidates: chunks
+  - name: shipped
+    mode: hybrid_rerank
+    candidates: chunks
+    # Pinned 2026-10-21, when configs/search.yaml moved to title_abstract_chunk: the stage
+    # these runs measured as `shipped` (title + chunk, 2.5 s), which the file then held.
+    search:
+      rerank: {text: title_chunk}
+  - name: title_abstract_chunk
+    mode: hybrid_rerank
+    candidates: chunks
+    baseline: shipped
+    changes: the reranker reads title + abstract + the chunk that found the paper, 1,024-token pairs
+    search:
+      rerank: {text: title_abstract_chunk}

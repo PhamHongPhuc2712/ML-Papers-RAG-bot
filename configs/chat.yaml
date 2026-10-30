@@ -1,0 +1,65 @@
+# One chat turn (spec §9, revised 2026-10-30): the research agent searches the corpus up to three
+# times, may answer a follow-up from passages earlier answers cited, and hands the passages it
+# chose to the grounded generator, whose citations validate. Every value is part of a turn's
+# identity, recorded on each assistant message.
+schema_version: 1
+
+# configs/llm.yaml key for the agent, the generator (and the evaluation baseline's condenser).
+model: openai-gpt-6-luna
+# Set by C4's pre-registered rule (2026-10-11): structured. Frozen 400: 0.884 against
+# ChatGenerator's 0.880, McNemar p = 0.82 (docs/results.md, "Structured generation").
+generator: structured
+
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  condense: prompts/chat/condense-v1.yaml
+
+search:
+  # The first stage is configs/search.yaml, unchanged: since the RAG-only plan's U1
+  # (2026-10-15) the chat has no overrides, and a chat file that names any is refused.
+  # Papers the evidence retriever looks inside: the answering harness's value.
+  papers: 10
+  # The turn's ranked list shown with the answer as its References, the read papers first.
+  references: 20
+
+evidence: configs/evidence.yaml
+
+history:
+  # Previous exchanges the condenser reads, newest kept first, and their character budget.
+  turns: 3
+  max_chars: 6000
+
+# The research agent serves every turn since 2026-10-30, the developer's decision over the
+# registered rules: the configuration
+# scored on 2026-10-27, no planning step, the self-check off. ClapNQ +0.048 (p 0.163), Govt +0.033
+# (p 0.36), MultiHop +0.047 (p 0.23), ORB tied 0.890 / 0.890 (docs/results.md).
+agent:
+  prompt: prompts/agent/research-v2.yaml
+  max_searches: 3
+  max_model_calls: 8
+  max_sections: 4
+  answer_from: seen
+  verbatim_first: true
+  # Passages earlier answers in the chat cited, newest first, that a follow-up may be answered from.
+  carried: 12
+
+# The condense settings below are the evaluation baseline's (`eval mtrag`'s `pipeline`, `eval
+# chat`): the served turn no longer condenses; the agent writes its own queries.
+# On since 2026-10-14, the developer's recorded decision. C7's pre-registered rule (2026-10-11)
+# had turned it off: on 43 frozen ORB follow-ups condensing read 0.791 against 0.674 searched as
+# typed, McNemar p = 0.227 (8 / 3), short of p < 0.05, while every secondary measure favoured it
+# (gold paper in the top 10 1.00 against 0.81, cited MAP 1.00 against 0.73, abstained 0% against
+# 12%). The rule was underpowered, and a follow-up such as "how large was its batch size?" is
+# searched without its subject when it is off (docs/results.md).
+condense: true
+
+# Answers a day per account (sign-up plan, A3, the developer's choice 2026-10-21): a turn past it
+# is refused before anything is spent; failed and interrupted turns do not count. UTC days.
+limits:
+  daily_answers: 20
+
+timeouts_seconds:
+  condense: 15
+  generate: 60
+  # A turn still pending after twice this is interrupted (server died mid-turn).
+  turn: 120

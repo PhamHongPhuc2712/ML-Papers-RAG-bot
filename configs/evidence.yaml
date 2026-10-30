@@ -1,0 +1,43 @@
+# Evidence retrieval and context budgets for grounded answering (spec §9; plan P4.1, ORB O4).
+# Every value is part of an answering run's identity.
+schema_version: 1
+
+retrieval:
+  # Research mode retrieves this many papers first, then chunks inside them.
+  papers: 10
+  # Chunk candidates inside those papers: BM25 and dense over the release's chunk
+  # collection, fused by RRF, then reranked by the cross-encoder on the chunk text.
+  chunk_candidates: 40
+  # What reaches the generator: at most this many pieces, at most `per_paper` from one
+  # paper, so one paper cannot fill the context.
+  evidence: 12
+  per_paper: 3
+  # Optional floor on the reranker's logit: set, a candidate is evidence only when
+  # strictly above it. Unset (null), every reranked candidate may be evidence within the
+  # caps, and the generator decides insufficiency. Left unset after a read of twelve ORB
+  # development questions (2026-10-08, docs/results.md): the gold paper's best
+  # chunk scored above zero on nine of them but -0.01 on one, which a zero floor would
+  # have turned into an abstention with the right chunk in hand.
+  min_rerank_score: null
+  # Reference sections name every paper the author cited; excluded unless asked for.
+  include_references: false
+
+context:
+  # The evidence budget in tokens. Counted with the pinned BGE-M3 tokenizer, the one the
+  # chunker counts in: no provider tokenizer is available offline, and the serving path
+  # never fetches one. The same text in the provider's tokenizer may count differently;
+  # the run records which tokenizer counted.
+  token_budget: 6000
+  tokenizer:
+    kind: model
+    repo: BAAI/bge-m3
+    revision: 5617a9f61b028005a4858fdac845db406aefb181
+    file: tokenizer.json
+    sha256: 21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08
+  # `none`: each hit is sent as its chunk. `section`: haiku.rag's rule, a hit is widened
+  # to its whole section when that fits `expansion_max_chars` and is at least
+  # `expansion_min_share` of it, or grown outward from the hit inside the section when
+  # it does not; the hit's own text is never clipped.
+  expansion: none
+  expansion_max_chars: 6000
+  expansion_min_share: 0.2

@@ -1,0 +1,94 @@
+# Versioned venue-year source manifest for the accepted-paper pilot (spec §4).
+#
+# Sampling is deterministic and biased on purpose: eligible records are sorted
+# by source item ID before the first `sample.limit` are taken, so a replay
+# selects the same papers. That is a recorded bias, not a random sample.
+schema_version: 1
+venue: ICLR
+years: [2024]
+track: main
+sample:
+  limit: 100
+  order: source_item_id
+sources:
+  # Mirrored papercli index under DATA_DIR: the registry parquet and PDF shards
+  # are captured once, `corpus mirror-index` projects one venue-year out of the
+  # registry and checksums every local PDF, then ingestion reads that index and
+  # never calls out.
+  #
+  # The index is built from the root `papers.parquet` registry (11 columns:
+  # id, title, authors, abstract, venue, year, track, source, pdf_url,
+  # forum_url, hf_pdf_path), not the five-column `browse/<venue>/<year>.parquet`
+  # views, which publish no authors, no track and no PDF path. For ICLR 2024
+  # the registry gives 100% author and abstract coverage over all 2,260 rows.
+  #
+  # Membership is read off each record's own `track` label by classify_track,
+  # not asserted for the listing: ICLR 2023's 3,792 rows resolve to 1,573
+  # accepted plus 2,219 labelled "Submitted to ICLR 2023", matching the venue's
+  # published count. Across 2023-2026 the registry's 262 labels classify as
+  # 85,732 accepted main-conference rows, 7,499 Findings, 4,883 workshop, 2,219
+  # submissions, 1,118 co-located conferences, 706 industry, 414 demo, 157
+  # shared-task and 61 tutorial. Only `track: main` above is ingested; an
+  # unrecognized label classifies as "other" and is excluded.
+  papercli:
+    enabled: true
+    root_dir: ${DATA_DIR}/sources/papercli
+    records: iclr-2024.jsonl
+    dataset: GenAI4ELab/papercli-papers
+    dataset_revision: 90a1fbd3c355717092966debf5f7f69bdc6a1cf6
+    pdf_dataset: GenAI4ELab/papercli-papers-iclr
+    pdf_dataset_revision: 050f8a4983fb3ff656e9cbaa32b8aeb3f561d2ef
+    page_size: 500
+    # The dataset card declares CC-BY-4.0, but per-paper rights are unverified,
+    # so nothing is marked redistributable for P1.5's export filter.
+    redistribution: unknown
+  openreview:
+    # Disabled: guest access returns ChallengeRequiredError (403) on the notes
+    # and attachment routes, and the mirror above supersedes it for this pilot.
+    enabled: false
+    # OpenReview API v2. Accepted ICLR 2024 main-conference notes carry this
+    # venueid; rejected and withdrawn submissions carry
+    # ICLR.cc/2024/Conference/Rejected_Submission and .../Withdrawn_Submission.
+    # The adapter still maps every note's venue label onto the decision enum.
+    api_base: https://api2.openreview.net
+    api_version: v2
+    venue_id: ICLR.cc/2024/Conference
+    page_size: 1000
+    # Guest API access receives a browser challenge (HTTP 403); a free account's
+    # login token, read from these environment variables (set them in .env,
+    # never here), is attached to listing and attachment requests.
+    auth:
+      username_env: OPENREVIEW_USERNAME
+      password_env: OPENREVIEW_PASSWORD
+    # PDFs come from the API attachment endpoint, which honours the token.
+    pdf_base: https://api2.openreview.net/attachment?name=pdf&id=
+    forum_base: https://openreview.net/forum?id=
+  arxiv:
+    # Supplementary preprint versions; never admits papers unless membership: true.
+    enabled: false
+    api_base: http://export.arxiv.org/api/query
+    membership: false
+  semantic_scholar:
+    # Optional identifier/citation enrichment; failures never block ingestion.
+    enabled: false
+    api_base: https://api.semanticscholar.org/graph/v1
+download:
+  # A paper the mirror does not carry falls back to its publisher, so every
+  # venue in configs/venues.yaml needs its official proceedings host here. The
+  # scheme, resolved-IP, redirect, size and magic-byte checks still apply to
+  # each of them; this list only says which hosts may be asked at all.
+  allowed_hosts:
+    - api2.openreview.net
+    - openreview.net
+    - arxiv.org
+    - export.arxiv.org
+    - aclanthology.org
+    - openaccess.thecvf.com
+    - www.ecva.net
+    - ojs.aaai.org
+    - www.ijcai.org
+    - www.isca-archive.org
+    - jmlr.org
+    - proceedings.mlr.press
+  max_bytes: 52428800
+  timeout_seconds: 60

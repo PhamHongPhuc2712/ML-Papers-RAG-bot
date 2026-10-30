@@ -1,0 +1,68 @@
+# The agent's self-check read on MultiHop-RAG's 30 development questions (agent self-check, plan
+# docs/results.md, Task 7, added 2026-10-29 at the developer's
+# request): claims there combine facts from two or more articles, a stress test for the checker.
+# Development only; it decides nothing. The same variants and scorer as
+# configs/experiments/orb-text-qa-agent-check.yaml.
+schema_version: 1
+name: multihop-agent-check-dev
+
+dataset:
+  path: data/fixtures/multihop
+  benchmark: multihop
+
+corpus:
+  release: multihop-rag-v1
+
+search: configs/search.yaml
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+generator_client: langchain
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+faithfulness:
+  model: openai-gpt-6-luna-low
+  prompt: prompts/judge/claim-support-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: the shipped pipeline, one search with the question as written
+  - name: agent
+    changes: the research agent as scored on 2026-10-27
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v2.yaml
+      max_searches: 3
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+  - name: agent-check
+    changes: the same agent, its answer checked claim by claim and rewritten once
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v2.yaml
+      max_searches: 3
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+      check: true
+      check_prompt: prompts/agent/check-v1.yaml
+      rewrite_prompt: prompts/agent/rewrite-v1.yaml
+
+budget:
+  max_spend_usd: 6.00
+
+decision: {}

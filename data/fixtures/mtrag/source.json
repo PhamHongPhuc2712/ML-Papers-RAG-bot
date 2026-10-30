@@ -1,0 +1,19 @@
+{
+  "collection": "mt-rag-clapnq-elser-512-100-20240503",
+  "commit": "cc5b1d481b391181b89f7ced860308482e785463",
+  "files": {
+    "corpus": "corpora/passage_level/clapnq.jsonl.zip",
+    "lastturn": "mtrag-human/retrieval_tasks/clapnq/clapnq_lastturn.jsonl",
+    "qrels": "mtrag-human/retrieval_tasks/clapnq/qrels/dev.tsv",
+    "reference": "mtrag-human/generation_tasks/reference.jsonl",
+    "rewrite": "mtrag-human/retrieval_tasks/clapnq/clapnq_rewrite.jsonl"
+  },
+  "repository": "IBM/mt-rag-benchmark",
+  "sha256": {
+    "corpus": "3f4bd79341b176070a83b6281bf380d7d6958270c137913f7377121b85a0747e",
+    "lastturn": "df1313e94929f32d8c3b9b70b2e045a129db2f2fc7bec0adb5d20828b112178e",
+    "qrels": "0766bc3e8fb6f515c34b33a97e568394303214915a2f835533705979b2303d97",
+    "reference": "b3dde4076f9f692a99513e424a0a39f57591dbe45600a4c1017aaa7a7edcfaac",
+    "rewrite": "7e510ceae50c1897797c79c51c6002b56d11c252843282b5c62ccfe88baab44e"
+  }
+}

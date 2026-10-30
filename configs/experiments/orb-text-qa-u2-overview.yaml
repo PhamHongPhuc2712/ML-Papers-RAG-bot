@@ -1,0 +1,63 @@
+# The answer for paper-finding requests (RAG-only plan, U2), registered by the commit that adds
+# this file, before any run of it. Identical to orb-text-qa-v3-structured, the chat's generator,
+# except the generation prompt: prompts/generate/grounded-overview-v1.yaml, one prompt for every
+# turn, answering a question directly and a request for papers with an overview grouped by
+# approach. The first stage is configs/search.yaml with no overrides: since U1 (2026-10-15) it is
+# v3's overridden stage (rerank.text title_chunk, rerank 2.5 s), so both arms search alike.
+#
+# Pre-registered rule (the plan's, made exact). ORB's frozen 400 are spent for v2 and v3, so the
+# rule reads the development split: all 100 cases, both arms run fresh on the same day, on an idle
+# GPU, by
+#   baseline: eval qa --config configs/experiments/orb-text-qa-v3-structured.yaml --split development
+#   treated:  eval qa --config configs/experiments/orb-text-qa-u2-overview.yaml --split development
+# The chat adopts grounded-overview-v1 (configs/chat.yaml prompts.generate) if and only if
+#   (a) treated accuracy >= baseline accuracy - 0.03, accuracy as the runner computes it
+#       (judged-correct over judged; an abstention counts wrong), and
+#   (b) 20 answers to paper-finding requests through the chat turn with this prompt (the first 20
+#       of S3's development topic queries by query id, data/fixtures/retrieval-topics/) are read
+#       by hand first, and the reading, recorded in docs/results.md, finds no answer that
+#       cites evidence that does not support it or names a paper the evidence does not name.
+# Otherwise short cited claims stay (grounded-claims-v1). Either way `eval pair` is reported
+# (McNemar, cited MAP, provenance validity), and no other number decides. A run that degraded a
+# search, or ran beside another GPU process, is set aside and redone (the GPU policy).
+#
+#   eval qa --config configs/experiments/orb-text-qa-u2-overview.yaml --split development \
+#     --database-url postgresql+psycopg://...copilot_orb --out reports/qa/orb-text-u2 --max-spend-usd 0.60
+schema_version: 1
+name: orb-text-qa-u2-overview
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+# Pinned 2026-10-21, when configs/search.yaml moved to title_abstract_chunk: the stage U2 ran.
+search_overrides:
+  rerank: {text: title_chunk}
+  deadlines_seconds: {rerank: 2.5}
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+generator_client: langchain
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-overview-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: each hit is sent as its chunk
+
+budget:
+  max_spend_usd: 0.60

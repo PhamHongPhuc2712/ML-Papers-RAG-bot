@@ -1,0 +1,7 @@
+{
+  "What loss trains the encoder?": "{\"reason\": \"Both name the contrastive loss.\", \"equivalent\": true}",
+  "How many pairs are used?": "{\"reason\": \"The claims restate the evidence ids only.\", \"equivalent\": false}",
+  "Which schedule is learned?": "{\"reason\": \"Both say a noise schedule.\", \"equivalent\": true}",
+  "What does the model generate?": "not a verdict at all",
+  "FABRICATE What is the batch size?": "{\"reason\": \"Repaired answer matches.\", \"equivalent\": true}"
+}

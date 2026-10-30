@@ -1,0 +1,38 @@
+# The research agent against the shipped RAG pipeline on MTRAG ClapNQ (agent experiment, plan
+# docs/results.md), registered by the commit that adds
+# this file, before any run. Data: IBM mt-rag-benchmark @ cc5b1d48, release mtrag-clapnq-v1
+# (each passage one document). Both systems share the first stage (configs/search.yaml),
+# evidence (configs/evidence.yaml), generator (configs/chat.yaml's model, StructuredGenerator)
+# and judge (openai-gpt-6-luna-low, haiku.rag's answer-equivalence rubric). `pipeline`
+# condenses and searches once per turn, as served; `agent` runs the LangGraph tool loop (at
+# most 3 searches, 8 model calls).
+#
+#   LLM_DAILY_SPEND_CAP_USD=100 uv run --env-file .env --project backend python -m copilot.cli \
+#     eval mtrag --config configs/experiments/mtrag-agent.yaml --split development \
+#     --database-url ...copilot_mtrag --out reports/mtrag --max-spend-usd <budget>
+#
+# Development (5 conversations) decides nothing. Pre-registered for the test split (24
+# conversations), scored once per configuration, only with the developer's go-ahead: the agent
+# is a candidate for the chat if, in `live` mode, it is more accurate than `pipeline` over all
+# test turns with exact McNemar p < 0.05 AND the bootstrap over conversations puts the
+# difference's 95% interval above zero, AND the ORB guard in orb-text-qa-agent.yaml holds.
+# Adoption is still the developer's decision. Reported, deciding nothing: gold_prefix, per
+# answerability label, refusal precision and recall, cited_map, evidence recall, the agent's
+# skip rate and its accuracy when it skipped or searched, cost and seconds. 24 conversations
+# (about 185 turns, correlated within a conversation) detect only a large difference. The daily
+# cap is lifted for these runs by the developer (2026-10-25): LLM_DAILY_SPEND_CAP_USD=100 in
+# the command's environment only.
+schema_version: 1
+name: mtrag-agent
+corpus: {release: mtrag-clapnq-v1}
+chat: configs/chat.yaml
+judge: openai-gpt-6-luna-low
+prompts: {judge: prompts/judge/answer-equivalence-haiku-v1.yaml}
+modes: [live, gold_prefix]
+systems:
+  - name: pipeline
+  - name: agent
+    agent: {prompt: prompts/agent/research-v2.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true}
+bootstrap: {resamples: 1000, seed: 42, confidence: 0.95}
+decision: {mode: live, treated: agent, baseline: pipeline, mcnemar_p: 0.05}
+budget: {max_spend_usd: 15.00}

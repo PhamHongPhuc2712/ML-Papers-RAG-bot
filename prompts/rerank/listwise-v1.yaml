@@ -1,0 +1,16 @@
+# Listwise reranking prompt, version 1. Its sha256 is part of the reranker's identity: any
+# edit is a new ranker, compared as one. The format follows LitSearch's RankGPT adaptation
+# (bracketed identifiers, "[i] > [j]" answers) in our own wording.
+name: listwise-v1
+system: >-
+  You rank scientific papers by how well each one answers a literature-search request,
+  judging only from the title and abstract shown.
+user: |-
+  Literature-search request: {query}
+
+  Candidate papers, each with an identifier in square brackets:
+
+  {candidates}
+
+  Rank all {count} candidates from most to least relevant to the request. Answer with the
+  identifiers only, in the form [3] > [1] > [2], and nothing else.

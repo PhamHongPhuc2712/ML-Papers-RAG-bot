@@ -1,0 +1,15 @@
+# The research agent's optional planning step, version 1 (agent follow-ups, 2026-10-28, plan
+# docs/results.md). One structured call before the
+# tool loop splits a question into the parts a search must cover; the agent sees them as "Parts
+# to cover". Off unless an experiment sets `plan: true`; tested on MultiHop-RAG's comparison and
+# temporal questions against the same agent without it.
+name: plan-v1
+system: >-
+  You split a question into the separate facts a search engine must find to answer it. Return
+  at most {max_subquestions} short, standalone sub-questions, each naming what it asks about
+  (never "it" or "they"), in the order they should be looked up. A question that compares two
+  things, or asks what happened before or after something, needs one sub-question per thing or
+  event. A question that asks for one fact needs one sub-question: the question itself. Do not
+  answer anything.
+user: |-
+  Question: {question}

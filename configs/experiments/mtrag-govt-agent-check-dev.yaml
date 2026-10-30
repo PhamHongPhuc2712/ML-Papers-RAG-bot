@@ -1,0 +1,21 @@
+# The agent's self-check read on MTRAG Govt, development only (agent self-check, plan
+# docs/results.md). Govt's conversations were scored
+# once on 2026-10-28; read again here with --split all, this run decides nothing. The same systems
+# and scorer as configs/experiments/mtrag-fiqa-agent-check.yaml.
+schema_version: 1
+name: mtrag-govt-agent-check-dev
+corpus: {release: mtrag-govt-v1}
+chat: configs/chat.yaml
+judge: openai-gpt-6-luna-low
+prompts: {judge: prompts/judge/answer-equivalence-haiku-v1.yaml}
+faithfulness: {model: openai-gpt-6-luna-low, prompt: prompts/judge/claim-support-v1.yaml}
+modes: [live, gold_prefix]
+systems:
+  - name: pipeline
+  - name: agent
+    agent: {prompt: prompts/agent/research-v2.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true}
+  - name: agent-check
+    agent: {prompt: prompts/agent/research-v2.yaml, max_searches: 3, max_model_calls: 8, max_sections: 4, answer_from: seen, verbatim_first: true, check: true, check_prompt: prompts/agent/check-v1.yaml, rewrite_prompt: prompts/agent/rewrite-v1.yaml}
+bootstrap: {resamples: 1000, seed: 42, confidence: 0.95}
+decision: {mode: live, treated: agent-check, baseline: pipeline, secondary: {treated: agent-check, baseline: agent}}
+budget: {max_spend_usd: 45.00}

@@ -1,0 +1,9 @@
+fixture.txt and fixture.pdf were written for this repository on 2026-09-10
+as parser test fixtures. They contain no third-party text and no
+copyrighted paper content. To the extent possible under law, the author
+dedicates them to the public domain under CC0 1.0 Universal
+(https://creativecommons.org/publicdomain/zero/1.0/).
+
+fixture.pdf is generated from fixture.txt by build_fixture.py, which uses no
+dependencies beyond the Python standard library; rerun it to regenerate the
+PDF byte-for-byte.

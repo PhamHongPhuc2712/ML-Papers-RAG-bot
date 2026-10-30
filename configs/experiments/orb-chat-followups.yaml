@@ -1,0 +1,34 @@
+# Follow-up answering on ORB conversations (chat plan C7), registered by the commit that adds
+# this file, before any frozen scoring. Release orb-v1; the chat's first stage, generator and condense prompt
+# (configs/chat.yaml); judge of record openai-gpt-6-luna-low with
+# prompts/judge/answer-equivalence-haiku-v1.yaml, as calibrated for orb-text-qa-v2.
+#
+# Pre-registered rule, on the frozen conversations only: condensing stays on
+# (configs/chat.yaml condense: true) if `condensed` is more accurate than `raw` with exact
+# McNemar p < 0.05; otherwise it is turned off. Reported, deciding nothing: `condensed` against
+# `standalone` (the price of a follow-up), gold paper in the top 10 per condition, cost per turn.
+#
+# Amended 2026-10-11 after the development read and before any frozen scoring: the
+# conversations are rebuilt with prompts/chat/followup-rewrite-v2.yaml, which replaces only the
+# names the first question also uses, and the builder rejects a rewrite that drops a
+# distinctive term of B the first question never names. v1's rewrites had removed B's own
+# subject in at least 30 of 99 development and 40 of 197 frozen conversations
+# (docs/results.md). Replacing only shared names left most B unchanged, so pairs are
+# drawn, per paper, among questions where B shares a distinctive name with A (78 of 315 papers
+# with two or more unused questions have one): 25 development, the rest frozen. Fewer than the
+# plan's 100 / 200; the power this costs is reported.
+schema_version: 1
+name: orb-chat-followups
+dataset: {path: data/fixtures/chat/conversations.jsonl, texts: eval/chat/conversations-v2.jsonl}
+corpus: {release: orb-v1}
+chat: configs/chat.yaml
+judge: openai-gpt-6-luna-low
+prompts: {judge: prompts/judge/answer-equivalence-haiku-v1.yaml}
+conditions: [standalone, raw, condensed]
+bootstrap: {resamples: 1000, seed: 42, confidence: 0.95}
+decision: {treated: condensed, baseline: raw, mcnemar_p: 0.05}
+# The runner's preflight takes the plan's worst case, (1 condense + 4 generations) x 2 + 3 judge
+# calls a conversation at the full output budget: $0.0191 each, so $1.91 for 100 and $3.82 for
+# 200. The plan's 1.00 / 2.00 would refuse both before they start; the runs pass these ceilings
+# and the $3 daily cap still bounds what is spent (expected about $0.5 and $1).
+budget: {max_spend_usd: 3.85}

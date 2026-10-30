@@ -1,0 +1,26 @@
+FROM python:3.12.5-slim-bookworm
+
+ARG UV_VERSION=0.12.10
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir "uv==${UV_VERSION}"
+
+COPY backend/pyproject.toml backend/uv.lock ./backend/
+RUN uv sync --project backend --frozen --no-dev --no-install-project
+
+COPY backend/src ./backend/src
+COPY backend/migrations ./backend/migrations
+COPY backend/alembic.ini ./backend/alembic.ini
+
+RUN uv sync --project backend --frozen --no-dev
+
+ENV PATH="/app/backend/.venv/bin:$PATH" \
+    PYTHONPATH="/app/backend/src"
+
+WORKDIR /app/backend
+CMD ["uvicorn", "copilot.app:create_default_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,308 @@
+"""A chat turn over HTTP: streamed, stored, idempotent, owned, and honest when it fails."""
+
+from __future__ import annotations
+
+import json
+from datetime import timedelta
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+
+from copilot.agent.tools import AgentLimits
+from copilot.agent.turn import AgentTurn, load_agent_prompt
+from copilot.app import create_app
+from copilot.chat.agent import ChatAgent, FixtureToolModel
+from copilot.chat.retriever import CorpusRetriever, PaperHits
+from copilot.chat.service import ChatService
+from copilot.chat.store import ChatStore
+from copilot.contracts import ChatRequest, Evidence, Principal, Reference
+from copilot.models.generation import FakeGenerator
+from copilot.models.llm import LlmError
+
+pytestmark = pytest.mark.integration
+TITLE = "Contrastive sentence embeddings"
+
+
+class Calls:
+    def __init__(self) -> None:
+        self.generations = 0
+
+
+class CountingGenerator(FakeGenerator):
+    def __init__(self, calls: Calls, fail: Exception | None = None) -> None:
+        super().__init__()
+        self._counter = calls
+        self._fail = fail
+
+    def generate(self, question, evidence, *, request_id=None, run_id=None):
+        self._counter.generations += 1
+        if self._fail is not None:
+            raise self._fail
+        return super().generate(question, evidence, request_id=request_id, run_id=run_id)
+
+
+class RecordingModel(FixtureToolModel):
+    """The fixture agent, keeping every message list it was shown."""
+
+    def __init__(self) -> None:
+        self.seen: list[list] = []
+
+    def step(self, messages, tools, *, request_id=None, run_id=None):
+        self.seen.append(list(messages))
+        return super().step(messages, tools, request_id=request_id, run_id=run_id)
+
+
+def _agent(paper_id: str, calls: Calls, fail: Exception | None = None, model=None) -> ChatAgent:
+    evidence = [
+        Evidence(
+            id="E1",
+            source_kind="paper",
+            source_id=paper_id,
+            version_id="v1",
+            chunk_id=uuid4(),
+            text="Sentence pairs are contrasted.",
+            section="Method",
+            page_start=1,
+            page_end=1,
+        )
+    ]
+    retriever = CorpusRetriever(
+        search=lambda query: PaperHits(
+            "search-a",
+            [paper_id],
+            [],
+            [
+                Reference(paper_id=paper_id, rank=1, read=True, title=TITLE),
+                Reference(paper_id=uuid4(), rank=2, read=False, title="Gone since"),
+            ],
+        ),
+        evidence=lambda query, papers, release: list(evidence),
+    )
+    turn = AgentTurn(
+        model or FixtureToolModel(),
+        retriever,
+        lambda item: [],
+        CountingGenerator(calls, fail),
+        load_agent_prompt("prompts/agent/research-v2.yaml"),
+        limits=AgentLimits(),
+        max_chars=6000,
+        token_budget=6000,
+        count_tokens=lambda text: len(text.split()),
+        answer_from="seen",
+        verbatim_first=True,
+    )
+    return ChatAgent(turn, history_turns=3, carried=12, identity={"chat_config": "test"})
+
+
+@pytest.fixture
+def chat_client(test_settings, search_corpus, test_qdrant):
+    def make(agent: ChatAgent) -> TestClient:
+        app = create_app(
+            test_settings,
+            {
+                "db_engine": search_corpus.engine,
+                "qdrant_client": test_qdrant,
+                "chat_agent": agent,
+            },
+        )
+        return TestClient(app)
+
+    return make
+
+
+def _frames(response) -> list[tuple[str, dict]]:
+    frames = []
+    for block in response.text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        frames.append((lines["event"], json.loads(lines["data"])))
+    return frames
+
+
+def _post(client, headers, **body):
+    payload = {"request_id": str(uuid4()), "message": "How are sentence pairs used?", **body}
+    return client.post("/v1/chats/stream", json=payload, headers=headers), payload
+
+
+def test_a_turn_streams_then_is_in_the_history(chat_client, search_corpus, make_user, auth_headers):
+    calls = Calls()
+    alice, _ = make_user()
+    with chat_client(_agent(search_corpus.ids[TITLE], calls)) as client:
+        response, _ = _post(client, auth_headers(alice))
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        frames = _frames(response)
+        assert [name for name, _ in frames] == [
+            "chat",
+            "status",
+            "status",
+            "references",
+            "evidence",
+            "status",
+            "final",
+        ]
+        assert frames[1][1] == {"stage": "searching"}
+        assert frames[2][1] == {"stage": "searching", "query": "How are sentence pairs used?"}
+        sent = frames[3][1]
+        assert sent["query"] == "How are sentence pairs used?"
+        assert sent["queries"] == ["How are sentence pairs used?"]
+        assert [(r["rank"], r["read"], r["title"]) for r in sent["items"]] == [
+            (1, True, TITLE),
+            (2, False, "Gone since"),
+        ]
+        final = frames[-1][1]
+        assert final["search_queries"] == ["How are sentence pairs used?"]
+        assert [(r["rank"], r["title"]) for r in final["references"]] == [(1, TITLE)]
+        assert final["status"] == "complete" and final["claims"][0]["evidence_ids"] == ["E1"]
+        assert final["evidence"][0]["title"] == TITLE and final["evidence"][0]["cited"]
+        chat_id = frames[0][1]["chat_id"]
+        detail = client.get(f"/v1/chats/{chat_id}", headers=auth_headers(alice)).json()
+        assert [m["status"] for m in detail["messages"]] == ["complete", "complete"]
+        # Stored as ids and ranks; read back with the corpus's metadata. A paper no longer
+        # in the corpus has no page to link to and is left out of the stored list.
+        stored = detail["messages"][-1]["references"]
+        assert stored == final["references"]
+        assert stored[0]["paper_id"] == search_corpus.ids[TITLE] and stored[0]["read"]
+
+
+def test_a_follow_up_searches_its_own_query_and_sees_the_passages_cited_before(
+    chat_client, search_corpus, make_user, auth_headers
+):
+    alice, _ = make_user()
+    calls = Calls()
+    model = RecordingModel()
+    with chat_client(_agent(search_corpus.ids[TITLE], calls, model=model)) as client:
+        first, _ = _post(client, auth_headers(alice))
+        chat_id = _frames(first)[0][1]["chat_id"]
+        second, _ = _post(
+            client, auth_headers(alice), chat_id=chat_id, message="What about those pairs?"
+        )
+        frames = _frames(second)
+        assert [name for name, _ in frames] == [
+            "chat",
+            "status",
+            "status",
+            "references",
+            "evidence",
+            "status",
+            "final",
+        ]
+        assert frames[2][1] == {"stage": "searching", "query": "What about those pairs?"}
+        assert frames[3][1]["queries"] == ["What about those pairs?"]
+        assert frames[-1][1]["warnings"] == []
+        assert calls.generations == 2
+        # The follow-up's first model step saw the passage the first answer cited, as H1.
+        follow_up = [m for m in model.seen if "What about those pairs?" in str(m[-1].content)]
+        assert "[H1]" in str(follow_up[0][-1].content)
+        assert "Sentence pairs are contrasted." in str(follow_up[0][-1].content)
+
+
+def test_the_same_request_replays_without_running_again(
+    chat_client, search_corpus, make_user, auth_headers
+):
+    calls = Calls()
+    alice, _ = make_user()
+    with chat_client(_agent(search_corpus.ids[TITLE], calls)) as client:
+        first, payload = _post(client, auth_headers(alice))
+        again = client.post("/v1/chats/stream", json=payload, headers=auth_headers(alice))
+        assert [n for n, _ in _frames(again)] == ["chat", "final"]
+        assert _frames(again)[-1][1] == _frames(first)[-1][1]
+        assert calls.generations == 1
+
+
+def test_the_spend_cap_is_a_typed_error_and_the_turn_can_run_again(
+    chat_client, search_corpus, make_user, auth_headers, migrated_database
+):
+    alice, _ = make_user()
+    calls = Calls()
+    with chat_client(
+        _agent(search_corpus.ids[TITLE], calls, fail=LlmError("llm_spend_cap"))
+    ) as client:
+        response, payload = _post(client, auth_headers(alice))
+        name, data = _frames(response)[-1]
+        assert name == "error" and data["error"]["code"] == "llm_spend_cap"
+        assert data["error"]["retryable"] is False and "00:00 UTC" in data["error"]["message"]
+        chat_id = _frames(response)[0][1]["chat_id"]
+        messages = client.get(f"/v1/chats/{chat_id}", headers=auth_headers(alice)).json()[
+            "messages"
+        ]
+        assert messages[-1]["status"] == "failed" and messages[-1]["claims"] == []
+    with chat_client(_agent(search_corpus.ids[TITLE], calls)) as client:
+        retry = client.post("/v1/chats/stream", json=payload, headers=auth_headers(alice))
+        assert _frames(retry)[-1][0] == "final"
+
+
+def test_a_closed_stream_leaves_the_turn_interrupted(search_corpus, make_user):
+    alice = Principal(user_id=make_user()[0])
+    store = ChatStore(search_corpus.engine)
+    service = ChatService(
+        store, _agent(search_corpus.ids[TITLE], Calls()), stale_after=timedelta(minutes=4)
+    )
+    events = service.stream(alice, ChatRequest(request_id=uuid4(), message="Hello?"))
+    chat_id = json.loads(next(events).split("data: ", 1)[1])["chat_id"]
+    events.close()
+    _, messages = store.get_chat(alice, chat_id)
+    assert messages[-1].status == "interrupted" and messages[-1].error_code == "client_disconnected"
+
+
+def test_another_users_chat_is_404_and_a_running_request_is_409(
+    chat_client, search_corpus, make_user, auth_headers
+):
+    alice, _ = make_user()
+    bob, _ = make_user()
+    with chat_client(_agent(search_corpus.ids[TITLE], Calls())) as client:
+        response, _ = _post(client, auth_headers(alice))
+        chat_id = _frames(response)[0][1]["chat_id"]
+        stolen, _ = _post(client, auth_headers(bob), chat_id=chat_id)
+        assert stolen.status_code == 404 and stolen.json()["error"]["code"] == "chat_not_found"
+    store = ChatStore(search_corpus.engine)
+    request = ChatRequest(request_id=uuid4(), message="Pending one")
+    store.begin_turn(Principal(user_id=alice), request, stale_after=timedelta(minutes=4))
+    with chat_client(_agent(search_corpus.ids[TITLE], Calls())) as client:
+        busy = client.post(
+            "/v1/chats/stream",
+            json={"request_id": str(request.request_id), "message": "Pending one"},
+            headers=auth_headers(alice),
+        )
+        assert busy.status_code == 409 and busy.json()["error"]["code"] == "request_in_progress"
+
+
+def test_bad_input_is_rejected_before_anything_runs(
+    chat_client, search_corpus, make_user, auth_headers
+):
+    alice, _ = make_user()
+    calls = Calls()
+    with chat_client(_agent(search_corpus.ids[TITLE], calls)) as client:
+        too_long, _ = _post(client, auth_headers(alice), message="x" * 2001)
+        assert too_long.status_code == 422
+        blank, _ = _post(client, auth_headers(alice), message="   ")
+        assert blank.status_code == 422
+        anonymous, _ = _post(client, {})
+        assert anonymous.status_code == 401
+    assert calls.generations == 0
+
+
+def test_the_daily_limit_is_a_429_before_anything_runs(
+    chat_client, search_corpus, make_user, auth_headers
+):
+    """Sign-up plan, A3: configs/chat.yaml's daily_answers (20) used today, then a 429."""
+
+    from datetime import UTC, datetime
+
+    from sqlalchemy import text
+
+    calls = Calls()
+    alice, _ = make_user()
+    now = datetime.now(UTC)
+    with search_corpus.engine.begin() as connection:
+        connection.execute(
+            text("insert into answer_usage (user_id, day, answers) values (:user, :day, 20)"),
+            {"user": alice, "day": now.date()},
+        )
+    with chat_client(_agent(search_corpus.ids[TITLE], calls)) as client:
+        response, _ = _post(client, auth_headers(alice))
+    assert response.status_code == 429
+    error = response.json()["error"]
+    assert error["code"] == "daily_limit" and error["retryable"] is True
+    assert 0 < error["retry_after"] <= 86_400
+    assert calls.generations == 0

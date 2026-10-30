@@ -1,0 +1,72 @@
+# WITHDRAWN 2026-10-15, before any run: the product is RAG only (docs/results.md),
+# so there is no search page whose reranker this could decide. Kept as the record of the registration.
+# Release plan S3 (registered by the commit that adds this file, before any S3 number): should
+# the search page's cross-encoder read title + the chunk that found each paper, at 512-token
+# pairs under the shipped 1.5 s deadline (`title_chunk_512`), instead of title + abstract?
+# S2 could not promote it: its paper-level guard failed on 52 LitSearch queries, since retired.
+#
+# Evidence, in this order; every run on an idle GPU:
+#   1. S3's topic set, development (read first, decides nothing):
+#        eval retrieval --config configs/experiments/m5-rerank-text-v2-topics.yaml --split development --out reports/retrieval/m5-rerank-text-v2-topics
+#   2. S3's topic set, validation (the paper-level guard):
+#        eval retrieval --config configs/experiments/m5-rerank-text-v2-topics.yaml --split validation --out reports/retrieval/m5-rerank-text-v2-topics
+#   3. Only if the guard holds, S1's section-level test split, once (its first read):
+#        eval retrieval --config configs/experiments/m5-rerank-text-v2.yaml --split test --locked-test --out reports/retrieval/m5-rerank-text-v2
+#
+# Pre-registered rule. `title_chunk_512` replaces `hybrid_rerank` on the search page only if:
+#   (1) on S3's topic validation split its paired nDCG@10 difference against `hybrid_rerank`
+#       has a 95% interval whose lower bound is at least -0.03 (it loses no more than 0.03);
+#   (2) on that split it degraded no query and its end-to-end p95 is at most 3.0 s;
+#   (3) on S1's section-level test split, scored once with --locked-test, its paired nDCG@10
+#       gain over `hybrid_rerank` has a 95% interval wholly above zero, it degraded no query,
+#       and its p95 is at most 3.0 s.
+# If (1) or (2) fails, the test split is not read and `abstract` stays. Promotion sets
+# `rerank.text: title_chunk` and `rerank.pair_max_tokens: 512` in configs/search.yaml (spec §7).
+# The outcome is read from the paired comparisons against `hybrid_rerank`, not from the
+# harness's `decision` verdict. A run that was contended or degraded a query for a reason
+# outside the variant (cold start, another GPU process) is set aside and redone.
+schema_version: 1
+name: m5-rerank-text-v2-topics
+
+dataset:
+  path: data/fixtures/retrieval-topics
+  query_text: benchmarks/topics-v1/queries.jsonl
+  slice: all
+  labels: paper_id
+
+corpus:
+  release: m2-20260924T095724Z
+  papers: database
+
+search: configs/search.yaml
+models: configs/models.yaml
+
+metrics:
+  recall_at: [10, 50]
+  ndcg_at: [10]
+  mrr_at: [10]
+  depth: 50
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: hybrid_rerank
+    mode: hybrid_rerank
+    candidates: chunks
+  - name: title_chunk_512
+    mode: hybrid_rerank
+    candidates: chunks
+    changes: the reranker reads title + the chunk that found the paper, 512-token pairs, shipped 1.5 s deadline
+    pair_max_tokens: 512
+    search:
+      rerank: {text: title_chunk}
+
+decision:
+  primary: ndcg@10
+  order: [hybrid_rerank, title_chunk_512]
+  latency_p95_seconds: 3.0
+  max_drop: 0.03
+  require_undegraded: true

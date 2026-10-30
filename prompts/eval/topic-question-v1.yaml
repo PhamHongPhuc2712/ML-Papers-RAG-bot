@@ -1,0 +1,13 @@
+# Topic-question writing, version 1 (release plan S3). Output is stored under DATA_DIR.
+name: topic-question-v1
+system: >-
+  You write one search query a researcher might type into a paper search engine when looking
+  for papers like the one this abstract describes. Describe the problem, setting or approach in
+  general terms, in 5 to 15 words, the way someone who has not read this paper would. Do not
+  name the paper, its method, model or dataset names, and do not copy phrases from the
+  abstract: use your own words. Reply with JSON only: {"question": "..."}.
+user: |-
+  Section: {section}
+
+  Abstract:
+  {passage}

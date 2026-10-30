@@ -1,0 +1,100 @@
+# Ranking parameters for the search service (spec §7). Model revisions are pinned
+# in configs/models.yaml; this file holds only how candidates are gathered,
+# fused, reranked and bounded in time. Every value is part of a run's identity.
+schema_version: 1
+
+candidates:
+  # Per branch, BM25 and dense, with identical filters.
+  per_branch: 100
+  # Where both branches look (P2.6 step 4, decided 2026-10-06): `papers` is the
+  # title-and-abstract collection; `chunks` is the chunk collection, each paper
+  # scored by its best evidence chunk (references excluded); `both` fuses each
+  # branch's paper list with its chunk list by RRF. `chunks` was promoted on
+  # 2026-10-06 by a pre-registered rule on LitSearch's in-domain validation split;
+  # that evidence was removed with LitSearch on 2026-10-14 (git history keeps
+  # docs/results.md). Open RAG Bench reproduces it: chunk-level
+  # candidates beat title-and-abstract ones by +0.22 to +0.25 nDCG@10
+  # (docs/results.md). A release with no chunk collection searches at paper level.
+  source: chunks
+
+fusion:
+  # RRF constant: sum(1/(k + rank)) over one-based ranks, computed in our code.
+  rrf_k: 60
+
+rerank:
+  # At most this many fused candidates are reranked, and hybrid_rerank returns
+  # only from them: reranker logits are never compared with RRF scores.
+  depth: 50
+  # What the cross-encoder reads for each candidate. `abstract`: the title and
+  # abstract (spec §7's canonical paper text). `chunk`: the evidence chunk the first
+  # stage found the paper by, so the reranker judges the text that matched rather than
+  # a summary of the paper; `title_chunk` puts the title in front of it. Both need
+  # `candidates.source: chunks`. `title_chunk` since 2026-10-15 (RAG-only plan, U1, the
+  # developer's decision): the chat's measured first stage, under which ORB's frozen
+  # answering scored flat 0.880 [0.844, 0.908] (orb-text-qa-v2), became the one first
+  # stage. Until then the search page read `abstract` (S2's rule) and the chat overrode it.
+  # `title_abstract_chunk` since 2026-10-21 (the developer's decision): the title and abstract,
+  # then that chunk. Against `title_chunk`, nDCG@10 +0.023 on S1 validation, +0.056 on S3
+  # development, -0.002 [-0.006, +0.003] on ORB's 1,914 queries; p95 about 0.15 s slower
+  # (docs/results.md).
+  text: title_abstract_chunk
+
+cache:
+  # Spec §7: an ordering's top 200 (hybrid_rerank: its reranked head) is kept this
+  # long for signed cursors to page through, keyed by query, filters, release and
+  # ranker revisions. A cursor older than this is refused as expired.
+  depth: 200
+  ttl_seconds: 600
+
+deadlines_seconds:
+  # Candidate branches run concurrently, each within its own budget.
+  branch: 1.0
+  # 2.5 s with `title_chunk` (U1, 2026-10-15), kept for `title_abstract_chunk` (ORB p95
+  # 1.46 s), the chat's measured value: chunk text
+  # reranks slower than abstracts (ORB p95 1.3-1.5 s against 0.60 s). The stage gets what
+  # is left of the total, as it did when ORB's frozen answering was measured.
+  rerank: 2.5
+  # The whole request, after which the service falls back or fails, typed.
+  total: 3.0
+  # Opt-in deep search (hybrid_rerank_llm) only. The stages above keep the 3 s total;
+  # the hosted LLM then gets its own budget, inside a deep-search total (p95 <= 20 s).
+  llm_rerank: 20.0
+  llm_total: 25.0
+
+# A model error — not a timeout — is retried at most this often, and only while
+# the total deadline still has room for it.
+rerank_retries: 1
+
+warmup:
+  # R3 (2026-10-14): after a Qdrant restart the chunk collection's on-disk parts are cold
+  # and the first searches miss their deadlines for about a minute. Startup runs these
+  # through the full ranking until `consecutive` in a row meet the candidate deadlines,
+  # or `max_seconds` pass; Qdrant down stops it at once. Not part of a run's identity.
+  consecutive: 3
+  max_seconds: 180
+  pause_seconds: 1
+  queries:
+    - contrastive learning for sentence embeddings
+    - graph neural networks for molecular property prediction
+    - diffusion models for image generation
+    - parameter efficient fine-tuning of large language models
+    - retrieval augmented generation for question answering
+    - reinforcement learning from human feedback
+    - vision transformers for image classification
+    - mixture of experts routing and load balancing
+    - speculative decoding for faster inference
+    - knowledge distillation into smaller models
+    - adversarial robustness of neural networks
+    - federated learning with heterogeneous clients
+    - neural architecture search
+    - offline reinforcement learning
+    - long context language modeling
+    - quantization of neural network weights
+    - causal inference with observational data
+    - uncertainty estimation and calibration
+    - continual learning without catastrophic forgetting
+    - machine translation for low resource languages
+    - self-supervised learning for speech recognition
+    - in-context learning in transformers
+    - hallucination in large language models
+    - optimization and generalization of deep networks

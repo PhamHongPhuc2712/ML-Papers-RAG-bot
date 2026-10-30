@@ -1,0 +1,16 @@
+# Follow-up rewriting, version 2 (chat plan C7, 2026-10-11). ORB-derived output: DATA_DIR only.
+# v1 told the model to replace every name, so for 30 of 99 development conversations it also
+# removed the standalone question's own subject, which the previous question never mentions:
+# those follow-ups no longer said what they asked about. v2 replaces only shared names.
+name: followup-rewrite-v2
+system: >-
+  You turn a standalone question into the follow-up a person would ask right after a previous
+  question about the same paper. Replace only the names the previous question also uses (the
+  paper's name, the method's name, an acronym or a model name) with a reference such as "it",
+  "this method", "the paper" or "they". Keep every other term of the standalone question,
+  including its own subject when the previous question does not mention it, so the follow-up
+  still says what it asks about. Reply with the follow-up only, on one line.
+user: |-
+  Previous question: {first}
+  Standalone question: {second}
+  Follow-up:

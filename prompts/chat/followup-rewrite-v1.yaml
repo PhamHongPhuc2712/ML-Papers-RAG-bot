@@ -1,0 +1,12 @@
+# Follow-up rewriting, version 1 (chat plan C7). ORB-derived output: written under DATA_DIR only.
+name: followup-rewrite-v1
+system: >-
+  You turn a standalone question into the follow-up a person would ask right after a previous
+  question about the same paper. Replace the paper's name, the method's name, and any acronym
+  or model name with a reference such as "it", "this method", "the paper" or "they", so the
+  follow-up only makes sense after the previous question. Keep everything else the question
+  asks. Reply with the follow-up only, on one line.
+user: |-
+  Previous question: {first}
+  Standalone question: {second}
+  Follow-up:

@@ -1,0 +1,23 @@
+{
+  "id": "fixture",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {"content": "ok", "role": "assistant"},
+      "logprobs": null
+    }
+  ],
+  "created": 1705651092,
+  "model": "deepseek-flash",
+  "object": "chat.completion",
+  "system_fingerprint": "fp_7a09fdf9c2",
+  "usage": {
+    "completion_tokens": 2,
+    "prompt_tokens": 1536,
+    "total_tokens": 1538,
+    "prompt_tokens_details": {"cached_tokens": 512},
+    "prompt_cache_hit_tokens": 512,
+    "prompt_cache_miss_tokens": 1024
+  }
+}

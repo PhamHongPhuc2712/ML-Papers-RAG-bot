@@ -1,0 +1,92 @@
+# The agent's self-check scored once on ORB's second frozen sample (agent self-check, plan
+# docs/results.md), registered by the commit that adds
+# this file, before any frozen2 answer is generated. frozen2: 400 retrieval-only questions never
+# answered, none on a development paper or in C7's conversations (data/fixtures/orb/qa.jsonl).
+#
+#   source ~/.zshrc; LLM_DAILY_SPEND_CAP_USD=100 uv run --env-file .env --project backend python -m \
+#     copilot.cli eval qa --config configs/experiments/orb-text-qa-agent-check.yaml --split frozen2 \
+#     --frozen --database-url ...copilot_orb --out reports/qa/orb-text-agent-check --max-spend-usd <preflight>
+#
+# All variants share the serving first stage (configs/search.yaml), the serving generator
+# (StructuredGenerator on openai-gpt-6-luna) and evidence budgets. `agent` is the configuration
+# scored on 2026-10-27 (research-v2, answer_from seen, verbatim_first, 3 searches / 8 calls / 4
+# sections); `agent-check` adds the self-check (prompts/agent/check-v1.yaml on openai-gpt-6-luna,
+# one rewrite with prompts/agent/rewrite-v1.yaml). Every answer's claims are scored for
+# faithfulness by openai-gpt-6-luna-low under prompts/judge/claim-support-v1.yaml.
+#
+# Registered rule (ORB half): holds when both
+#   1. agent-check's supported_rate exceeds agent's, the paired bootstrap 95% interval over the
+#      questions both answered above zero (eval pair's supported_rate block);
+#   2. agent-check's accuracy is at most 0.02 below agent's (point estimate; exact McNemar reported).
+# The self-check is adopted into the agent's configuration only if this and the FiQA half
+# (configs/experiments/mtrag-fiqa-agent-check.yaml) both hold. Reported, deciding nothing:
+# fully_supported, abstention, how often the check rewrote or emptied an answer, cited_map, cost,
+# seconds, flat against both agents. The checker and the scorer are the same model family: a
+# stated limitation; accuracy against references is independent of both.
+schema_version: 1
+name: orb-text-qa-agent-check
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+generator_client: langchain
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+faithfulness:
+  model: openai-gpt-6-luna-low
+  prompt: prompts/judge/claim-support-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: the shipped pipeline, one search with the question as written
+  - name: agent
+    changes: the research agent as scored on 2026-10-27
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v2.yaml
+      max_searches: 3
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+  - name: agent-check
+    changes: the same agent, its answer checked claim by claim and rewritten once
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v2.yaml
+      max_searches: 3
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+      check: true
+      check_prompt: prompts/agent/check-v1.yaml
+      rewrite_prompt: prompts/agent/rewrite-v1.yaml
+
+budget:
+  max_spend_usd: 45.00
+
+decision:
+  primary: agent-check
+  baseline: agent
+  supported_rate: interval_above_zero
+  accuracy_max_drop: 0.02

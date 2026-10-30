@@ -1,0 +1,20 @@
+.worktrees/
+.superpowers/
+.venv/
+backend/.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.env
+backend/.env
+.env.test
+
+# Internal working files, kept locally and out of the public repository (2026-10-30)
+CLAUDE.md
+.claude/
+docs/superpowers/
+reports/
+frontend/AGENTS.md
+frontend/CLAUDE.md

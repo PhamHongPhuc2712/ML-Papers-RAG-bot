@@ -1,0 +1,19 @@
+{
+  "collection": "mt-rag-fiqa-beir-elser-512-100-20240501",
+  "commit": "cc5b1d481b391181b89f7ced860308482e785463",
+  "files": {
+    "corpus": "corpora/passage_level/fiqa.jsonl.zip",
+    "lastturn": "mtrag-human/retrieval_tasks/fiqa/fiqa_lastturn.jsonl",
+    "qrels": "mtrag-human/retrieval_tasks/fiqa/qrels/dev.tsv",
+    "reference": "mtrag-human/generation_tasks/reference.jsonl",
+    "rewrite": "mtrag-human/retrieval_tasks/fiqa/fiqa_rewrite.jsonl"
+  },
+  "repository": "IBM/mt-rag-benchmark",
+  "sha256": {
+    "corpus": "59f7cf5b043abe007fdb6521eb281bf055524de4376466e9cb4808466e761ee9",
+    "lastturn": "c491ac98e0ae1bc9f5db26e42fdcbb815ef7111b1fcf26794a7481d6c19ee2e6",
+    "qrels": "a10ec0b5cba634d6c4ad02dd86de715a258ebd313dbcf5fa2d0a77bb0e121abc",
+    "reference": "b3dde4076f9f692a99513e424a0a39f57591dbe45600a4c1017aaa7a7edcfaac",
+    "rewrite": "88706f60953539e3927b05e3e6c20b39e4d9211df9247cd7de4035ae50ac5f15"
+  }
+}

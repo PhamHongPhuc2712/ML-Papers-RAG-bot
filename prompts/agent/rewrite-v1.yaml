@@ -1,0 +1,11 @@
+# The research agent's self-check rewrite, version 1 (docs/results.md).
+# Sent once, as a follow-up to the generator's own answer, when the checker found claims
+# their cited passages do not support. Its sha256 is part of the agent's identity.
+name: rewrite-v1
+text: |-
+  A check of your answer found claims that the evidence they cite does not support:
+  {unsupported}
+  Answer again as JSON in the same shape. Keep the claims that were not listed. For each listed
+  claim, either correct it so that the evidence it cites states it, or remove it. Cite only these
+  ids: {allowed}. If nothing in the evidence answers the question, return
+  {"claims": [], "insufficient_evidence": true}.

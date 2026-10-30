@@ -1,0 +1,73 @@
+# The ORB guard for research-v3 (agent follow-ups, docs/results.md): orb-text-qa-agent.yaml with the
+# agent on research-v3, scored once on the frozen 400.
+# Original header, unchanged rule: the research agent against the shipped pipeline on ORB's original questions (agent
+# experiment, ), registered by the
+# commit that adds this file, before any run.
+#
+#   LLM_DAILY_SPEND_CAP_USD=100 uv run --env-file .env --project backend python -m copilot.cli \
+#     eval qa --config configs/experiments/orb-text-qa-agent.yaml --split development \
+#     --database-url ...copilot_orb --out reports/qa/orb-text-agent-v3 --max-spend-usd <budget>
+#
+# Both variants use the serving chat's first stage unchanged (configs/search.yaml: the reranker
+# reads title + abstract + passage at a 2.5 s rerank deadline, since 2026-10-21), the serving
+# generator (StructuredGenerator, generator_client: langchain) and the serving evidence budgets.
+# They differ only in who gathers evidence: `flat` searches once with the question as written;
+# `agent` runs the LangGraph tool loop (at most 3 searches, 8 model calls, 4 section reads)
+# and chooses the passages the generator answers from.
+#
+# Development reads decide nothing. Pre-registered for the frozen 400, scored once, only with
+# the developer's go-ahead (plan Task 9): the guard for configs/experiments/mtrag-agent.yaml's
+# decision. It holds when `agent`'s accuracy is at most 0.02 below `flat`'s and its cited_map at
+# most 0.03 below; exact McNemar is reported either way. The daily cap is lifted for these runs
+# by the developer (2026-10-25): LLM_DAILY_SPEND_CAP_USD=100 in the command's environment only.
+schema_version: 1
+name: orb-text-qa-agent-v3
+
+dataset:
+  path: data/fixtures/orb
+  benchmark: orb
+
+corpus:
+  release: orb-v1
+
+search: configs/search.yaml
+models: configs/models.yaml
+evidence: configs/evidence.yaml
+
+generator: openai-gpt-6-luna
+generator_client: langchain
+judge: openai-gpt-6-luna-low
+prompts:
+  generate: prompts/generate/grounded-claims-v1.yaml
+  judge: prompts/judge/answer-equivalence-haiku-v1.yaml
+
+papers: 10
+
+bootstrap:
+  resamples: 1000
+  seed: 42
+  confidence: 0.95
+
+variants:
+  - name: flat
+    changes: the shipped pipeline, one search with the question as written
+  - name: agent
+    changes: the LangGraph research agent gathers and chooses the evidence
+    answerer: agent
+    agent:
+      prompt: prompts/agent/research-v3.yaml
+      max_searches: 3
+      max_model_calls: 8
+      max_sections: 4
+      answer_from: seen
+      verbatim_first: true
+
+budget:
+  max_spend_usd: 8.00
+
+decision:
+  primary: agent
+  baseline: flat
+  mcnemar_p: 0.05
+  accuracy_max_drop: 0.02
+  cited_map_max_drop: 0.03
